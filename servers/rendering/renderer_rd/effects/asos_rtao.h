@@ -20,6 +20,8 @@
 #define RB_RT_AO_RAW SNAME("rt_ao_raw")
 #define RB_RT_GI SNAME("rt_gi")
 #define RB_RT_GI_RAW SNAME("rt_gi_raw")
+#define RB_RT_REFLECTION SNAME("rt_reflection")
+#define RB_RT_REFLECTION_RAW SNAME("rt_reflection_raw")
 
 namespace RendererRD {
 
@@ -69,6 +71,7 @@ private:
 	AsosRtGiShaderRD gi_shader;
 	RID gi_shader_version;
 	RID gi_pipeline;
+	RID reflection_pipeline;
 
 	struct GiPushConstant {
 		float inv_view_proj[16];
@@ -118,7 +121,8 @@ public:
 	void render_gi(RID p_tlas, RID p_depth_texture, RID p_instance_buffer, RID p_dest_gi,
 			const Size2i &p_size, const Projection &p_inv_view_proj, const Vector3 &p_cam_pos,
 			const Vector3 &p_sun_dir, float p_sun_energy, const Color &p_sun_color,
-			float p_gi_intensity, uint32_t p_ray_count, uint32_t p_frame);
+			float p_gi_intensity, uint32_t p_ray_count, uint32_t p_frame,
+			bool p_reflection = false);
 };
 
 } // namespace RendererRD

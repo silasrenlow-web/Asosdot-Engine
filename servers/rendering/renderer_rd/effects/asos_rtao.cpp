@@ -34,9 +34,16 @@ AsosRTAO::AsosRTAO() {
 	denoise_pipeline = RD::get_singleton()->compute_pipeline_create(denoise_shader.version_get_shader(denoise_shader_version, 0));
 	denoise_color_pipeline = RD::get_singleton()->compute_pipeline_create(denoise_shader.version_get_shader(denoise_shader_version, 1));
 
-	gi_shader.initialize(shader_modes);
+	// Diffuse bounce and mirror reflection share everything except how the ray
+	// direction is chosen, so they are variants of one shader.
+	Vector<String> gi_modes;
+	gi_modes.push_back("");
+	gi_modes.push_back("#define MODE_REFLECTION\n");
+
+	gi_shader.initialize(gi_modes);
 	gi_shader_version = gi_shader.version_create();
 	gi_pipeline = RD::get_singleton()->compute_pipeline_create(gi_shader.version_get_shader(gi_shader_version, 0));
+	reflection_pipeline = RD::get_singleton()->compute_pipeline_create(gi_shader.version_get_shader(gi_shader_version, 1));
 }
 
 AsosRTAO::~AsosRTAO() {
@@ -164,7 +171,7 @@ void AsosRTAO::denoise(RID p_source, RID p_depth_texture, RID p_dest, const Size
 void AsosRTAO::render_gi(RID p_tlas, RID p_depth_texture, RID p_instance_buffer, RID p_dest_gi,
 		const Size2i &p_size, const Projection &p_inv_view_proj, const Vector3 &p_cam_pos,
 		const Vector3 &p_sun_dir, float p_sun_energy, const Color &p_sun_color,
-		float p_gi_intensity, uint32_t p_ray_count, uint32_t p_frame) {
+		float p_gi_intensity, uint32_t p_ray_count, uint32_t p_frame, bool p_reflection) {
 	ERR_FAIL_COND(p_tlas.is_null());
 	ERR_FAIL_COND(p_depth_texture.is_null());
 	ERR_FAIL_COND(p_instance_buffer.is_null());
@@ -196,7 +203,7 @@ void AsosRTAO::render_gi(RID p_tlas, RID p_depth_texture, RID p_instance_buffer,
 	push_constant.frame = p_frame;
 
 	RID depth_sampler = material_storage->sampler_rd_get_default(RSE::CANVAS_ITEM_TEXTURE_FILTER_NEAREST, RSE::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED);
-	RID gi_shader_rid = gi_shader.version_get_shader(gi_shader_version, 0);
+	RID gi_shader_rid = gi_shader.version_get_shader(gi_shader_version, p_reflection ? 1 : 0);
 
 	RD::Uniform u_tlas(RD::UNIFORM_TYPE_ACCELERATION_STRUCTURE, 0, Vector<RID>({ p_tlas }));
 	RD::Uniform u_depth(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 1, Vector<RID>({ depth_sampler, p_depth_texture }));
@@ -204,7 +211,7 @@ void AsosRTAO::render_gi(RID p_tlas, RID p_depth_texture, RID p_instance_buffer,
 	RD::Uniform u_instances(RD::UNIFORM_TYPE_STORAGE_BUFFER, 3, Vector<RID>({ p_instance_buffer }));
 
 	RD::ComputeListID compute_list = RD::get_singleton()->compute_list_begin();
-	RD::get_singleton()->compute_list_bind_compute_pipeline(compute_list, gi_pipeline);
+	RD::get_singleton()->compute_list_bind_compute_pipeline(compute_list, p_reflection ? reflection_pipeline : gi_pipeline);
 	RD::get_singleton()->compute_list_bind_uniform_set(compute_list,
 			uniform_set_cache->get_cache(gi_shader_rid, 0, u_tlas, u_depth, u_dest, u_instances), 0);
 	RD::get_singleton()->compute_list_set_push_constant(compute_list, &push_constant, sizeof(GiPushConstant));

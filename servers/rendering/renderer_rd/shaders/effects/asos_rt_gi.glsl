@@ -130,8 +130,20 @@ void main() {
 
 	vec3 origin = pos + normal * 0.02;
 
+#ifdef MODE_REFLECTION
+	// A mirror reflection is one direction, not a hemisphere of them.
+	count = 1u;
+	vec3 view_dir = normalize(pos - params.cam_pos.xyz);
+#endif
+
+	float hit_count = 0.0;
+
 	for (uint i = 0u; i < count; i++) {
+#ifdef MODE_REFLECTION
+		vec3 dir = reflect(view_dir, normal);
+#else
 		vec3 dir = sample_cosine_hemisphere(normal, rand_float(rng), rand_float(rng));
+#endif
 
 		rayQueryEXT rq;
 		// Closest hit, not first hit: we need the nearest surface to shade.
@@ -166,6 +178,8 @@ void main() {
 			hit_normal = -hit_normal;
 		}
 
+		hit_count += 1.0;
+
 		float t = rayQueryGetIntersectionTEXT(rq, true);
 		vec3 hit_pos = origin + dir * t;
 
@@ -181,5 +195,11 @@ void main() {
 	}
 
 	vec3 gi = (bounced / float(count)) * params.sun_color.w;
+#ifdef MODE_REFLECTION
+	// Alpha carries whether the ray found geometry at all, so a miss can fall
+	// back to Godot's existing sky reflection instead of turning black.
+	imageStore(dest_gi, coord, vec4(gi, hit_count / float(count)));
+#else
 	imageStore(dest_gi, coord, vec4(gi, 1.0));
+#endif
 }

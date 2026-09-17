@@ -53,7 +53,7 @@ void main() {
 
 	// Accumulates rgb so one shader serves both the single channel visibility
 	// buffers and the colour GI buffer.
-	vec3 sum = vec3(0.0);
+	vec4 sum = vec4(0.0);
 	float weight_sum = 0.0;
 
 	// Gaussian falloff over the kernel, so distant taps contribute less.
@@ -84,14 +84,16 @@ void main() {
 			float dist_sq = float(x * x + y * y);
 			float w = exp(-dist_sq * inv_two_sigma_sq) * (1.0 - rel / params.depth_tolerance);
 
-			sum += texture(source, tap_uv).rgb * w;
+			sum += texture(source, tap_uv) * w;
 			weight_sum += w;
 		}
 	}
 
-	vec3 result = weight_sum > 0.0 ? (sum / weight_sum) : texture(source, uv).rgb;
+	vec4 result = weight_sum > 0.0 ? (sum / weight_sum) : texture(source, uv);
 #ifdef MODE_COLOR
-	imageStore(dest, coord, vec4(max(result, vec3(0.0)), 1.0));
+	// Alpha is meaningful for reflections (did the ray hit anything), so it
+	// is filtered alongside the colour rather than forced to one.
+	imageStore(dest, coord, vec4(max(result.rgb, vec3(0.0)), clamp(result.a, 0.0, 1.0)));
 #else
 	imageStore(dest, coord, vec4(clamp(result.r, 0.0, 1.0)));
 #endif

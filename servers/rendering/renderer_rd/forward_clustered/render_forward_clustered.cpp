@@ -768,6 +768,7 @@ uint32_t RenderForwardClustered::_setup_environment(const RenderDataRD *p_render
 			// shadow map for the first directional light.
 			ss_flags |= environment_get_asos_lighting(p_render_data->environment) ? (1 << 4) : 0;
 			ss_flags |= environment_get_asos_lighting(p_render_data->environment) ? (1 << 5) : 0;
+			ss_flags |= environment_get_asos_lighting(p_render_data->environment) ? (1 << 6) : 0;
 			ss_flags |= environment_get_ssil_enabled(p_render_data->environment) ? (1 << 1) : 0;
 			ss_flags |= environment_get_ssr_enabled(p_render_data->environment) ? (1 << 2) : 0;
 
@@ -1486,6 +1487,14 @@ void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_rend
 		p_render_buffers->create_texture(RB_SCOPE_ASOS, RB_RT_GI_RAW, RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
 				RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT, RD::TEXTURE_SAMPLES_1);
 	}
+	if (!p_render_buffers->has_texture(RB_SCOPE_ASOS, RB_RT_REFLECTION)) {
+		p_render_buffers->create_texture(RB_SCOPE_ASOS, RB_RT_REFLECTION, RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
+				RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT, RD::TEXTURE_SAMPLES_1);
+	}
+	if (!p_render_buffers->has_texture(RB_SCOPE_ASOS, RB_RT_REFLECTION_RAW)) {
+		p_render_buffers->create_texture(RB_SCOPE_ASOS, RB_RT_REFLECTION_RAW, RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
+				RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT, RD::TEXTURE_SAMPLES_1);
+	}
 	if (!p_render_buffers->has_texture(RB_SCOPE_ASOS, RB_RT_AO_RAW)) {
 		p_render_buffers->create_texture(RB_SCOPE_ASOS, RB_RT_AO_RAW, RD::DATA_FORMAT_R8_UNORM,
 				RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT, RD::TEXTURE_SAMPLES_1);
@@ -1546,6 +1555,17 @@ void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_rend
 					// Bounce lighting is low frequency, so it tolerates a wider filter
 					// than the visibility buffers.
 					asos_rtao->denoise(rt_gi_raw, depth, rt_gi, size, 5 /* radius */, 0.03f /* depth tolerance */, true /* colour */);
+				}
+
+				const RID rt_refl = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_REFLECTION, v, 0);
+				const RID rt_refl_raw = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_REFLECTION_RAW, v, 0);
+				if (instance_buffer.is_valid() && rt_refl.is_valid() && rt_refl_raw.is_valid()) {
+					asos_rtao->render_gi(tlas, depth, instance_buffer, rt_refl_raw, size, view_proj.inverse(),
+							cam.origin, sun_dir, sun_energy, sun_color, 1.0f /* intensity */,
+							1u /* rays */, asos_rtao_frame, true /* reflection */);
+					// Reflections are high frequency, so filter them far more gently
+					// than bounce lighting or the detail is lost.
+					asos_rtao->denoise(rt_refl_raw, depth, rt_refl, size, 1 /* radius */, 0.01f /* depth tolerance */, true /* colour */);
 				}
 			}
 		}
@@ -3899,6 +3919,18 @@ RID RenderForwardClustered::_setup_render_pass_uniform_set(RenderListType p_rend
 		RID ssr_mip_level = (rb_data.is_valid() && !rb_data->ss_effects_data.ssr.half_size && rb->has_texture(RB_SCOPE_SSR, RB_MIP_LEVEL)) ? rb->get_texture(RB_SCOPE_SSR, RB_MIP_LEVEL) : RID();
 		RID texture = ssr_mip_level.is_valid() ? ssr_mip_level : texture_storage->texture_rd_get_default(is_multiview ? RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_2D_ARRAY_BLACK : RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_BLACK);
 		u.append_id(texture);
+		uniforms.push_back(u);
+	}
+	{
+		RD::Uniform u;
+		u.binding = 39;
+		u.uniform_type = RD::UNIFORM_TYPE_TEXTURE;
+
+		// Asosdot traced reflections. Black (and zero alpha) when disabled, so
+		// the blend below leaves the existing specular untouched.
+		RID rt_refl = (rb.is_valid() && rb->has_texture(RB_SCOPE_ASOS, RB_RT_REFLECTION)) ? rb->get_texture(RB_SCOPE_ASOS, RB_RT_REFLECTION) : RID();
+		RID refl_texture = rt_refl.is_valid() ? rt_refl : texture_storage->texture_rd_get_default(is_multiview ? RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_2D_ARRAY_BLACK : RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_BLACK);
+		u.append_id(refl_texture);
 		uniforms.push_back(u);
 	}
 	{
