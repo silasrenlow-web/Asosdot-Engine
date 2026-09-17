@@ -213,6 +213,8 @@ public:
 	// Flat albedo per TLAS instance, indexed by the instance custom index a
 	// ray query reports. Lets a hit be shaded without bindless material access.
 	_FORCE_INLINE_ RID raytracing_get_instance_buffer() const { return rt_instance_buffer; }
+	_FORCE_INLINE_ RID raytracing_get_vertex_buffer() const { return rt_vertex_buffer; }
+	_FORCE_INLINE_ RID raytracing_get_index_buffer() const { return rt_index_buffer; }
 
 private:
 	// Scene TLAS. Capacity is fixed at creation, so it is recreated (rather
@@ -222,6 +224,15 @@ private:
 	uint32_t rt_tlas_instance_count = 0;
 	RID rt_instance_buffer;
 	uint32_t rt_instance_buffer_capacity = 0;
+	// Shading attributes for every traceable surface, concatenated.
+	RID rt_vertex_buffer;
+	uint32_t rt_vertex_buffer_capacity = 0;
+	RID rt_index_buffer;
+	uint32_t rt_index_buffer_capacity = 0;
+	// Cheap signature of the gathered geometry. Rebuilding the shared buffers
+	// every frame would mean copying megabytes for a scene that has not
+	// changed, so they are only rebuilt when this differs.
+	uint64_t rt_geometry_signature = 0;
 
 public:
 	virtual void environment_set_sdfgi_frames_to_converge(RSE::EnvironmentSDFGIFramesToConverge p_frames) override;

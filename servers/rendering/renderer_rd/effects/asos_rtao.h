@@ -148,7 +148,8 @@ public:
 
 	// One bounce diffuse GI. p_instance_buffer holds a flat albedo per TLAS
 	// instance so hits can be shaded without bindless material access.
-	void render_gi(RID p_tlas, RID p_depth_texture, RID p_instance_buffer, RID p_dest_gi,
+	void render_gi(RID p_tlas, RID p_depth_texture, RID p_instance_buffer,
+			RID p_shading_vertices, RID p_shading_indices, RID p_dest_gi,
 			const Size2i &p_size, const Projection &p_inv_view_proj, const Vector3 &p_cam_pos,
 			const Vector3 &p_sun_dir, float p_sun_energy, const Color &p_sun_color,
 			float p_gi_intensity, uint32_t p_ray_count, uint32_t p_frame,

@@ -34,6 +34,7 @@
 #include "core/io/image.h"
 #include "servers/rendering/renderer_rd/environment/fog.h"
 #include "servers/rendering/renderer_rd/framebuffer_cache_rd.h"
+#include "servers/rendering/renderer_rd/storage_rd/mesh_storage.h"
 #include "servers/rendering/renderer_rd/shaders/decal_data_inc.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/light_data_inc.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/scene_data_inc.glsl.gen.h"
@@ -107,6 +108,17 @@ void RendererSceneRenderRD::raytracing_update_tlas(const LocalVector<RaytracingI
 	thread_local LocalVector<float> instance_albedo;
 	instance_albedo.clear();
 
+	// Shading attributes for every traceable surface, concatenated. Each
+	// instance records where its slice begins so the shader can find it from
+	// the instance index a ray query reports.
+	thread_local LocalVector<float> shading_vertices;
+	thread_local LocalVector<uint32_t> shading_indices;
+	thread_local LocalVector<uint32_t> instance_offsets;
+	shading_vertices.clear();
+	shading_indices.clear();
+	instance_offsets.clear();
+	uint64_t geometry_signature = 0;
+
 	for (uint32_t i = 0; i < p_instances.size(); i++) {
 		const RaytracingInstance &inst = p_instances[i];
 		if (inst.mesh.is_null()) {
@@ -150,6 +162,30 @@ void RendererSceneRenderRD::raytracing_update_tlas(const LocalVector<RaytracingI
 			instance_albedo.push_back(albedo.b);
 			instance_albedo.push_back(1.0f);
 
+			// Where this surface's slice starts, in vertices and in indices.
+			const uint32_t vertex_base = shading_vertices.size() / 4;
+			const uint32_t index_base = shading_indices.size();
+			instance_offsets.push_back(index_base);
+			instance_offsets.push_back(vertex_base);
+			instance_offsets.push_back(0xFFFFFFFFu); // albedo texture slot, unset
+			instance_offsets.push_back(0);
+
+			// The RD singleton rather than RSG::mesh_storage: shading attributes
+			// are specific to this backend and not on the abstract interface.
+			RendererRD::MeshStorage *rd_mesh_storage = RendererRD::MeshStorage::get_singleton();
+			const Vector<float> &sv = rd_mesh_storage->mesh_surface_get_rt_shading_vertices(inst.mesh, s);
+			const Vector<uint32_t> &si = rd_mesh_storage->mesh_surface_get_rt_shading_indices(inst.mesh, s);
+			for (int k = 0; k < sv.size(); k++) {
+				shading_vertices.push_back(sv[k]);
+			}
+			for (int k = 0; k < si.size(); k++) {
+				shading_indices.push_back(si[k]);
+			}
+			// Enough to notice the scene's traceable geometry changing without
+			// hashing the contents.
+			geometry_signature = geometry_signature * 1099511628211ULL ^ uint64_t(sv.size());
+			geometry_signature = geometry_signature * 1099511628211ULL ^ uint64_t(si.size());
+
 			as_instances.push_back(as_inst);
 		}
 	}
@@ -176,7 +212,22 @@ void RendererSceneRenderRD::raytracing_update_tlas(const LocalVector<RaytracingI
 	rd->tlas_build(rt_tlas, Span<RD::AccelerationStructureInstance>(as_instances.ptr(), as_instances.size()));
 
 	// Grown in step with the TLAS so indices always line up.
-	const uint32_t albedo_bytes = instance_albedo.size() * sizeof(float);
+	// One vec4 of albedo followed by one uvec4 of offsets per instance.
+	thread_local LocalVector<uint32_t> instance_table;
+	instance_table.clear();
+	for (uint32_t i = 0; i < as_instances.size(); i++) {
+		const float *a = &instance_albedo[i * 4];
+		for (int k = 0; k < 4; k++) {
+			uint32_t bits;
+			memcpy(&bits, &a[k], sizeof(uint32_t));
+			instance_table.push_back(bits);
+		}
+		for (int k = 0; k < 4; k++) {
+			instance_table.push_back(instance_offsets[i * 4 + k]);
+		}
+	}
+
+	const uint32_t albedo_bytes = instance_table.size() * sizeof(uint32_t);
 	if (rt_instance_buffer.is_null() || albedo_bytes > rt_instance_buffer_capacity) {
 		if (rt_instance_buffer.is_valid()) {
 			rd->free_rid(rt_instance_buffer);
@@ -190,7 +241,38 @@ void RendererSceneRenderRD::raytracing_update_tlas(const LocalVector<RaytracingI
 		}
 	}
 
-	rd->buffer_update(rt_instance_buffer, 0, albedo_bytes, instance_albedo.ptr());
+	rd->buffer_update(rt_instance_buffer, 0, albedo_bytes, instance_table.ptr());
+
+	// Offsets travel in the same buffer as the albedo, interleaved one vec4
+	// each, so the shader reads a single array.
+	// Shared geometry only needs rebuilding when the traceable set changes.
+	if (geometry_signature != rt_geometry_signature && !shading_vertices.is_empty()) {
+		rt_geometry_signature = geometry_signature;
+
+		const uint32_t vbytes = shading_vertices.size() * sizeof(float);
+		if (rt_vertex_buffer.is_null() || vbytes > rt_vertex_buffer_capacity) {
+			if (rt_vertex_buffer.is_valid()) {
+				rd->free_rid(rt_vertex_buffer);
+			}
+			rt_vertex_buffer_capacity = Math::next_power_of_2(vbytes);
+			rt_vertex_buffer = rd->storage_buffer_create(rt_vertex_buffer_capacity);
+		}
+		if (rt_vertex_buffer.is_valid()) {
+			rd->buffer_update(rt_vertex_buffer, 0, vbytes, shading_vertices.ptr());
+		}
+
+		const uint32_t ibytes = shading_indices.size() * sizeof(uint32_t);
+		if (rt_index_buffer.is_null() || ibytes > rt_index_buffer_capacity) {
+			if (rt_index_buffer.is_valid()) {
+				rd->free_rid(rt_index_buffer);
+			}
+			rt_index_buffer_capacity = Math::next_power_of_2(ibytes);
+			rt_index_buffer = rd->storage_buffer_create(rt_index_buffer_capacity);
+		}
+		if (rt_index_buffer.is_valid()) {
+			rd->buffer_update(rt_index_buffer, 0, ibytes, shading_indices.ptr());
+		}
+	}
 }
 
 void RendererSceneRenderRD::environment_set_sdfgi_ray_count(RSE::EnvironmentSDFGIRayCount p_ray_count) {
@@ -1996,6 +2078,14 @@ RendererSceneRenderRD::~RendererSceneRenderRD() {
 	if (rt_instance_buffer.is_valid()) {
 		RD::get_singleton()->free_rid(rt_instance_buffer);
 		rt_instance_buffer = RID();
+	}
+	if (rt_vertex_buffer.is_valid()) {
+		RD::get_singleton()->free_rid(rt_vertex_buffer);
+		rt_vertex_buffer = RID();
+	}
+	if (rt_index_buffer.is_valid()) {
+		RD::get_singleton()->free_rid(rt_index_buffer);
+		rt_index_buffer = RID();
 	}
 
 	if (forward_id_storage) {

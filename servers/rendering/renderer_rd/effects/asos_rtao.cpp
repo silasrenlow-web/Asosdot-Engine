@@ -175,13 +175,16 @@ void AsosRTAO::denoise(RID p_source, RID p_depth_texture, RID p_dest, const Size
 	RD::get_singleton()->compute_list_end();
 }
 
-void AsosRTAO::render_gi(RID p_tlas, RID p_depth_texture, RID p_instance_buffer, RID p_dest_gi,
+void AsosRTAO::render_gi(RID p_tlas, RID p_depth_texture, RID p_instance_buffer,
+		RID p_shading_vertices, RID p_shading_indices, RID p_dest_gi,
 		const Size2i &p_size, const Projection &p_inv_view_proj, const Vector3 &p_cam_pos,
 		const Vector3 &p_sun_dir, float p_sun_energy, const Color &p_sun_color,
 		float p_gi_intensity, uint32_t p_ray_count, uint32_t p_frame, bool p_reflection) {
 	ERR_FAIL_COND(p_tlas.is_null());
 	ERR_FAIL_COND(p_depth_texture.is_null());
 	ERR_FAIL_COND(p_instance_buffer.is_null());
+	ERR_FAIL_COND(p_shading_vertices.is_null());
+	ERR_FAIL_COND(p_shading_indices.is_null());
 	ERR_FAIL_COND(p_dest_gi.is_null());
 	ERR_FAIL_COND(p_size.x <= 0 || p_size.y <= 0);
 
@@ -216,11 +219,13 @@ void AsosRTAO::render_gi(RID p_tlas, RID p_depth_texture, RID p_instance_buffer,
 	RD::Uniform u_depth(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 1, Vector<RID>({ depth_sampler, p_depth_texture }));
 	RD::Uniform u_dest(RD::UNIFORM_TYPE_IMAGE, 2, Vector<RID>({ p_dest_gi }));
 	RD::Uniform u_instances(RD::UNIFORM_TYPE_STORAGE_BUFFER, 3, Vector<RID>({ p_instance_buffer }));
+	RD::Uniform u_verts(RD::UNIFORM_TYPE_STORAGE_BUFFER, 4, Vector<RID>({ p_shading_vertices }));
+	RD::Uniform u_idx(RD::UNIFORM_TYPE_STORAGE_BUFFER, 5, Vector<RID>({ p_shading_indices }));
 
 	RD::ComputeListID compute_list = RD::get_singleton()->compute_list_begin();
 	RD::get_singleton()->compute_list_bind_compute_pipeline(compute_list, p_reflection ? reflection_pipeline : gi_pipeline);
 	RD::get_singleton()->compute_list_bind_uniform_set(compute_list,
-			uniform_set_cache->get_cache(gi_shader_rid, 0, u_tlas, u_depth, u_dest, u_instances), 0);
+			uniform_set_cache->get_cache(gi_shader_rid, 0, u_tlas, u_depth, u_dest, u_instances, u_verts, u_idx), 0);
 	RD::get_singleton()->compute_list_set_push_constant(compute_list, &push_constant, sizeof(GiPushConstant));
 	RD::get_singleton()->compute_list_dispatch_threads(compute_list, p_size.x, p_size.y, 1);
 	RD::get_singleton()->compute_list_end();

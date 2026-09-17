@@ -26,10 +26,29 @@ layout(set = 0, binding = 0) uniform accelerationStructureEXT tlas;
 layout(set = 0, binding = 1) uniform sampler2D source_depth;
 layout(rgba16f, set = 0, binding = 2) uniform restrict writeonly image2D dest_gi;
 
+struct AsosInstance {
+	vec4 albedo;
+	// x = index offset, y = vertex offset, z = albedo texture slot
+	// (0xFFFFFFFF when untextured), w = flags.
+	uvec4 params;
+};
+
 layout(set = 0, binding = 3, std430) restrict readonly buffer InstanceData {
-	vec4 albedo[];
+	AsosInstance data[];
 }
 instance_data;
+
+// Shading attributes for every traceable surface, concatenated. One vec4 per
+// vertex: uv.xy and the octahedral normal pair.
+layout(set = 0, binding = 4, std430) restrict readonly buffer ShadingVertices {
+	vec4 data[];
+}
+shading_vertices;
+
+layout(set = 0, binding = 5, std430) restrict readonly buffer ShadingIndices {
+	uint data[];
+}
+shading_indices;
 
 layout(push_constant, std430) uniform Params {
 	mat4 inv_view_proj;
@@ -56,6 +75,15 @@ uint hash_u32(uint x) {
 float rand_float(inout uint state) {
 	state = hash_u32(state);
 	return float(state) * (1.0 / 4294967296.0);
+}
+
+// Matches Godot's own vertex normal decode, so no re-encoding was needed
+// when the attributes were extracted.
+vec3 oct_to_vec3(vec2 e) {
+	vec3 v = vec3(e.xy, 1.0 - abs(e.x) - abs(e.y));
+	float t = max(-v.z, 0.0);
+	v.xy += t * -sign(v.xy);
+	return normalize(v);
 }
 
 vec3 world_from_depth(vec2 uv, float depth) {
@@ -184,7 +212,40 @@ void main() {
 		vec3 hit_pos = origin + dir * t;
 
 		int id = rayQueryGetIntersectionInstanceCustomIndexEXT(rq, true);
-		vec3 albedo = instance_data.albedo[id].rgb;
+		AsosInstance inst = instance_data.data[id];
+		vec3 albedo = inst.albedo.rgb;
+
+		// The primitive index and barycentrics are enough to find the hit
+		// triangle's three vertices in the shared buffers and interpolate.
+		uint prim = uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, true));
+		vec2 bary = rayQueryGetIntersectionBarycentricsEXT(rq, true);
+		uint base = inst.params.x + prim * 3u;
+		uint i0 = shading_indices.data[base + 0u] + inst.params.y;
+		uint i1 = shading_indices.data[base + 1u] + inst.params.y;
+		uint i2 = shading_indices.data[base + 2u] + inst.params.y;
+
+		vec4 a0 = shading_vertices.data[i0];
+		vec4 a1 = shading_vertices.data[i1];
+		vec4 a2 = shading_vertices.data[i2];
+		// bw0 rather than w0: w0 is already the first triangle world position.
+		float bw0 = 1.0 - bary.x - bary.y;
+
+		vec2 hit_uv = a0.xy * bw0 + a1.xy * bary.x + a2.xy * bary.y;
+
+		// Interpolated (smooth) normal, which is what makes a curved surface
+		// bounce light like a curve instead of like a bag of flat triangles.
+		vec3 n_smooth = oct_to_vec3(a0.zw * 2.0 - 1.0) * bw0 +
+				oct_to_vec3(a1.zw * 2.0 - 1.0) * bary.x +
+				oct_to_vec3(a2.zw * 2.0 - 1.0) * bary.y;
+		n_smooth = mat3(obj_to_world) * n_smooth;
+		if (dot(n_smooth, n_smooth) > 1e-12) {
+			n_smooth = normalize(n_smooth);
+			// Keep it on the same side as the geometric normal, so a mesh with
+			// inverted or missing normals cannot flip the shading.
+			if (dot(n_smooth, hit_normal) > 0.0) {
+				hit_normal = n_smooth;
+			}
+		}
 
 		float ndotl = max(dot(hit_normal, sun_dir), 0.0);
 		if (ndotl > 0.0 && !sun_blocked(hit_pos, hit_normal)) {

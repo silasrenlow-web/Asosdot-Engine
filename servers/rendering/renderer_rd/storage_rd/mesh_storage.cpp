@@ -645,12 +645,111 @@ MeshStorage::Mesh::Surface *MeshStorage::_ensure_surface_blas(RID p_mesh, int p_
 	}
 
 	s->blas = blas;
+
+	// Shading data is only useful for surfaces we can actually hit, so it is
+	// gathered here rather than for every mesh in the scene.
+	// Called through a const pointer to pick the SurfaceData overload; the
+	// non-const mesh_get_surface() returns void* and makes the call ambiguous.
+	const MeshStorage *self = this;
+	_extract_surface_shading_data(s, self->mesh_get_surface(p_mesh, p_surface));
+
 	return s;
+}
+
+void MeshStorage::_extract_surface_shading_data(Mesh::Surface *p_surface, const RenderingServerTypes::SurfaceData &p_data) {
+	const uint64_t format = p_data.format;
+	const uint32_t vertex_count = p_data.vertex_count;
+	if (vertex_count == 0) {
+		return;
+	}
+
+	uint32_t offsets[RSE::ARRAY_MAX];
+	uint32_t vstr = 0;
+	uint32_t ntstr = 0;
+	uint32_t astr = 0;
+	uint32_t sstr = 0;
+	RS::get_singleton()->mesh_surface_make_offsets_from_format(format, vertex_count, p_data.index_count, offsets, vstr, ntstr, astr, sstr);
+
+	const bool compressed = (format & RSE::ARRAY_FLAG_COMPRESS_ATTRIBUTES) != 0;
+	const bool has_normal = (format & RSE::ARRAY_FORMAT_NORMAL) != 0;
+	const bool has_uv = (format & RSE::ARRAY_FORMAT_TEX_UV) != 0;
+
+	p_surface->rt_shading_vertices.resize(int(vertex_count) * 4);
+	float *vw = p_surface->rt_shading_vertices.ptrw();
+
+	const uint8_t *vptr = p_data.vertex_data.ptr();
+	const uint8_t *aptr = p_data.attribute_data.ptr();
+
+	for (uint32_t i = 0; i < vertex_count; i++) {
+		float u = 0.0f;
+		float v = 0.0f;
+		// 0.5, 0.5 decodes to +Z, a harmless stand-in when a mesh has no normals.
+		float nx = 0.5f;
+		float ny = 0.5f;
+
+		if (has_uv && aptr != nullptr && astr > 0) {
+			const uint8_t *p = aptr + offsets[RSE::ARRAY_TEX_UV] + i * astr;
+			if (compressed) {
+				const uint16_t *h = (const uint16_t *)p;
+				u = Math::half_to_float(h[0]);
+				v = Math::half_to_float(h[1]);
+			} else {
+				const float *f = (const float *)p;
+				u = f[0];
+				v = f[1];
+			}
+		}
+
+		if (has_normal && vptr != nullptr && ntstr > 0) {
+			// Normals sit in the vertex buffer after the whole position block;
+			// make_offsets_from_format already folds that into the offset. They
+			// are two uint16 holding an octahedral pair in 0..1.
+			const uint16_t *n = (const uint16_t *)(vptr + offsets[RSE::ARRAY_NORMAL] + i * ntstr);
+			nx = float(n[0]) / 65535.0f;
+			ny = float(n[1]) / 65535.0f;
+		}
+
+		vw[i * 4 + 0] = u;
+		vw[i * 4 + 1] = v;
+		vw[i * 4 + 2] = nx;
+		vw[i * 4 + 3] = ny;
+	}
+
+	// Widen to 32 bit so the shader has one index format to deal with.
+	const uint32_t index_count = p_data.index_count;
+	if (index_count > 0 && p_data.index_data.size() > 0) {
+		p_surface->rt_shading_indices.resize(int(index_count));
+		uint32_t *iw = p_surface->rt_shading_indices.ptrw();
+		const bool is_16 = (p_data.index_data.size() / index_count) == 2;
+		const uint8_t *ip = p_data.index_data.ptr();
+		for (uint32_t i = 0; i < index_count; i++) {
+			iw[i] = is_16 ? uint32_t(((const uint16_t *)ip)[i]) : ((const uint32_t *)ip)[i];
+		}
+	} else {
+		// Non indexed: the triangle list is just 0,1,2,...
+		p_surface->rt_shading_indices.resize(int(vertex_count));
+		uint32_t *iw = p_surface->rt_shading_indices.ptrw();
+		for (uint32_t i = 0; i < vertex_count; i++) {
+			iw[i] = i;
+		}
+	}
 }
 
 RID MeshStorage::mesh_surface_get_blas(RID p_mesh, int p_surface) {
 	Mesh::Surface *s = _ensure_surface_blas(p_mesh, p_surface);
 	return s != nullptr ? s->blas : RID();
+}
+
+const Vector<float> &MeshStorage::mesh_surface_get_rt_shading_vertices(RID p_mesh, int p_surface) {
+	static const Vector<float> empty;
+	Mesh::Surface *s = _ensure_surface_blas(p_mesh, p_surface);
+	return s != nullptr ? s->rt_shading_vertices : empty;
+}
+
+const Vector<uint32_t> &MeshStorage::mesh_surface_get_rt_shading_indices(RID p_mesh, int p_surface) {
+	static const Vector<uint32_t> empty;
+	Mesh::Surface *s = _ensure_surface_blas(p_mesh, p_surface);
+	return s != nullptr ? s->rt_shading_indices : empty;
 }
 
 Transform3D MeshStorage::mesh_surface_get_blas_transform(RID p_mesh, int p_surface) {

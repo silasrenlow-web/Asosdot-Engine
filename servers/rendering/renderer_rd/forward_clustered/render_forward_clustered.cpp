@@ -1637,10 +1637,13 @@ void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_rend
 
 				// One bounce GI needs the sun as well, so it rides along here.
 				const RID instance_buffer = raytracing_get_instance_buffer();
+				const RID shading_verts = raytracing_get_vertex_buffer();
+				const RID shading_idx = raytracing_get_index_buffer();
 				const RID rt_gi = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_GI, v, 0);
 				const RID rt_gi_raw = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_GI_RAW, v, 0);
-				if (asos_gi && instance_buffer.is_valid() && rt_gi.is_valid() && rt_gi_raw.is_valid()) {
-					asos_rtao->render_gi(tlas, depth, instance_buffer, rt_gi_raw, half_size, view_proj.inverse(),
+				const bool shading_ready = instance_buffer.is_valid() && shading_verts.is_valid() && shading_idx.is_valid();
+				if (asos_gi && shading_ready && rt_gi.is_valid() && rt_gi_raw.is_valid()) {
+					asos_rtao->render_gi(tlas, depth, instance_buffer, shading_verts, shading_idx, rt_gi_raw, half_size, view_proj.inverse(),
 							cam.origin, sun_dir, sun_energy, sun_color, asos.gi_intensity,
 							asos_rays + 2u, asos_rtao_frame);
 					// Bounce lighting is low frequency, so it tolerates a wider filter
@@ -1661,8 +1664,8 @@ void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_rend
 
 				const RID rt_refl = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_REFLECTION, v, 0);
 				const RID rt_refl_raw = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_REFLECTION_RAW, v, 0);
-				if (asos_reflections && instance_buffer.is_valid() && rt_refl.is_valid() && rt_refl_raw.is_valid()) {
-					asos_rtao->render_gi(tlas, depth, instance_buffer, rt_refl_raw, size, view_proj.inverse(),
+				if (asos_reflections && shading_ready && rt_refl.is_valid() && rt_refl_raw.is_valid()) {
+					asos_rtao->render_gi(tlas, depth, instance_buffer, shading_verts, shading_idx, rt_refl_raw, size, view_proj.inverse(),
 							cam.origin, sun_dir, sun_energy, sun_color, 1.0f /* intensity */,
 							1u /* rays */, asos_rtao_frame, true /* reflection */);
 					// Reflections are high frequency, so blurring them away is not an

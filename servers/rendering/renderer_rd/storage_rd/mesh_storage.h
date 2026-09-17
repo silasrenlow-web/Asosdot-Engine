@@ -135,6 +135,11 @@ private:
 			RID blas;
 			Transform3D blas_to_model;
 			bool blas_attempted = false;
+			// Shading attributes for ray hits: one vec4 per vertex holding uv.xy
+			// and the octahedral normal pair, plus triangle indices. Extracted
+			// once when the BLAS is built, empty for untraceable surfaces.
+			Vector<float> rt_shading_vertices;
+			Vector<uint32_t> rt_shading_indices;
 
 			Vector<AABB> bone_aabbs;
 
@@ -223,6 +228,7 @@ private:
 	void _mesh_surface_clear(Mesh *p_mesh, int p_surface);
 	// Builds the surface BLAS if needed; returns nullptr when untraceable.
 	Mesh::Surface *_ensure_surface_blas(RID p_mesh, int p_surface);
+	void _extract_surface_shading_data(Mesh::Surface *p_surface, const RenderingServerTypes::SurfaceData &p_data);
 
 	void _mesh_instance_clear(MeshInstance *mi);
 	void _mesh_instance_add_surface(MeshInstance *mi, Mesh *mesh, uint32_t p_surface);
@@ -413,6 +419,10 @@ public:
 	// compressed surfaces, whose positions are normalized into the surface
 	// AABB. Fold this into the TLAS instance transform.
 	virtual Transform3D mesh_surface_get_blas_transform(RID p_mesh, int p_surface) override;
+	// Shading attributes gathered alongside the BLAS. Empty until the BLAS
+	// for that surface has been built.
+	const Vector<float> &mesh_surface_get_rt_shading_vertices(RID p_mesh, int p_surface);
+	const Vector<uint32_t> &mesh_surface_get_rt_shading_indices(RID p_mesh, int p_surface);
 
 	virtual void mesh_set_custom_aabb(RID p_mesh, const AABB &p_aabb) override;
 	virtual AABB mesh_get_custom_aabb(RID p_mesh) const override;
