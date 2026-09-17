@@ -215,6 +215,7 @@ public:
 	_FORCE_INLINE_ RID raytracing_get_instance_buffer() const { return rt_instance_buffer; }
 	_FORCE_INLINE_ RID raytracing_get_vertex_buffer() const { return rt_vertex_buffer; }
 	_FORCE_INLINE_ RID raytracing_get_index_buffer() const { return rt_index_buffer; }
+	_FORCE_INLINE_ const LocalVector<RID> &raytracing_get_albedo_textures() const { return rt_albedo_textures; }
 
 private:
 	// Scene TLAS. Capacity is fixed at creation, so it is recreated (rather
@@ -233,6 +234,8 @@ private:
 	// every frame would mean copying megabytes for a scene that has not
 	// changed, so they are only rebuilt when this differs.
 	uint64_t rt_geometry_signature = 0;
+	// Deduplicated albedo textures, indexed by each instance's slot.
+	LocalVector<RID> rt_albedo_textures;
 
 public:
 	virtual void environment_set_sdfgi_frames_to_converge(RSE::EnvironmentSDFGIFramesToConverge p_frames) override;

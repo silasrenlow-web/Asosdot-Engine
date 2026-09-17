@@ -1643,7 +1643,8 @@ void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_rend
 				const RID rt_gi_raw = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_GI_RAW, v, 0);
 				const bool shading_ready = instance_buffer.is_valid() && shading_verts.is_valid() && shading_idx.is_valid();
 				if (asos_gi && shading_ready && rt_gi.is_valid() && rt_gi_raw.is_valid()) {
-					asos_rtao->render_gi(tlas, depth, instance_buffer, shading_verts, shading_idx, rt_gi_raw, half_size, view_proj.inverse(),
+					asos_rtao->render_gi(tlas, depth, instance_buffer, shading_verts, shading_idx,
+							raytracing_get_albedo_textures(), rt_gi_raw, half_size, view_proj.inverse(),
 							cam.origin, sun_dir, sun_energy, sun_color, asos.gi_intensity,
 							asos_rays + 2u, asos_rtao_frame);
 					// Bounce lighting is low frequency, so it tolerates a wider filter
@@ -1665,7 +1666,8 @@ void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_rend
 				const RID rt_refl = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_REFLECTION, v, 0);
 				const RID rt_refl_raw = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_REFLECTION_RAW, v, 0);
 				if (asos_reflections && shading_ready && rt_refl.is_valid() && rt_refl_raw.is_valid()) {
-					asos_rtao->render_gi(tlas, depth, instance_buffer, shading_verts, shading_idx, rt_refl_raw, size, view_proj.inverse(),
+					asos_rtao->render_gi(tlas, depth, instance_buffer, shading_verts, shading_idx,
+							raytracing_get_albedo_textures(), rt_refl_raw, size, view_proj.inverse(),
 							cam.origin, sun_dir, sun_energy, sun_color, 1.0f /* intensity */,
 							1u /* rays */, asos_rtao_frame, true /* reflection */);
 					// Reflections are high frequency, so blurring them away is not an

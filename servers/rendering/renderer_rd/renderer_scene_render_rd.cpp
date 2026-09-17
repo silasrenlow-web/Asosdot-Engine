@@ -34,6 +34,7 @@
 #include "core/io/image.h"
 #include "servers/rendering/renderer_rd/environment/fog.h"
 #include "servers/rendering/renderer_rd/framebuffer_cache_rd.h"
+#include "servers/rendering/renderer_rd/effects/asos_rtao.h"
 #include "servers/rendering/renderer_rd/storage_rd/mesh_storage.h"
 #include "servers/rendering/renderer_rd/shaders/decal_data_inc.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/light_data_inc.glsl.gen.h"
@@ -118,6 +119,7 @@ void RendererSceneRenderRD::raytracing_update_tlas(const LocalVector<RaytracingI
 	shading_indices.clear();
 	instance_offsets.clear();
 	uint64_t geometry_signature = 0;
+	rt_albedo_textures.clear();
 
 	for (uint32_t i = 0; i < p_instances.size(); i++) {
 		const RaytracingInstance &inst = p_instances[i];
@@ -150,7 +152,15 @@ void RendererSceneRenderRD::raytracing_update_tlas(const LocalVector<RaytracingI
 			// parameter. Anything else (custom shaders, no material) falls back to
 			// white, which bounces light without tinting it.
 			Color albedo(1.0, 1.0, 1.0);
-			const RID surface_material = RSG::mesh_storage->mesh_surface_get_material(inst.mesh, s);
+			// Same precedence Godot itself uses when drawing the surface.
+			RID surface_material;
+			if (inst.material_override.is_valid()) {
+				surface_material = inst.material_override;
+			} else if (s < inst.materials.size() && inst.materials[s].is_valid()) {
+				surface_material = inst.materials[s];
+			} else {
+				surface_material = RSG::mesh_storage->mesh_surface_get_material(inst.mesh, s);
+			}
 			if (surface_material.is_valid()) {
 				const Variant param = RSG::material_storage->material_get_param(surface_material, "albedo");
 				if (param.get_type() == Variant::COLOR) {
@@ -167,7 +177,33 @@ void RendererSceneRenderRD::raytracing_update_tlas(const LocalVector<RaytracingI
 			const uint32_t index_base = shading_indices.size();
 			instance_offsets.push_back(index_base);
 			instance_offsets.push_back(vertex_base);
-			instance_offsets.push_back(0xFFFFFFFFu); // albedo texture slot, unset
+
+			// Resolve the material's albedo texture and deduplicate it, so a
+			// texture shared by many surfaces occupies one slot.
+			uint32_t texture_slot = 0xFFFFFFFFu;
+			if (surface_material.is_valid()) {
+				const Variant tex_param = RSG::material_storage->material_get_param(surface_material, "texture_albedo");
+				if (tex_param.get_type() == Variant::RID) {
+					const RID tex = tex_param;
+					if (tex.is_valid()) {
+						// sRGB view: albedo is colour data, not linear.
+						const RID rd_tex = RendererRD::TextureStorage::get_singleton()->texture_get_rd_texture(tex, true);
+						if (rd_tex.is_valid()) {
+							for (uint32_t t = 0; t < rt_albedo_textures.size(); t++) {
+								if (rt_albedo_textures[t] == rd_tex) {
+									texture_slot = t;
+									break;
+								}
+							}
+							if (texture_slot == 0xFFFFFFFFu && rt_albedo_textures.size() < ASOS_MAX_ALBEDO_TEXTURES) {
+								texture_slot = rt_albedo_textures.size();
+								rt_albedo_textures.push_back(rd_tex);
+							}
+						}
+					}
+				}
+			}
+			instance_offsets.push_back(texture_slot);
 			instance_offsets.push_back(0);
 
 			// The RD singleton rather than RSG::mesh_storage: shading attributes

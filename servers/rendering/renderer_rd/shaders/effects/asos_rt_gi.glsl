@@ -6,6 +6,9 @@
 
 #extension GL_EXT_ray_query : require
 #extension GL_EXT_ray_tracing_position_fetch : require
+// Each hit picks its own texture slot, so the index is not uniform across
+// invocations. Godot already requires this feature for its Vulkan renderer.
+#extension GL_EXT_nonuniform_qualifier : require
 
 // Asosdot one bounce ray traced global illumination.
 //
@@ -49,6 +52,9 @@ layout(set = 0, binding = 5, std430) restrict readonly buffer ShadingIndices {
 	uint data[];
 }
 shading_indices;
+
+#define ASOS_MAX_ALBEDO_TEXTURES 32
+layout(set = 0, binding = 6) uniform sampler2D albedo_textures[ASOS_MAX_ALBEDO_TEXTURES];
 
 layout(push_constant, std430) uniform Params {
 	mat4 inv_view_proj;
@@ -245,6 +251,12 @@ void main() {
 			if (dot(n_smooth, hit_normal) > 0.0) {
 				hit_normal = n_smooth;
 			}
+		}
+
+		// Texture detail at the hit, which is what stops every reflected and
+		// bounced surface reading as one flat colour.
+		if (inst.params.z != 0xFFFFFFFFu) {
+			albedo *= textureLod(albedo_textures[nonuniformEXT(inst.params.z)], hit_uv, 0.0).rgb;
 		}
 
 		float ndotl = max(dot(hit_normal, sun_dir), 0.0);

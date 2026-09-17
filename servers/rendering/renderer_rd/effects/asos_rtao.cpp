@@ -7,6 +7,7 @@
 #include "asos_rtao.h"
 
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
+#include "servers/rendering/renderer_rd/storage_rd/texture_storage.h"
 #include "servers/rendering/renderer_rd/uniform_set_cache_rd.h"
 
 using namespace RendererRD;
@@ -176,7 +177,8 @@ void AsosRTAO::denoise(RID p_source, RID p_depth_texture, RID p_dest, const Size
 }
 
 void AsosRTAO::render_gi(RID p_tlas, RID p_depth_texture, RID p_instance_buffer,
-		RID p_shading_vertices, RID p_shading_indices, RID p_dest_gi,
+		RID p_shading_vertices, RID p_shading_indices,
+		const LocalVector<RID> &p_albedo_textures, RID p_dest_gi,
 		const Size2i &p_size, const Projection &p_inv_view_proj, const Vector3 &p_cam_pos,
 		const Vector3 &p_sun_dir, float p_sun_energy, const Color &p_sun_color,
 		float p_gi_intensity, uint32_t p_ray_count, uint32_t p_frame, bool p_reflection) {
@@ -222,10 +224,23 @@ void AsosRTAO::render_gi(RID p_tlas, RID p_depth_texture, RID p_instance_buffer,
 	RD::Uniform u_verts(RD::UNIFORM_TYPE_STORAGE_BUFFER, 4, Vector<RID>({ p_shading_vertices }));
 	RD::Uniform u_idx(RD::UNIFORM_TYPE_STORAGE_BUFFER, 5, Vector<RID>({ p_shading_indices }));
 
+	// The shader declares a fixed sized array, so every slot must be filled.
+	// Unused ones get a white texture, which is also what an untextured
+	// surface multiplies by.
+	RID white = RendererRD::TextureStorage::get_singleton()->texture_rd_get_default(RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_WHITE);
+	RID albedo_sampler = material_storage->sampler_rd_get_default(RSE::CANVAS_ITEM_TEXTURE_FILTER_LINEAR_WITH_MIPMAPS, RSE::CANVAS_ITEM_TEXTURE_REPEAT_ENABLED);
+	Vector<RID> texture_ids;
+	texture_ids.resize(ASOS_MAX_ALBEDO_TEXTURES * 2);
+	for (int t = 0; t < ASOS_MAX_ALBEDO_TEXTURES; t++) {
+		texture_ids.write[t * 2 + 0] = albedo_sampler;
+		texture_ids.write[t * 2 + 1] = (t < (int)p_albedo_textures.size() && p_albedo_textures[t].is_valid()) ? p_albedo_textures[t] : white;
+	}
+	RD::Uniform u_albedo(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 6, texture_ids);
+
 	RD::ComputeListID compute_list = RD::get_singleton()->compute_list_begin();
 	RD::get_singleton()->compute_list_bind_compute_pipeline(compute_list, p_reflection ? reflection_pipeline : gi_pipeline);
 	RD::get_singleton()->compute_list_bind_uniform_set(compute_list,
-			uniform_set_cache->get_cache(gi_shader_rid, 0, u_tlas, u_depth, u_dest, u_instances, u_verts, u_idx), 0);
+			uniform_set_cache->get_cache(gi_shader_rid, 0, u_tlas, u_depth, u_dest, u_instances, u_verts, u_idx, u_albedo), 0);
 	RD::get_singleton()->compute_list_set_push_constant(compute_list, &push_constant, sizeof(GiPushConstant));
 	RD::get_singleton()->compute_list_dispatch_threads(compute_list, p_size.x, p_size.y, 1);
 	RD::get_singleton()->compute_list_end();

@@ -3720,6 +3720,8 @@ void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_c
 				RendererSceneRender::RaytracingInstance ri;
 				ri.mesh = ins->base;
 				ri.transform = ins->transform;
+				ri.material_override = ins->material_override;
+				ri.materials = ins->materials;
 				rt_instances.push_back(ri);
 			}
 		}

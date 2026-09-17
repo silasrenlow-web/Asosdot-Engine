@@ -243,6 +243,10 @@ public:
 	struct RaytracingInstance {
 		RID mesh;
 		Transform3D transform;
+		// Materials are usually assigned on the instance rather than the mesh,
+		// so both have to travel or the albedo lookup silently finds nothing.
+		RID material_override;
+		Vector<RID> materials;
 	};
 
 	// Rebuilds the scene top level acceleration structure for this frame.
