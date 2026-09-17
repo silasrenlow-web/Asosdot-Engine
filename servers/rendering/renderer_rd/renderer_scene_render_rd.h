@@ -210,6 +210,9 @@ public:
 	virtual void raytracing_update_tlas(const LocalVector<RaytracingInstance> &p_instances) override;
 	// Valid only while Asos Lighting is enabled and the device can trace.
 	_FORCE_INLINE_ RID raytracing_get_tlas() const { return rt_tlas; }
+	// Flat albedo per TLAS instance, indexed by the instance custom index a
+	// ray query reports. Lets a hit be shaded without bindless material access.
+	_FORCE_INLINE_ RID raytracing_get_instance_buffer() const { return rt_instance_buffer; }
 
 private:
 	// Scene TLAS. Capacity is fixed at creation, so it is recreated (rather
@@ -217,6 +220,8 @@ private:
 	RID rt_tlas;
 	uint32_t rt_tlas_capacity = 0;
 	uint32_t rt_tlas_instance_count = 0;
+	RID rt_instance_buffer;
+	uint32_t rt_instance_buffer_capacity = 0;
 
 public:
 	virtual void environment_set_sdfgi_frames_to_converge(RSE::EnvironmentSDFGIFramesToConverge p_frames) override;

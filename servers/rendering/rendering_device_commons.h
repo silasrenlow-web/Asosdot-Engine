@@ -921,6 +921,9 @@ public:
 		ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT = (1 << 2),
 		ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT = (1 << 3),
 		ACCELERATION_STRUCTURE_LOW_MEMORY_BIT = (1 << 4),
+		// Value matches VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_DATA_ACCESS_BIT_KHR;
+		// these flags are asserted to map 1:1 onto Vulkan's.
+		ACCELERATION_STRUCTURE_ALLOW_DATA_ACCESS_BIT = (1 << 11),
 	};
 
 	enum AccelerationStructureGeometryFlagBits {
@@ -1036,6 +1039,9 @@ public:
 		SUPPORTS_RAY_QUERY,
 		SUPPORTS_RAYTRACING_PIPELINE,
 		SUPPORTS_HDR_OUTPUT,
+		// Appended rather than grouped with the other raytracing entries so the
+		// existing values keep their numbering.
+		SUPPORTS_RAYTRACING_POSITION_FETCH,
 	};
 
 	enum SubgroupOperations {

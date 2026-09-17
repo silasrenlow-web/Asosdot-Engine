@@ -626,7 +626,15 @@ MeshStorage::Mesh::Surface *MeshStorage::_ensure_surface_blas(RID p_mesh, int p_
 		geometry.index_count = s->index_count;
 	}
 
-	RID blas = RD::get_singleton()->blas_create(Span<RD::AccelerationStructureGeometry>(&geometry, 1), RD::ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT);
+	// ALLOW_DATA_ACCESS keeps the triangle positions readable from a ray query,
+	// which is what lets a hit be shaded at all. Costs a little memory, so only
+	// ask for it where the device can actually use it.
+	BitField<RD::AccelerationStructureFlagBits> blas_flags = RD::ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT;
+	if (RD::get_singleton()->has_feature(RD::SUPPORTS_RAYTRACING_POSITION_FETCH)) {
+		blas_flags.set_flag(RD::ACCELERATION_STRUCTURE_ALLOW_DATA_ACCESS_BIT);
+	}
+
+	RID blas = RD::get_singleton()->blas_create(Span<RD::AccelerationStructureGeometry>(&geometry, 1), blas_flags);
 	if (!blas.is_valid()) {
 		return s;
 	}

@@ -8,6 +8,7 @@
 
 #include "core/math/projection.h"
 #include "servers/rendering/renderer_rd/shaders/effects/asos_rt_denoise.glsl.gen.h"
+#include "servers/rendering/renderer_rd/shaders/effects/asos_rt_gi.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/effects/asos_rt_shadow.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/effects/asos_rtao.glsl.gen.h"
 
@@ -17,6 +18,8 @@
 #define RB_RT_SHADOW SNAME("rt_shadow")
 #define RB_RT_SHADOW_BLUR SNAME("rt_shadow_blur")
 #define RB_RT_AO_RAW SNAME("rt_ao_raw")
+#define RB_RT_GI SNAME("rt_gi")
+#define RB_RT_GI_RAW SNAME("rt_gi_raw")
 
 namespace RendererRD {
 
@@ -61,6 +64,23 @@ private:
 	AsosRtDenoiseShaderRD denoise_shader;
 	RID denoise_shader_version;
 	RID denoise_pipeline;
+	RID denoise_color_pipeline;
+
+	AsosRtGiShaderRD gi_shader;
+	RID gi_shader_version;
+	RID gi_pipeline;
+
+	struct GiPushConstant {
+		float inv_view_proj[16];
+		float cam_pos[4];
+		float sun_dir[4]; // w = sun energy
+		float sun_color[4]; // w = gi intensity
+		float screen_size[2];
+		uint32_t ray_count;
+		uint32_t frame;
+	};
+
+	static_assert(sizeof(GiPushConstant) <= 128, "Push constant must fit the guaranteed 128 byte minimum.");
 
 	struct DenoisePushConstant {
 		float screen_size[2];
@@ -91,7 +111,14 @@ public:
 	// Depth aware blur of a traced visibility buffer. Source and destination
 	// must differ; a compute pass cannot safely read and write one image.
 	void denoise(RID p_source, RID p_depth_texture, RID p_dest, const Size2i &p_size,
-			int p_radius, float p_depth_tolerance);
+			int p_radius, float p_depth_tolerance, bool p_color = false);
+
+	// One bounce diffuse GI. p_instance_buffer holds a flat albedo per TLAS
+	// instance so hits can be shaded without bindless material access.
+	void render_gi(RID p_tlas, RID p_depth_texture, RID p_instance_buffer, RID p_dest_gi,
+			const Size2i &p_size, const Projection &p_inv_view_proj, const Vector3 &p_cam_pos,
+			const Vector3 &p_sun_dir, float p_sun_energy, const Color &p_sun_color,
+			float p_gi_intensity, uint32_t p_ray_count, uint32_t p_frame);
 };
 
 } // namespace RendererRD

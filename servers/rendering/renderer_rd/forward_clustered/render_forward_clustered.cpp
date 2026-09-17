@@ -767,6 +767,7 @@ uint32_t RenderForwardClustered::_setup_environment(const RenderDataRD *p_render
 			// Tells the lighting to use traced sun visibility in place of the
 			// shadow map for the first directional light.
 			ss_flags |= environment_get_asos_lighting(p_render_data->environment) ? (1 << 4) : 0;
+			ss_flags |= environment_get_asos_lighting(p_render_data->environment) ? (1 << 5) : 0;
 			ss_flags |= environment_get_ssil_enabled(p_render_data->environment) ? (1 << 1) : 0;
 			ss_flags |= environment_get_ssr_enabled(p_render_data->environment) ? (1 << 2) : 0;
 
@@ -1452,6 +1453,8 @@ void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_rend
 	RendererRD::LightStorage *light_storage = RendererRD::LightStorage::get_singleton();
 	Vector3 sun_dir;
 	float sun_angular_radius = 0.0f;
+	Color sun_color(1.0, 1.0, 1.0);
+	float sun_energy = 1.0f;
 	bool has_sun = false;
 	if (p_render_data->lights != nullptr) {
 		for (uint32_t li = 0; li < p_render_data->lights->size() && !has_sun; li++) {
@@ -1465,12 +1468,22 @@ void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_rend
 			// LIGHT_PARAM_SIZE is the angular diameter in degrees for directional
 			// lights; the cone sampler wants a radius in radians.
 			sun_angular_radius = Math::deg_to_rad(light_storage->light_get_param(base, RSE::LIGHT_PARAM_SIZE)) * 0.5f;
+			sun_color = light_storage->light_get_color(base);
+			sun_energy = light_storage->light_get_param(base, RSE::LIGHT_PARAM_ENERGY);
 			has_sun = true;
 		}
 	}
 
 	if (has_sun && !p_render_buffers->has_texture(RB_SCOPE_ASOS, RB_RT_SHADOW)) {
 		p_render_buffers->create_texture(RB_SCOPE_ASOS, RB_RT_SHADOW, RD::DATA_FORMAT_R8_UNORM,
+				RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT, RD::TEXTURE_SAMPLES_1);
+	}
+	if (!p_render_buffers->has_texture(RB_SCOPE_ASOS, RB_RT_GI)) {
+		p_render_buffers->create_texture(RB_SCOPE_ASOS, RB_RT_GI, RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
+				RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT, RD::TEXTURE_SAMPLES_1);
+	}
+	if (!p_render_buffers->has_texture(RB_SCOPE_ASOS, RB_RT_GI_RAW)) {
+		p_render_buffers->create_texture(RB_SCOPE_ASOS, RB_RT_GI_RAW, RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
 				RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT, RD::TEXTURE_SAMPLES_1);
 	}
 	if (!p_render_buffers->has_texture(RB_SCOPE_ASOS, RB_RT_AO_RAW)) {
@@ -1520,6 +1533,19 @@ void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_rend
 				const RID rt_shadow_blur = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_SHADOW_BLUR, v, 0);
 				if (rt_shadow_blur.is_valid()) {
 					asos_rtao->denoise(rt_shadow, depth, rt_shadow_blur, size, 3 /* radius */, 0.02f /* depth tolerance */);
+				}
+
+				// One bounce GI needs the sun as well, so it rides along here.
+				const RID instance_buffer = raytracing_get_instance_buffer();
+				const RID rt_gi = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_GI, v, 0);
+				const RID rt_gi_raw = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_GI_RAW, v, 0);
+				if (instance_buffer.is_valid() && rt_gi.is_valid() && rt_gi_raw.is_valid()) {
+					asos_rtao->render_gi(tlas, depth, instance_buffer, rt_gi_raw, size, view_proj.inverse(),
+							cam.origin, sun_dir, sun_energy, sun_color, 1.0f /* gi intensity */,
+							6u /* rays */, asos_rtao_frame);
+					// Bounce lighting is low frequency, so it tolerates a wider filter
+					// than the visibility buffers.
+					asos_rtao->denoise(rt_gi_raw, depth, rt_gi, size, 5 /* radius */, 0.03f /* depth tolerance */, true /* colour */);
 				}
 			}
 		}
@@ -3873,6 +3899,18 @@ RID RenderForwardClustered::_setup_render_pass_uniform_set(RenderListType p_rend
 		RID ssr_mip_level = (rb_data.is_valid() && !rb_data->ss_effects_data.ssr.half_size && rb->has_texture(RB_SCOPE_SSR, RB_MIP_LEVEL)) ? rb->get_texture(RB_SCOPE_SSR, RB_MIP_LEVEL) : RID();
 		RID texture = ssr_mip_level.is_valid() ? ssr_mip_level : texture_storage->texture_rd_get_default(is_multiview ? RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_2D_ARRAY_BLACK : RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_BLACK);
 		u.append_id(texture);
+		uniforms.push_back(u);
+	}
+	{
+		RD::Uniform u;
+		u.binding = 38;
+		u.uniform_type = RD::UNIFORM_TYPE_TEXTURE;
+
+		// Asosdot traced one bounce GI. Black when disabled, so the additive
+		// composite contributes nothing.
+		RID rt_gi = (rb.is_valid() && rb->has_texture(RB_SCOPE_ASOS, RB_RT_GI)) ? rb->get_texture(RB_SCOPE_ASOS, RB_RT_GI) : RID();
+		RID gi_texture = rt_gi.is_valid() ? rt_gi : texture_storage->texture_rd_get_default(is_multiview ? RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_2D_ARRAY_BLACK : RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_BLACK);
+		u.append_id(gi_texture);
 		uniforms.push_back(u);
 	}
 	{

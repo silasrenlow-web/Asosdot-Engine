@@ -16,7 +16,11 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set = 0, binding = 0) uniform sampler2D source;
 layout(set = 0, binding = 1) uniform sampler2D source_depth;
+#ifdef MODE_COLOR
+layout(rgba16f, set = 0, binding = 2) uniform restrict writeonly image2D dest;
+#else
 layout(r8, set = 0, binding = 2) uniform restrict writeonly image2D dest;
+#endif
 
 layout(push_constant, std430) uniform Params {
 	vec2 screen_size;
@@ -37,12 +41,19 @@ void main() {
 
 	float center_depth = texture(source_depth, uv).r;
 	if (center_depth <= 0.0) {
-		// Sky: nothing was traced here.
+#ifdef MODE_COLOR
+		// Sky contributes no bounced light.
+		imageStore(dest, coord, vec4(0.0));
+#else
+		// Sky is unoccluded.
 		imageStore(dest, coord, vec4(1.0));
+#endif
 		return;
 	}
 
-	float sum = 0.0;
+	// Accumulates rgb so one shader serves both the single channel visibility
+	// buffers and the colour GI buffer.
+	vec3 sum = vec3(0.0);
 	float weight_sum = 0.0;
 
 	// Gaussian falloff over the kernel, so distant taps contribute less.
@@ -73,11 +84,15 @@ void main() {
 			float dist_sq = float(x * x + y * y);
 			float w = exp(-dist_sq * inv_two_sigma_sq) * (1.0 - rel / params.depth_tolerance);
 
-			sum += texture(source, tap_uv).r * w;
+			sum += texture(source, tap_uv).rgb * w;
 			weight_sum += w;
 		}
 	}
 
-	float result = weight_sum > 0.0 ? (sum / weight_sum) : texture(source, uv).r;
-	imageStore(dest, coord, vec4(clamp(result, 0.0, 1.0)));
+	vec3 result = weight_sum > 0.0 ? (sum / weight_sum) : texture(source, uv).rgb;
+#ifdef MODE_COLOR
+	imageStore(dest, coord, vec4(max(result, vec3(0.0)), 1.0));
+#else
+	imageStore(dest, coord, vec4(clamp(result.r, 0.0, 1.0)));
+#endif
 }

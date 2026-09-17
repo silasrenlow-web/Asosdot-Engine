@@ -102,6 +102,11 @@ void RendererSceneRenderRD::raytracing_update_tlas(const LocalVector<RaytracingI
 	thread_local LocalVector<RD::AccelerationStructureInstance> as_instances;
 	as_instances.clear();
 
+	// Flat albedo per instance, in the same order, so a ray query can look up
+	// the colour of whatever it hit by instance custom index.
+	thread_local LocalVector<float> instance_albedo;
+	instance_albedo.clear();
+
 	for (uint32_t i = 0; i < p_instances.size(); i++) {
 		const RaytracingInstance &inst = p_instances[i];
 		if (inst.mesh.is_null()) {
@@ -120,12 +125,31 @@ void RendererSceneRenderRD::raytracing_update_tlas(const LocalVector<RaytracingI
 			// first step is identity except for compressed surfaces, whose
 			// positions are normalized into the surface AABB.
 			as_inst.transform = inst.transform * RSG::mesh_storage->mesh_surface_get_blas_transform(inst.mesh, s);
-			as_inst.id = i;
+			// Index into the albedo array, which is per traceable surface rather
+			// than per mesh instance.
+			as_inst.id = as_instances.size();
 			as_inst.mask = 0xFF;
 			// Ray queries dispatch no hit shaders, but tlas_build() rejects a
 			// zero range. The encoding is (count << 32) | offset.
 			as_inst.hit_sbt_range = int64_t(1) << 32;
 			as_inst.blas = blas;
+
+			// BaseMaterial3D exposes its base colour as the "albedo" shader
+			// parameter. Anything else (custom shaders, no material) falls back to
+			// white, which bounces light without tinting it.
+			Color albedo(1.0, 1.0, 1.0);
+			const RID surface_material = RSG::mesh_storage->mesh_surface_get_material(inst.mesh, s);
+			if (surface_material.is_valid()) {
+				const Variant param = RSG::material_storage->material_get_param(surface_material, "albedo");
+				if (param.get_type() == Variant::COLOR) {
+					albedo = param;
+				}
+			}
+			instance_albedo.push_back(albedo.r);
+			instance_albedo.push_back(albedo.g);
+			instance_albedo.push_back(albedo.b);
+			instance_albedo.push_back(1.0f);
+
 			as_instances.push_back(as_inst);
 		}
 	}
@@ -150,6 +174,23 @@ void RendererSceneRenderRD::raytracing_update_tlas(const LocalVector<RaytracingI
 	}
 
 	rd->tlas_build(rt_tlas, Span<RD::AccelerationStructureInstance>(as_instances.ptr(), as_instances.size()));
+
+	// Grown in step with the TLAS so indices always line up.
+	const uint32_t albedo_bytes = instance_albedo.size() * sizeof(float);
+	if (rt_instance_buffer.is_null() || albedo_bytes > rt_instance_buffer_capacity) {
+		if (rt_instance_buffer.is_valid()) {
+			rd->free_rid(rt_instance_buffer);
+			rt_instance_buffer = RID();
+		}
+		rt_instance_buffer_capacity = Math::next_power_of_2(albedo_bytes);
+		rt_instance_buffer = rd->storage_buffer_create(rt_instance_buffer_capacity);
+		if (rt_instance_buffer.is_null()) {
+			rt_instance_buffer_capacity = 0;
+			return;
+		}
+	}
+
+	rd->buffer_update(rt_instance_buffer, 0, albedo_bytes, instance_albedo.ptr());
 }
 
 void RendererSceneRenderRD::environment_set_sdfgi_ray_count(RSE::EnvironmentSDFGIRayCount p_ray_count) {
@@ -1951,6 +1992,10 @@ RendererSceneRenderRD::~RendererSceneRenderRD() {
 	if (rt_tlas.is_valid()) {
 		RD::get_singleton()->free_rid(rt_tlas);
 		rt_tlas = RID();
+	}
+	if (rt_instance_buffer.is_valid()) {
+		RD::get_singleton()->free_rid(rt_instance_buffer);
+		rt_instance_buffer = RID();
 	}
 
 	if (forward_id_storage) {

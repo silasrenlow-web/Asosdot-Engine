@@ -194,6 +194,7 @@ layout(set = 0, binding = 2) uniform sampler shadow_sampler;
 #define SCREEN_SPACE_EFFECTS_FLAGS_USE_SSR (1 << 2)
 #define SCREEN_SPACE_EFFECTS_FLAGS_RESOLVE_SSR (1 << 3)
 #define SCREEN_SPACE_EFFECTS_FLAGS_USE_ASOS_RT_SHADOW (1 << 4)
+#define SCREEN_SPACE_EFFECTS_FLAGS_USE_ASOS_RT_GI (1 << 5)
 
 layout(set = 0, binding = 3, std430) restrict readonly buffer OmniLights {
 	LightData data[];
@@ -476,11 +477,13 @@ layout(set = 1, binding = 34) uniform texture2DArray ssil_buffer;
 layout(set = 1, binding = 35) uniform texture2DArray ssr_buffer;
 layout(set = 1, binding = 36) uniform texture2DArray ssr_mip_level_buffer;
 layout(set = 1, binding = 37) uniform texture2DArray asos_rt_shadow;
+layout(set = 1, binding = 38) uniform texture2DArray asos_rt_gi;
 #else
 layout(set = 1, binding = 34) uniform texture2D ssil_buffer;
 layout(set = 1, binding = 35) uniform texture2D ssr_buffer;
 layout(set = 1, binding = 36) uniform texture2D ssr_mip_level_buffer;
 layout(set = 1, binding = 37) uniform texture2D asos_rt_shadow;
+layout(set = 1, binding = 38) uniform texture2D asos_rt_gi;
 #endif // USE_MULTIVIEW
 
 #endif
