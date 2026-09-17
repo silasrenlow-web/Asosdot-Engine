@@ -840,6 +840,27 @@ void RendererEnvironmentStorage::environment_set_asos_lighting(RID p_env, bool p
 	env->asos_lighting = p_enabled;
 }
 
+void RendererEnvironmentStorage::environment_set_asos_lighting_params(RID p_env, uint32_t p_features, int p_rays,
+		float p_ao_radius, float p_ao_intensity, float p_gi_intensity,
+		float p_temporal_blend, int p_denoise_radius, bool p_half_resolution) {
+	Environment *env = environment_owner.get_or_null(p_env);
+	ERR_FAIL_NULL(env);
+	env->asos_params.features = p_features;
+	env->asos_params.rays = p_rays;
+	env->asos_params.ao_radius = p_ao_radius;
+	env->asos_params.ao_intensity = p_ao_intensity;
+	env->asos_params.gi_intensity = p_gi_intensity;
+	env->asos_params.temporal_blend = p_temporal_blend;
+	env->asos_params.denoise_radius = p_denoise_radius;
+	env->asos_params.half_resolution = p_half_resolution;
+}
+
+RendererEnvironmentStorage::AsosLightingParams RendererEnvironmentStorage::environment_get_asos_lighting_params(RID p_env) const {
+	Environment *env = environment_owner.get_or_null(p_env);
+	ERR_FAIL_NULL_V(env, AsosLightingParams());
+	return env->asos_params;
+}
+
 bool RendererEnvironmentStorage::environment_get_asos_lighting(RID p_env) const {
 	Environment *env = environment_owner.get_or_null(p_env);
 	ERR_FAIL_NULL_V(env, false);

@@ -58,6 +58,19 @@ public:
 		};
 	};
 
+	// Grouped rather than passed as eight separate accessors, since the render
+	// path wants all of them at once.
+	struct AsosLightingParams {
+		uint32_t features = 0xF;
+		int rays = 4;
+		float ao_radius = 2.0f;
+		float ao_intensity = 1.0f;
+		float gi_intensity = 1.0f;
+		float temporal_blend = 0.93f;
+		int denoise_radius = 2;
+		bool half_resolution = true;
+	};
+
 private:
 	static RendererEnvironmentStorage *singleton;
 
@@ -162,8 +175,9 @@ private:
 
 		// SDFGI
 		bool sdfgi_enabled = false;
-		// Asosdot ray traced lighting toggle.
+		// Asosdot ray traced lighting toggle and its settings.
 		bool asos_lighting = false;
+		AsosLightingParams asos_params;
 		int sdfgi_cascades = 4;
 		float sdfgi_min_cell_size = 0.2;
 		bool sdfgi_use_occlusion = false;
@@ -316,6 +330,10 @@ public:
 	// SDFGI
 	void environment_set_sdfgi(RID p_env, bool p_enable, int p_cascades, float p_min_cell_size, RSE::EnvironmentSDFGIYScale p_y_scale, bool p_use_occlusion, float p_bounce_feedback, bool p_read_sky, float p_energy, float p_normal_bias, float p_probe_bias);
 	void environment_set_asos_lighting(RID p_env, bool p_enabled);
+	void environment_set_asos_lighting_params(RID p_env, uint32_t p_features, int p_rays,
+			float p_ao_radius, float p_ao_intensity, float p_gi_intensity,
+			float p_temporal_blend, int p_denoise_radius, bool p_half_resolution);
+	AsosLightingParams environment_get_asos_lighting_params(RID p_env) const;
 	bool environment_get_sdfgi_enabled(RID p_env) const;
 	bool environment_get_asos_lighting(RID p_env) const;
 	int environment_get_sdfgi_cascades(RID p_env) const;

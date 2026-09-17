@@ -591,10 +591,127 @@ float Environment::get_sdfgi_probe_bias() const {
 void Environment::set_sdfgi_asos_lighting(bool p_enabled) {
 	sdfgi_asos_lighting = p_enabled;
 	RS::get_singleton()->environment_set_asos_lighting(environment, sdfgi_asos_lighting);
+	_update_asos_params();
+	// The rest of the settings only exist while this is on, so the inspector
+	// has to be told to rebuild the list.
+	notify_property_list_changed();
 }
 
 bool Environment::is_sdfgi_asos_lighting() const {
 	return sdfgi_asos_lighting;
+}
+
+void Environment::set_sdfgi_asos_shadows(bool p_value) {
+	sdfgi_asos_shadows = p_value;
+	_update_asos_params();
+}
+
+bool Environment::is_sdfgi_asos_shadows() const {
+	return sdfgi_asos_shadows;
+}
+
+void Environment::set_sdfgi_asos_ambient_occlusion(bool p_value) {
+	sdfgi_asos_ambient_occlusion = p_value;
+	_update_asos_params();
+}
+
+bool Environment::is_sdfgi_asos_ambient_occlusion() const {
+	return sdfgi_asos_ambient_occlusion;
+}
+
+void Environment::set_sdfgi_asos_global_illumination(bool p_value) {
+	sdfgi_asos_global_illumination = p_value;
+	_update_asos_params();
+}
+
+bool Environment::is_sdfgi_asos_global_illumination() const {
+	return sdfgi_asos_global_illumination;
+}
+
+void Environment::set_sdfgi_asos_reflections(bool p_value) {
+	sdfgi_asos_reflections = p_value;
+	_update_asos_params();
+}
+
+bool Environment::is_sdfgi_asos_reflections() const {
+	return sdfgi_asos_reflections;
+}
+
+void Environment::set_sdfgi_asos_rays(int p_value) {
+	sdfgi_asos_rays = p_value;
+	_update_asos_params();
+}
+
+int Environment::get_sdfgi_asos_rays() const {
+	return sdfgi_asos_rays;
+}
+
+void Environment::set_sdfgi_asos_ao_radius(float p_value) {
+	sdfgi_asos_ao_radius = p_value;
+	_update_asos_params();
+}
+
+float Environment::get_sdfgi_asos_ao_radius() const {
+	return sdfgi_asos_ao_radius;
+}
+
+void Environment::set_sdfgi_asos_ao_intensity(float p_value) {
+	sdfgi_asos_ao_intensity = p_value;
+	_update_asos_params();
+}
+
+float Environment::get_sdfgi_asos_ao_intensity() const {
+	return sdfgi_asos_ao_intensity;
+}
+
+void Environment::set_sdfgi_asos_gi_intensity(float p_value) {
+	sdfgi_asos_gi_intensity = p_value;
+	_update_asos_params();
+}
+
+float Environment::get_sdfgi_asos_gi_intensity() const {
+	return sdfgi_asos_gi_intensity;
+}
+
+void Environment::set_sdfgi_asos_temporal_blend(float p_value) {
+	sdfgi_asos_temporal_blend = p_value;
+	_update_asos_params();
+}
+
+float Environment::get_sdfgi_asos_temporal_blend() const {
+	return sdfgi_asos_temporal_blend;
+}
+
+void Environment::set_sdfgi_asos_denoise_strength(int p_value) {
+	sdfgi_asos_denoise_strength = p_value;
+	_update_asos_params();
+}
+
+int Environment::get_sdfgi_asos_denoise_strength() const {
+	return sdfgi_asos_denoise_strength;
+}
+
+void Environment::set_sdfgi_asos_half_resolution(bool p_value) {
+	sdfgi_asos_half_resolution = p_value;
+	_update_asos_params();
+}
+
+bool Environment::is_sdfgi_asos_half_resolution() const {
+	return sdfgi_asos_half_resolution;
+}
+
+void Environment::_update_asos_params() {
+	// Per effect toggles travel as a bitmask rather than four more arguments.
+	uint32_t features = 0;
+	features |= sdfgi_asos_shadows ? (1 << 0) : 0;
+	features |= sdfgi_asos_ambient_occlusion ? (1 << 1) : 0;
+	features |= sdfgi_asos_global_illumination ? (1 << 2) : 0;
+	features |= sdfgi_asos_reflections ? (1 << 3) : 0;
+
+	RS::get_singleton()->environment_set_asos_lighting_params(environment, features,
+			sdfgi_asos_rays, sdfgi_asos_ao_radius, sdfgi_asos_ao_intensity,
+			sdfgi_asos_gi_intensity, sdfgi_asos_temporal_blend,
+			sdfgi_asos_denoise_strength, sdfgi_asos_half_resolution);
 }
 
 void Environment::_update_sdfgi() {
@@ -1117,6 +1234,15 @@ void Environment::_validate_property(PropertyInfo &p_property) const {
 	if (!Engine::get_singleton()->is_editor_hint()) {
 		return;
 	}
+
+	// Asos Lighting's settings only make sense while it is enabled, so they
+	// stay hidden until it is switched on.
+	if (p_property.name.begins_with("sdfgi_asos_") && p_property.name != "sdfgi_asos_lighting") {
+		if (!sdfgi_asos_lighting) {
+			p_property.usage = PROPERTY_USAGE_NO_EDITOR;
+		}
+		return;
+	}
 	if (p_property.name == "sky" || p_property.name == "sky_custom_fov" || p_property.name == "sky_rotation" || p_property.name == "ambient_light_sky_contribution") {
 		if (bg_mode != BG_SKY && ambient_source != AMBIENT_SOURCE_SKY && reflection_source != REFLECTION_SOURCE_SKY) {
 			p_property.usage = PROPERTY_USAGE_NO_EDITOR;
@@ -1402,6 +1528,28 @@ void Environment::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_sdfgi_enabled"), &Environment::is_sdfgi_enabled);
 	ClassDB::bind_method(D_METHOD("set_sdfgi_asos_lighting", "enabled"), &Environment::set_sdfgi_asos_lighting);
 	ClassDB::bind_method(D_METHOD("is_sdfgi_asos_lighting"), &Environment::is_sdfgi_asos_lighting);
+	ClassDB::bind_method(D_METHOD("set_sdfgi_asos_shadows", "value"), &Environment::set_sdfgi_asos_shadows);
+	ClassDB::bind_method(D_METHOD("is_sdfgi_asos_shadows"), &Environment::is_sdfgi_asos_shadows);
+	ClassDB::bind_method(D_METHOD("set_sdfgi_asos_ambient_occlusion", "value"), &Environment::set_sdfgi_asos_ambient_occlusion);
+	ClassDB::bind_method(D_METHOD("is_sdfgi_asos_ambient_occlusion"), &Environment::is_sdfgi_asos_ambient_occlusion);
+	ClassDB::bind_method(D_METHOD("set_sdfgi_asos_global_illumination", "value"), &Environment::set_sdfgi_asos_global_illumination);
+	ClassDB::bind_method(D_METHOD("is_sdfgi_asos_global_illumination"), &Environment::is_sdfgi_asos_global_illumination);
+	ClassDB::bind_method(D_METHOD("set_sdfgi_asos_reflections", "value"), &Environment::set_sdfgi_asos_reflections);
+	ClassDB::bind_method(D_METHOD("is_sdfgi_asos_reflections"), &Environment::is_sdfgi_asos_reflections);
+	ClassDB::bind_method(D_METHOD("set_sdfgi_asos_rays", "value"), &Environment::set_sdfgi_asos_rays);
+	ClassDB::bind_method(D_METHOD("get_sdfgi_asos_rays"), &Environment::get_sdfgi_asos_rays);
+	ClassDB::bind_method(D_METHOD("set_sdfgi_asos_ao_radius", "value"), &Environment::set_sdfgi_asos_ao_radius);
+	ClassDB::bind_method(D_METHOD("get_sdfgi_asos_ao_radius"), &Environment::get_sdfgi_asos_ao_radius);
+	ClassDB::bind_method(D_METHOD("set_sdfgi_asos_ao_intensity", "value"), &Environment::set_sdfgi_asos_ao_intensity);
+	ClassDB::bind_method(D_METHOD("get_sdfgi_asos_ao_intensity"), &Environment::get_sdfgi_asos_ao_intensity);
+	ClassDB::bind_method(D_METHOD("set_sdfgi_asos_gi_intensity", "value"), &Environment::set_sdfgi_asos_gi_intensity);
+	ClassDB::bind_method(D_METHOD("get_sdfgi_asos_gi_intensity"), &Environment::get_sdfgi_asos_gi_intensity);
+	ClassDB::bind_method(D_METHOD("set_sdfgi_asos_temporal_blend", "value"), &Environment::set_sdfgi_asos_temporal_blend);
+	ClassDB::bind_method(D_METHOD("get_sdfgi_asos_temporal_blend"), &Environment::get_sdfgi_asos_temporal_blend);
+	ClassDB::bind_method(D_METHOD("set_sdfgi_asos_denoise_strength", "value"), &Environment::set_sdfgi_asos_denoise_strength);
+	ClassDB::bind_method(D_METHOD("get_sdfgi_asos_denoise_strength"), &Environment::get_sdfgi_asos_denoise_strength);
+	ClassDB::bind_method(D_METHOD("set_sdfgi_asos_half_resolution", "value"), &Environment::set_sdfgi_asos_half_resolution);
+	ClassDB::bind_method(D_METHOD("is_sdfgi_asos_half_resolution"), &Environment::is_sdfgi_asos_half_resolution);
 	ClassDB::bind_method(D_METHOD("set_sdfgi_cascades", "amount"), &Environment::set_sdfgi_cascades);
 	ClassDB::bind_method(D_METHOD("get_sdfgi_cascades"), &Environment::get_sdfgi_cascades);
 	ClassDB::bind_method(D_METHOD("set_sdfgi_min_cell_size", "size"), &Environment::set_sdfgi_min_cell_size);
@@ -1428,6 +1576,17 @@ void Environment::_bind_methods() {
 	ADD_GROUP("SDFGI", "sdfgi_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sdfgi_enabled", PROPERTY_HINT_GROUP_ENABLE), "set_sdfgi_enabled", "is_sdfgi_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sdfgi_asos_lighting"), "set_sdfgi_asos_lighting", "is_sdfgi_asos_lighting");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sdfgi_asos_shadows"), "set_sdfgi_asos_shadows", "is_sdfgi_asos_shadows");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sdfgi_asos_ambient_occlusion"), "set_sdfgi_asos_ambient_occlusion", "is_sdfgi_asos_ambient_occlusion");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sdfgi_asos_global_illumination"), "set_sdfgi_asos_global_illumination", "is_sdfgi_asos_global_illumination");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sdfgi_asos_reflections"), "set_sdfgi_asos_reflections", "is_sdfgi_asos_reflections");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "sdfgi_asos_rays", PROPERTY_HINT_RANGE, "1,32,1"), "set_sdfgi_asos_rays", "get_sdfgi_asos_rays");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "sdfgi_asos_ao_radius", PROPERTY_HINT_RANGE, "0.05,16,0.05"), "set_sdfgi_asos_ao_radius", "get_sdfgi_asos_ao_radius");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "sdfgi_asos_ao_intensity", PROPERTY_HINT_RANGE, "0,4,0.01"), "set_sdfgi_asos_ao_intensity", "get_sdfgi_asos_ao_intensity");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "sdfgi_asos_gi_intensity", PROPERTY_HINT_RANGE, "0,8,0.01"), "set_sdfgi_asos_gi_intensity", "get_sdfgi_asos_gi_intensity");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "sdfgi_asos_temporal_blend", PROPERTY_HINT_RANGE, "0,0.99,0.01"), "set_sdfgi_asos_temporal_blend", "get_sdfgi_asos_temporal_blend");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "sdfgi_asos_denoise_strength", PROPERTY_HINT_RANGE, "0,5,1"), "set_sdfgi_asos_denoise_strength", "get_sdfgi_asos_denoise_strength");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sdfgi_asos_half_resolution"), "set_sdfgi_asos_half_resolution", "is_sdfgi_asos_half_resolution");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sdfgi_use_occlusion"), "set_sdfgi_use_occlusion", "is_sdfgi_using_occlusion");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sdfgi_read_sky_light"), "set_sdfgi_read_sky_light", "is_sdfgi_reading_sky_light");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "sdfgi_bounce_feedback", PROPERTY_HINT_RANGE, "0,1.99,0.01"), "set_sdfgi_bounce_feedback", "get_sdfgi_bounce_feedback");

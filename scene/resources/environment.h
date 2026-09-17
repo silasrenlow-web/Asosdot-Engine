@@ -152,6 +152,17 @@ private:
 	// SDFGI
 	bool sdfgi_enabled = false;
 	bool sdfgi_asos_lighting = false;
+	bool sdfgi_asos_shadows = true;
+	bool sdfgi_asos_ambient_occlusion = true;
+	bool sdfgi_asos_global_illumination = true;
+	bool sdfgi_asos_reflections = true;
+	int sdfgi_asos_rays = 4;
+	float sdfgi_asos_ao_radius = 2.0;
+	float sdfgi_asos_ao_intensity = 1.0;
+	float sdfgi_asos_gi_intensity = 1.0;
+	float sdfgi_asos_temporal_blend = 0.93;
+	int sdfgi_asos_denoise_strength = 2;
+	bool sdfgi_asos_half_resolution = true;
 	int sdfgi_cascades = 4;
 	float sdfgi_min_cell_size = 0.2;
 	SDFGIYScale sdfgi_y_scale = SDFGI_Y_SCALE_75_PERCENT;
@@ -162,6 +173,7 @@ private:
 	float sdfgi_normal_bias = 1.1;
 	float sdfgi_probe_bias = 1.1;
 	void _update_sdfgi();
+	void _update_asos_params();
 
 	// Glow
 	bool glow_enabled = false;
@@ -332,6 +344,28 @@ public:
 	// because ADD_GROUP("SDFGI", "sdfgi_") strips the prefix.
 	void set_sdfgi_asos_lighting(bool p_enabled);
 	bool is_sdfgi_asos_lighting() const;
+	void set_sdfgi_asos_shadows(bool p_value);
+	bool is_sdfgi_asos_shadows() const;
+	void set_sdfgi_asos_ambient_occlusion(bool p_value);
+	bool is_sdfgi_asos_ambient_occlusion() const;
+	void set_sdfgi_asos_global_illumination(bool p_value);
+	bool is_sdfgi_asos_global_illumination() const;
+	void set_sdfgi_asos_reflections(bool p_value);
+	bool is_sdfgi_asos_reflections() const;
+	void set_sdfgi_asos_rays(int p_value);
+	int get_sdfgi_asos_rays() const;
+	void set_sdfgi_asos_ao_radius(float p_value);
+	float get_sdfgi_asos_ao_radius() const;
+	void set_sdfgi_asos_ao_intensity(float p_value);
+	float get_sdfgi_asos_ao_intensity() const;
+	void set_sdfgi_asos_gi_intensity(float p_value);
+	float get_sdfgi_asos_gi_intensity() const;
+	void set_sdfgi_asos_temporal_blend(float p_value);
+	float get_sdfgi_asos_temporal_blend() const;
+	void set_sdfgi_asos_denoise_strength(int p_value);
+	int get_sdfgi_asos_denoise_strength() const;
+	void set_sdfgi_asos_half_resolution(bool p_value);
+	bool is_sdfgi_asos_half_resolution() const;
 	void set_sdfgi_cascades(int p_cascades);
 	int get_sdfgi_cascades() const;
 	void set_sdfgi_min_cell_size(float p_size);

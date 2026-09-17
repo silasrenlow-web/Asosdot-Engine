@@ -250,6 +250,10 @@ public:
 	virtual void raytracing_update_tlas(const LocalVector<RaytracingInstance> &p_instances) {}
 
 	void environment_set_asos_lighting(RID p_env, bool p_enabled);
+	void environment_set_asos_lighting_params(RID p_env, uint32_t p_features, int p_rays,
+			float p_ao_radius, float p_ao_intensity, float p_gi_intensity,
+			float p_temporal_blend, int p_denoise_radius, bool p_half_resolution);
+	RendererEnvironmentStorage::AsosLightingParams environment_get_asos_lighting_params(RID p_env) const;
 	bool environment_get_sdfgi_enabled(RID p_env) const;
 	bool environment_get_asos_lighting(RID p_env) const;
 	int environment_get_sdfgi_cascades(RID p_env) const;

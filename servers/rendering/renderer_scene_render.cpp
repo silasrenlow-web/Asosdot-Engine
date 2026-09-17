@@ -669,6 +669,18 @@ void RendererSceneRender::environment_set_asos_lighting(RID p_env, bool p_enable
 	environment_storage.environment_set_asos_lighting(p_env, p_enabled);
 }
 
+void RendererSceneRender::environment_set_asos_lighting_params(RID p_env, uint32_t p_features, int p_rays,
+			float p_ao_radius, float p_ao_intensity, float p_gi_intensity,
+			float p_temporal_blend, int p_denoise_radius, bool p_half_resolution) {
+	environment_storage.environment_set_asos_lighting_params(p_env, p_features, p_rays,
+			p_ao_radius, p_ao_intensity, p_gi_intensity, p_temporal_blend,
+			p_denoise_radius, p_half_resolution);
+}
+
+RendererEnvironmentStorage::AsosLightingParams RendererSceneRender::environment_get_asos_lighting_params(RID p_env) const {
+	return environment_storage.environment_get_asos_lighting_params(p_env);
+}
+
 bool RendererSceneRender::environment_get_asos_lighting(RID p_env) const {
 	return environment_storage.environment_get_asos_lighting(p_env);
 }

@@ -684,6 +684,9 @@ public:
 
 	virtual void environment_set_sdfgi(RID p_env, bool p_enable, int p_cascades, float p_min_cell_size, RSE::EnvironmentSDFGIYScale p_y_scale, bool p_use_occlusion, float p_bounce_feedback, bool p_read_sky, float p_energy, float p_normal_bias, float p_probe_bias) = 0;
 	virtual void environment_set_asos_lighting(RID p_env, bool p_enabled) = 0;
+	virtual void environment_set_asos_lighting_params(RID p_env, uint32_t p_features, int p_rays,
+			float p_ao_radius, float p_ao_intensity, float p_gi_intensity,
+			float p_temporal_blend, int p_denoise_radius, bool p_half_resolution) = 0;
 
 	virtual void environment_set_sdfgi_ray_count(RSE::EnvironmentSDFGIRayCount p_ray_count) = 0;
 

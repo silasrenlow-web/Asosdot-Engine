@@ -1350,6 +1350,7 @@ public:
 
 	PASS11(environment_set_sdfgi, RID, bool, int, float, RSE::EnvironmentSDFGIYScale, bool, float, bool, float, float, float)
 	PASS2(environment_set_asos_lighting, RID, bool)
+	PASS9(environment_set_asos_lighting_params, RID, uint32_t, int, float, float, float, float, int, bool)
 
 	PASS1RC(bool, environment_get_sdfgi_enabled, RID)
 	PASS1RC(int, environment_get_sdfgi_cascades, RID)
