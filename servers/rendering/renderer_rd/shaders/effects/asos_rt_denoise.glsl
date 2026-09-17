@@ -1,0 +1,83 @@
+#[compute]
+
+#version 450
+
+#VERSION_DEFINES
+
+// Asosdot denoiser for traced visibility buffers.
+//
+// A depth aware (bilateral) blur. Tracing a handful of rays per pixel is cheap
+// but noisy; neighbouring pixels on the same surface are estimating the same
+// quantity, so averaging them recovers most of the quality of a far larger ray
+// budget. Weighting by depth keeps the blur from bleeding across silhouettes,
+// which is what separates this from a plain box blur.
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D source;
+layout(set = 0, binding = 1) uniform sampler2D source_depth;
+layout(r8, set = 0, binding = 2) uniform restrict writeonly image2D dest;
+
+layout(push_constant, std430) uniform Params {
+	vec2 screen_size;
+	int radius;
+	float depth_tolerance; // relative depth difference treated as "same surface"
+}
+params;
+
+void main() {
+	ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 size = ivec2(params.screen_size);
+	if (coord.x >= size.x || coord.y >= size.y) {
+		return;
+	}
+
+	vec2 texel = 1.0 / params.screen_size;
+	vec2 uv = (vec2(coord) + 0.5) * texel;
+
+	float center_depth = texture(source_depth, uv).r;
+	if (center_depth <= 0.0) {
+		// Sky: nothing was traced here.
+		imageStore(dest, coord, vec4(1.0));
+		return;
+	}
+
+	float sum = 0.0;
+	float weight_sum = 0.0;
+
+	// Gaussian falloff over the kernel, so distant taps contribute less.
+	float sigma = max(float(params.radius) * 0.5, 0.5);
+	float inv_two_sigma_sq = 1.0 / (2.0 * sigma * sigma);
+
+	for (int y = -params.radius; y <= params.radius; y++) {
+		for (int x = -params.radius; x <= params.radius; x++) {
+			vec2 offset = vec2(float(x), float(y)) * texel;
+			vec2 tap_uv = uv + offset;
+			if (tap_uv.x < 0.0 || tap_uv.y < 0.0 || tap_uv.x > 1.0 || tap_uv.y > 1.0) {
+				continue;
+			}
+
+			float tap_depth = texture(source_depth, tap_uv).r;
+			if (tap_depth <= 0.0) {
+				continue;
+			}
+
+			// Reverse-Z depth is non-linear, so compare relative difference
+			// rather than an absolute epsilon that would only hold at one range.
+			float rel = abs(tap_depth - center_depth) / max(center_depth, 1e-6);
+			if (rel > params.depth_tolerance) {
+				// Different surface; including it would bleed across the edge.
+				continue;
+			}
+
+			float dist_sq = float(x * x + y * y);
+			float w = exp(-dist_sq * inv_two_sigma_sq) * (1.0 - rel / params.depth_tolerance);
+
+			sum += texture(source, tap_uv).r * w;
+			weight_sum += w;
+		}
+	}
+
+	float result = weight_sum > 0.0 ? (sum / weight_sum) : texture(source, uv).r;
+	imageStore(dest, coord, vec4(clamp(result, 0.0, 1.0)));
+}

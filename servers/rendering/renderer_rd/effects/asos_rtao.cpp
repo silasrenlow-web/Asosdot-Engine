@@ -22,11 +22,16 @@ AsosRTAO::AsosRTAO() {
 	shadow_shader.initialize(shader_modes);
 	shadow_shader_version = shadow_shader.version_create();
 	shadow_pipeline = RD::get_singleton()->compute_pipeline_create(shadow_shader.version_get_shader(shadow_shader_version, 0));
+
+	denoise_shader.initialize(shader_modes);
+	denoise_shader_version = denoise_shader.version_create();
+	denoise_pipeline = RD::get_singleton()->compute_pipeline_create(denoise_shader.version_get_shader(denoise_shader_version, 0));
 }
 
 AsosRTAO::~AsosRTAO() {
 	shader.version_free(shader_version);
 	shadow_shader.version_free(shadow_shader_version);
+	denoise_shader.version_free(denoise_shader_version);
 }
 
 void AsosRTAO::_dispatch(RID p_pipeline, RID p_shader, RID p_tlas, RID p_depth_texture, RID p_dest,
@@ -104,4 +109,42 @@ void AsosRTAO::render_shadow(RID p_tlas, RID p_depth_texture, RID p_dest_shadow,
 
 	_dispatch(shadow_pipeline, shadow_shader.version_get_shader(shadow_shader_version, 0), p_tlas,
 			p_depth_texture, p_dest_shadow, p_size, &push_constant, sizeof(ShadowPushConstant));
+}
+
+void AsosRTAO::denoise(RID p_source, RID p_depth_texture, RID p_dest, const Size2i &p_size,
+		int p_radius, float p_depth_tolerance) {
+	ERR_FAIL_COND(p_source.is_null());
+	ERR_FAIL_COND(p_depth_texture.is_null());
+	ERR_FAIL_COND(p_dest.is_null());
+	ERR_FAIL_COND(p_source == p_dest);
+	ERR_FAIL_COND(p_size.x <= 0 || p_size.y <= 0);
+
+	UniformSetCacheRD *uniform_set_cache = UniformSetCacheRD::get_singleton();
+	ERR_FAIL_NULL(uniform_set_cache);
+	MaterialStorage *material_storage = MaterialStorage::get_singleton();
+	ERR_FAIL_NULL(material_storage);
+
+	DenoisePushConstant push_constant = {};
+	push_constant.screen_size[0] = float(p_size.x);
+	push_constant.screen_size[1] = float(p_size.y);
+	push_constant.radius = p_radius;
+	push_constant.depth_tolerance = p_depth_tolerance;
+
+	// The visibility buffer is sampled linearly (neighbours are the point),
+	// depth point-wise so edges stay crisp.
+	RID linear_sampler = material_storage->sampler_rd_get_default(RSE::CANVAS_ITEM_TEXTURE_FILTER_LINEAR, RSE::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED);
+	RID point_sampler = material_storage->sampler_rd_get_default(RSE::CANVAS_ITEM_TEXTURE_FILTER_NEAREST, RSE::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED);
+	RID dn_shader = denoise_shader.version_get_shader(denoise_shader_version, 0);
+
+	RD::Uniform u_source(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 0, Vector<RID>({ linear_sampler, p_source }));
+	RD::Uniform u_depth(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 1, Vector<RID>({ point_sampler, p_depth_texture }));
+	RD::Uniform u_dest(RD::UNIFORM_TYPE_IMAGE, 2, Vector<RID>({ p_dest }));
+
+	RD::ComputeListID compute_list = RD::get_singleton()->compute_list_begin();
+	RD::get_singleton()->compute_list_bind_compute_pipeline(compute_list, denoise_pipeline);
+	RD::get_singleton()->compute_list_bind_uniform_set(compute_list,
+			uniform_set_cache->get_cache(dn_shader, 0, u_source, u_depth, u_dest), 0);
+	RD::get_singleton()->compute_list_set_push_constant(compute_list, &push_constant, sizeof(DenoisePushConstant));
+	RD::get_singleton()->compute_list_dispatch_threads(compute_list, p_size.x, p_size.y, 1);
+	RD::get_singleton()->compute_list_end();
 }

@@ -1473,6 +1473,14 @@ void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_rend
 		p_render_buffers->create_texture(RB_SCOPE_ASOS, RB_RT_SHADOW, RD::DATA_FORMAT_R8_UNORM,
 				RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT, RD::TEXTURE_SAMPLES_1);
 	}
+	if (!p_render_buffers->has_texture(RB_SCOPE_ASOS, RB_RT_AO_RAW)) {
+		p_render_buffers->create_texture(RB_SCOPE_ASOS, RB_RT_AO_RAW, RD::DATA_FORMAT_R8_UNORM,
+				RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT, RD::TEXTURE_SAMPLES_1);
+	}
+	if (has_sun && !p_render_buffers->has_texture(RB_SCOPE_ASOS, RB_RT_SHADOW_BLUR)) {
+		p_render_buffers->create_texture(RB_SCOPE_ASOS, RB_RT_SHADOW_BLUR, RD::DATA_FORMAT_R8_UNORM,
+				RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT, RD::TEXTURE_SAMPLES_1);
+	}
 
 	const Size2i size = p_render_buffers->get_internal_size();
 	const Transform3D &cam = p_render_data->scene_data->cam_transform;
@@ -1491,14 +1499,28 @@ void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_rend
 		if (depth.is_null() || ao.is_null()) {
 			continue;
 		}
-		asos_rtao->render(tlas, depth, ao, size, view_proj.inverse(), cam.origin,
-				2.0f /* radius */, 1.0f /* intensity */, 4u /* rays */, asos_rtao_frame);
+		// Trace AO into a private buffer, then denoise into the slot the
+		// lighting samples, so the raw noisy estimate never reaches the image.
+		const RID ao_raw = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_AO_RAW, v, 0);
+		if (ao_raw.is_valid()) {
+			asos_rtao->render(tlas, depth, ao_raw, size, view_proj.inverse(), cam.origin,
+					2.0f /* radius */, 1.0f /* intensity */, 4u /* rays */, asos_rtao_frame);
+			asos_rtao->denoise(ao_raw, depth, ao, size, 3 /* radius */, 0.02f /* depth tolerance */);
+		}
 
 		if (has_sun) {
 			const RID rt_shadow = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_SHADOW, v, 0);
 			if (rt_shadow.is_valid()) {
 				asos_rtao->render_shadow(tlas, depth, rt_shadow, size, view_proj.inverse(), cam.origin,
 						sun_dir, sun_angular_radius, 8u /* rays */, asos_rtao_frame);
+
+				// Neighbouring pixels on the same surface estimate the same
+				// visibility, so blurring across them recovers most of the quality
+				// of a much larger ray budget for a fraction of the cost.
+				const RID rt_shadow_blur = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_SHADOW_BLUR, v, 0);
+				if (rt_shadow_blur.is_valid()) {
+					asos_rtao->denoise(rt_shadow, depth, rt_shadow_blur, size, 3 /* radius */, 0.02f /* depth tolerance */);
+				}
 			}
 		}
 	}
@@ -3860,7 +3882,8 @@ RID RenderForwardClustered::_setup_render_pass_uniform_set(RenderListType p_rend
 
 		// Asosdot traced sun visibility. Falls back to white so the multiply
 		// in the lighting is a no-op whenever the feature is off.
-		RID rt_shadow = (rb.is_valid() && rb->has_texture(RB_SCOPE_ASOS, RB_RT_SHADOW)) ? rb->get_texture(RB_SCOPE_ASOS, RB_RT_SHADOW) : RID();
+		// Bind the denoised buffer, not the raw traced one.
+		RID rt_shadow = (rb.is_valid() && rb->has_texture(RB_SCOPE_ASOS, RB_RT_SHADOW_BLUR)) ? rb->get_texture(RB_SCOPE_ASOS, RB_RT_SHADOW_BLUR) : RID();
 		RID texture = rt_shadow.is_valid() ? rt_shadow : texture_storage->texture_rd_get_default(is_multiview ? RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_2D_ARRAY_WHITE : RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_WHITE);
 		u.append_id(texture);
 		uniforms.push_back(u);
