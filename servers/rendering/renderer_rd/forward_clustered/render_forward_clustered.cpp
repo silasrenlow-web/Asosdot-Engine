@@ -1585,9 +1585,11 @@ void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_rend
 				asos_rtao->accumulate(ao_raw, ao_hist, depth, ao_acc, half_size, reproject, 0.92f);
 				RD::get_singleton()->texture_copy(ao_acc, ao_hist, Vector3(), Vector3(),
 						Vector3(half_size.x, half_size.y, 1), 0, 0, 0, 0);
-				// Half res source, full res destination and depth: the denoiser
-				// becomes a depth aware upsample.
-				asos_rtao->denoise(ao_acc, depth, ao, size, 2 /* radius */, 0.02f /* depth tolerance */);
+				// Two a-trous passes. ao_raw is free once accumulation has copied
+				// to history, so it serves as scratch. The second pass also
+				// upsamples: half res source, full res destination and depth.
+				asos_rtao->denoise(ao_acc, depth, ao_raw, half_size, 2, 0.02f, false, 1);
+				asos_rtao->denoise(ao_raw, depth, ao, size, 2, 0.02f, false, 2);
 			} else {
 				asos_rtao->denoise(ao_raw, depth, ao, size, 3 /* radius */, 0.02f /* depth tolerance */);
 			}
@@ -1611,7 +1613,9 @@ void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_rend
 					asos_rtao->accumulate(rt_shadow, sh_hist, depth, sh_acc, size, reproject, 0.92f);
 					RD::get_singleton()->texture_copy(sh_acc, sh_hist, Vector3(), Vector3(),
 							Vector3(size.x, size.y, 1), 0, 0, 0, 0);
-					asos_rtao->denoise(sh_acc, depth, rt_shadow_blur, size, 2 /* radius */, 0.02f /* depth tolerance */);
+					// rt_shadow has already been consumed by accumulate, so reuse it.
+					asos_rtao->denoise(sh_acc, depth, rt_shadow, size, 2, 0.02f, false, 1);
+					asos_rtao->denoise(rt_shadow, depth, rt_shadow_blur, size, 2, 0.02f, false, 2);
 				}
 
 				// One bounce GI needs the sun as well, so it rides along here.
@@ -1630,8 +1634,9 @@ void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_rend
 						asos_rtao->accumulate(rt_gi_raw, gi_hist, depth, gi_acc, half_size, reproject, 0.94f, true);
 						RD::get_singleton()->texture_copy(gi_acc, gi_hist, Vector3(), Vector3(),
 								Vector3(half_size.x, half_size.y, 1), 0, 0, 0, 0);
-						// Half res source, full res destination: upsamples as it filters.
-						asos_rtao->denoise(gi_acc, depth, rt_gi, size, 3 /* radius */, 0.03f /* depth tolerance */, true /* colour */);
+						// Two a-trous passes, the second also upsampling.
+						asos_rtao->denoise(gi_acc, depth, rt_gi_raw, half_size, 2, 0.03f, true, 1);
+						asos_rtao->denoise(rt_gi_raw, depth, rt_gi, size, 2, 0.03f, true, 2);
 					} else {
 						asos_rtao->denoise(rt_gi_raw, depth, rt_gi, size, 5 /* radius */, 0.03f /* depth tolerance */, true /* colour */);
 					}
@@ -1652,7 +1657,10 @@ void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_rend
 						asos_rtao->accumulate(rt_refl_raw, refl_hist, depth, refl_acc, size, reproject, 0.94f, true);
 						RD::get_singleton()->texture_copy(refl_acc, refl_hist, Vector3(), Vector3(),
 								Vector3(size.x, size.y, 1), 0, 0, 0, 0);
-						asos_rtao->denoise(refl_acc, depth, rt_refl, size, 1 /* radius */, 0.01f /* depth tolerance */, true /* colour */);
+						// Kept narrow: reflections are high frequency and blur into
+						// mush faster than anything else here.
+						asos_rtao->denoise(refl_acc, depth, rt_refl_raw, size, 1, 0.01f, true, 1);
+						asos_rtao->denoise(rt_refl_raw, depth, rt_refl, size, 1, 0.01f, true, 2);
 					} else {
 						asos_rtao->denoise(rt_refl_raw, depth, rt_refl, size, 1 /* radius */, 0.01f /* depth tolerance */, true /* colour */);
 					}

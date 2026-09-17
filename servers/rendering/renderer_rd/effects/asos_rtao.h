@@ -112,6 +112,8 @@ private:
 		float screen_size[2];
 		int32_t radius;
 		float depth_tolerance;
+		int32_t step_size;
+		int32_t pad;
 	};
 
 	void _dispatch(RID p_pipeline, RID p_shader, RID p_tlas, RID p_depth_texture, RID p_dest,
@@ -142,7 +144,7 @@ public:
 	// Depth aware blur of a traced visibility buffer. Source and destination
 	// must differ; a compute pass cannot safely read and write one image.
 	void denoise(RID p_source, RID p_depth_texture, RID p_dest, const Size2i &p_size,
-			int p_radius, float p_depth_tolerance, bool p_color = false);
+			int p_radius, float p_depth_tolerance, bool p_color = false, int p_step = 1);
 
 	// One bounce diffuse GI. p_instance_buffer holds a flat albedo per TLAS
 	// instance so hits can be shaded without bindless material access.

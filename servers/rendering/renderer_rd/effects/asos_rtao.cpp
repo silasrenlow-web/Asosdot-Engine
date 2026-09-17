@@ -137,7 +137,7 @@ void AsosRTAO::render_shadow(RID p_tlas, RID p_depth_texture, RID p_dest_shadow,
 }
 
 void AsosRTAO::denoise(RID p_source, RID p_depth_texture, RID p_dest, const Size2i &p_size,
-		int p_radius, float p_depth_tolerance, bool p_color) {
+		int p_radius, float p_depth_tolerance, bool p_color, int p_step) {
 	ERR_FAIL_COND(p_source.is_null());
 	ERR_FAIL_COND(p_depth_texture.is_null());
 	ERR_FAIL_COND(p_dest.is_null());
@@ -154,6 +154,7 @@ void AsosRTAO::denoise(RID p_source, RID p_depth_texture, RID p_dest, const Size
 	push_constant.screen_size[1] = float(p_size.y);
 	push_constant.radius = p_radius;
 	push_constant.depth_tolerance = p_depth_tolerance;
+	push_constant.step_size = p_step;
 
 	// The visibility buffer is sampled linearly (neighbours are the point),
 	// depth point-wise so edges stay crisp.

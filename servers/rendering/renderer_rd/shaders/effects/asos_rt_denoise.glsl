@@ -26,6 +26,11 @@ layout(push_constant, std430) uniform Params {
 	vec2 screen_size;
 	int radius;
 	float depth_tolerance; // relative depth difference treated as "same surface"
+	// A-trous: taps spread by this many pixels. Running the same small filter
+	// twice with an increasing step covers far more area than one wide pass,
+	// because cost grows with tap count, not with reach.
+	int step_size;
+	int pad;
 }
 params;
 
@@ -62,7 +67,7 @@ void main() {
 
 	for (int y = -params.radius; y <= params.radius; y++) {
 		for (int x = -params.radius; x <= params.radius; x++) {
-			vec2 offset = vec2(float(x), float(y)) * texel;
+			vec2 offset = vec2(float(x), float(y)) * float(max(params.step_size, 1)) * texel;
 			vec2 tap_uv = uv + offset;
 			if (tap_uv.x < 0.0 || tap_uv.y < 0.0 || tap_uv.x > 1.0 || tap_uv.y > 1.0) {
 				continue;
@@ -81,7 +86,7 @@ void main() {
 				continue;
 			}
 
-			float dist_sq = float(x * x + y * y);
+			float dist_sq = float(x * x + y * y) * float(max(params.step_size, 1));
 			float w = exp(-dist_sq * inv_two_sigma_sq) * (1.0 - rel / params.depth_tolerance);
 
 			sum += texture(source, tap_uv) * w;
