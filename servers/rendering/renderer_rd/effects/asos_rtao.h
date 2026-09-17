@@ -9,6 +9,7 @@
 #include "core/math/projection.h"
 #include "servers/rendering/renderer_rd/shaders/effects/asos_rt_denoise.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/effects/asos_rt_gi.glsl.gen.h"
+#include "servers/rendering/renderer_rd/shaders/effects/asos_rt_temporal.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/effects/asos_rt_shadow.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/effects/asos_rtao.glsl.gen.h"
 
@@ -22,6 +23,16 @@
 #define RB_RT_GI_RAW SNAME("rt_gi_raw")
 #define RB_RT_REFLECTION SNAME("rt_reflection")
 #define RB_RT_REFLECTION_RAW SNAME("rt_reflection_raw")
+// Temporal accumulation needs somewhere to accumulate into and a copy of
+// last frame to blend against.
+#define RB_RT_GI_ACC SNAME("rt_gi_acc")
+#define RB_RT_GI_HIST SNAME("rt_gi_hist")
+#define RB_RT_SHADOW_ACC SNAME("rt_shadow_acc")
+#define RB_RT_SHADOW_HIST SNAME("rt_shadow_hist")
+#define RB_RT_REFL_ACC SNAME("rt_refl_acc")
+#define RB_RT_REFL_HIST SNAME("rt_refl_hist")
+#define RB_RT_AO_ACC SNAME("rt_ao_acc")
+#define RB_RT_AO_HIST SNAME("rt_ao_hist")
 
 namespace RendererRD {
 
@@ -73,6 +84,18 @@ private:
 	RID gi_pipeline;
 	RID reflection_pipeline;
 
+	AsosRtTemporalShaderRD temporal_shader;
+	RID temporal_shader_version;
+	RID temporal_pipeline;
+	RID temporal_color_pipeline;
+
+	struct TemporalPushConstant {
+		float reproject[16];
+		float screen_size[2];
+		float blend;
+		float pad;
+	};
+
 	struct GiPushConstant {
 		float inv_view_proj[16];
 		float cam_pos[4];
@@ -110,6 +133,11 @@ public:
 			const Projection &p_inv_view_proj, const Vector3 &p_cam_pos,
 			const Vector3 &p_sun_dir, float p_sun_angular_radius,
 			uint32_t p_ray_count, uint32_t p_frame);
+
+	// Blends this frame's estimate with the reprojected previous result.
+	// p_reproject maps current clip space to the previous frame's.
+	void accumulate(RID p_source, RID p_history, RID p_depth_texture, RID p_dest,
+			const Size2i &p_size, const Projection &p_reproject, float p_blend, bool p_color = false);
 
 	// Depth aware blur of a traced visibility buffer. Source and destination
 	// must differ; a compute pass cannot safely read and write one image.

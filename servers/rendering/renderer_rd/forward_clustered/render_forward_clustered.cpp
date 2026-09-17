@@ -1487,6 +1487,40 @@ void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_rend
 		p_render_buffers->create_texture(RB_SCOPE_ASOS, RB_RT_GI_RAW, RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
 				RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT, RD::TEXTURE_SAMPLES_1);
 	}
+	for (int i = 0; i < 2; i++) {
+		const StringName name = (i == 0) ? RB_RT_REFL_ACC : RB_RT_REFL_HIST;
+		if (!p_render_buffers->has_texture(RB_SCOPE_ASOS, name)) {
+			p_render_buffers->create_texture(RB_SCOPE_ASOS, name, RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
+					RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT | RD::TEXTURE_USAGE_CAN_COPY_FROM_BIT | RD::TEXTURE_USAGE_CAN_COPY_TO_BIT,
+					RD::TEXTURE_SAMPLES_1);
+		}
+	}
+	for (int i = 0; i < 2; i++) {
+		const StringName name = (i == 0) ? RB_RT_AO_ACC : RB_RT_AO_HIST;
+		if (!p_render_buffers->has_texture(RB_SCOPE_ASOS, name)) {
+			p_render_buffers->create_texture(RB_SCOPE_ASOS, name, RD::DATA_FORMAT_R8_UNORM,
+					RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT | RD::TEXTURE_USAGE_CAN_COPY_FROM_BIT | RD::TEXTURE_USAGE_CAN_COPY_TO_BIT,
+					RD::TEXTURE_SAMPLES_1);
+		}
+	}
+	for (int i = 0; i < 2; i++) {
+		const StringName name = (i == 0) ? RB_RT_GI_ACC : RB_RT_GI_HIST;
+		if (!p_render_buffers->has_texture(RB_SCOPE_ASOS, name)) {
+			p_render_buffers->create_texture(RB_SCOPE_ASOS, name, RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
+					RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT | RD::TEXTURE_USAGE_CAN_COPY_FROM_BIT | RD::TEXTURE_USAGE_CAN_COPY_TO_BIT,
+					RD::TEXTURE_SAMPLES_1);
+		}
+	}
+	if (has_sun) {
+		for (int i = 0; i < 2; i++) {
+			const StringName name = (i == 0) ? RB_RT_SHADOW_ACC : RB_RT_SHADOW_HIST;
+			if (!p_render_buffers->has_texture(RB_SCOPE_ASOS, name)) {
+				p_render_buffers->create_texture(RB_SCOPE_ASOS, name, RD::DATA_FORMAT_R8_UNORM,
+						RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT | RD::TEXTURE_USAGE_CAN_COPY_FROM_BIT | RD::TEXTURE_USAGE_CAN_COPY_TO_BIT,
+						RD::TEXTURE_SAMPLES_1);
+			}
+		}
+	}
 	if (!p_render_buffers->has_texture(RB_SCOPE_ASOS, RB_RT_REFLECTION)) {
 		p_render_buffers->create_texture(RB_SCOPE_ASOS, RB_RT_REFLECTION, RD::DATA_FORMAT_R16G16B16A16_SFLOAT,
 				RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT, RD::TEXTURE_SAMPLES_1);
@@ -1516,6 +1550,16 @@ void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_rend
 		// view_projection array here reconstructs positions that are subtly
 		// wrong -- plausible distances, wrong places.
 		const Projection view_proj = p_render_data->scene_data->get_view_projection(v) * view;
+
+		// Derive the depth correction from the current frame rather than
+		// rebuilding it, so the previous matrix is guaranteed to use the same
+		// convention as the one already known to be correct.
+		const Projection correction = p_render_data->scene_data->get_view_projection(v) *
+				p_render_data->scene_data->view_projection[v].inverse();
+		const Projection prev_view_proj = (correction * p_render_data->scene_data->prev_view_projection[v]) *
+				Projection(p_render_data->scene_data->prev_cam_transform.affine_inverse());
+		// Current clip space straight to the previous frame's.
+		const Projection reproject = prev_view_proj * view_proj.inverse();
 		const RID depth = p_render_buffers->get_depth_texture(v);
 		const RID ao = p_render_buffers->get_texture_slice(RB_SCOPE_SSAO, RB_FINAL, v, 0);
 		if (depth.is_null() || ao.is_null()) {
@@ -1527,7 +1571,17 @@ void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_rend
 		if (ao_raw.is_valid()) {
 			asos_rtao->render(tlas, depth, ao_raw, size, view_proj.inverse(), cam.origin,
 					2.0f /* radius */, 1.0f /* intensity */, 4u /* rays */, asos_rtao_frame);
-			asos_rtao->denoise(ao_raw, depth, ao, size, 3 /* radius */, 0.02f /* depth tolerance */);
+
+			const RID ao_acc = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_AO_ACC, v, 0);
+			const RID ao_hist = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_AO_HIST, v, 0);
+			if (ao_acc.is_valid() && ao_hist.is_valid()) {
+				asos_rtao->accumulate(ao_raw, ao_hist, depth, ao_acc, size, reproject, 0.92f);
+				RD::get_singleton()->texture_copy(ao_acc, ao_hist, Vector3(), Vector3(),
+						Vector3(size.x, size.y, 1), 0, 0, 0, 0);
+				asos_rtao->denoise(ao_acc, depth, ao, size, 2 /* radius */, 0.02f /* depth tolerance */);
+			} else {
+				asos_rtao->denoise(ao_raw, depth, ao, size, 3 /* radius */, 0.02f /* depth tolerance */);
+			}
 		}
 
 		if (has_sun) {
@@ -1540,8 +1594,15 @@ void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_rend
 				// visibility, so blurring across them recovers most of the quality
 				// of a much larger ray budget for a fraction of the cost.
 				const RID rt_shadow_blur = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_SHADOW_BLUR, v, 0);
-				if (rt_shadow_blur.is_valid()) {
-					asos_rtao->denoise(rt_shadow, depth, rt_shadow_blur, size, 3 /* radius */, 0.02f /* depth tolerance */);
+				const RID sh_acc = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_SHADOW_ACC, v, 0);
+				const RID sh_hist = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_SHADOW_HIST, v, 0);
+				if (rt_shadow_blur.is_valid() && sh_acc.is_valid() && sh_hist.is_valid()) {
+					// Accumulate first so the blur operates on a far cleaner estimate,
+					// then filter what noise survives.
+					asos_rtao->accumulate(rt_shadow, sh_hist, depth, sh_acc, size, reproject, 0.92f);
+					RD::get_singleton()->texture_copy(sh_acc, sh_hist, Vector3(), Vector3(),
+							Vector3(size.x, size.y, 1), 0, 0, 0, 0);
+					asos_rtao->denoise(sh_acc, depth, rt_shadow_blur, size, 2 /* radius */, 0.02f /* depth tolerance */);
 				}
 
 				// One bounce GI needs the sun as well, so it rides along here.
@@ -1554,7 +1615,16 @@ void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_rend
 							6u /* rays */, asos_rtao_frame);
 					// Bounce lighting is low frequency, so it tolerates a wider filter
 					// than the visibility buffers.
-					asos_rtao->denoise(rt_gi_raw, depth, rt_gi, size, 5 /* radius */, 0.03f /* depth tolerance */, true /* colour */);
+					const RID gi_acc = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_GI_ACC, v, 0);
+					const RID gi_hist = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_GI_HIST, v, 0);
+					if (gi_acc.is_valid() && gi_hist.is_valid()) {
+						asos_rtao->accumulate(rt_gi_raw, gi_hist, depth, gi_acc, size, reproject, 0.94f, true);
+						RD::get_singleton()->texture_copy(gi_acc, gi_hist, Vector3(), Vector3(),
+								Vector3(size.x, size.y, 1), 0, 0, 0, 0);
+						asos_rtao->denoise(gi_acc, depth, rt_gi, size, 3 /* radius */, 0.03f /* depth tolerance */, true /* colour */);
+					} else {
+						asos_rtao->denoise(rt_gi_raw, depth, rt_gi, size, 5 /* radius */, 0.03f /* depth tolerance */, true /* colour */);
+					}
 				}
 
 				const RID rt_refl = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_REFLECTION, v, 0);
@@ -1563,9 +1633,19 @@ void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_rend
 					asos_rtao->render_gi(tlas, depth, instance_buffer, rt_refl_raw, size, view_proj.inverse(),
 							cam.origin, sun_dir, sun_energy, sun_color, 1.0f /* intensity */,
 							1u /* rays */, asos_rtao_frame, true /* reflection */);
-					// Reflections are high frequency, so filter them far more gently
-					// than bounce lighting or the detail is lost.
-					asos_rtao->denoise(rt_refl_raw, depth, rt_refl, size, 1 /* radius */, 0.01f /* depth tolerance */, true /* colour */);
+					// Reflections are high frequency, so blurring them away is not an
+					// option -- almost all of their cleanup has to come from
+					// accumulating over time instead.
+					const RID refl_acc = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_REFL_ACC, v, 0);
+					const RID refl_hist = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_REFL_HIST, v, 0);
+					if (refl_acc.is_valid() && refl_hist.is_valid()) {
+						asos_rtao->accumulate(rt_refl_raw, refl_hist, depth, refl_acc, size, reproject, 0.94f, true);
+						RD::get_singleton()->texture_copy(refl_acc, refl_hist, Vector3(), Vector3(),
+								Vector3(size.x, size.y, 1), 0, 0, 0, 0);
+						asos_rtao->denoise(refl_acc, depth, rt_refl, size, 1 /* radius */, 0.01f /* depth tolerance */, true /* colour */);
+					} else {
+						asos_rtao->denoise(rt_refl_raw, depth, rt_refl, size, 1 /* radius */, 0.01f /* depth tolerance */, true /* colour */);
+					}
 				}
 			}
 		}

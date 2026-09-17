@@ -44,6 +44,11 @@ AsosRTAO::AsosRTAO() {
 	gi_shader_version = gi_shader.version_create();
 	gi_pipeline = RD::get_singleton()->compute_pipeline_create(gi_shader.version_get_shader(gi_shader_version, 0));
 	reflection_pipeline = RD::get_singleton()->compute_pipeline_create(gi_shader.version_get_shader(gi_shader_version, 1));
+
+	temporal_shader.initialize(denoise_modes);
+	temporal_shader_version = temporal_shader.version_create();
+	temporal_pipeline = RD::get_singleton()->compute_pipeline_create(temporal_shader.version_get_shader(temporal_shader_version, 0));
+	temporal_color_pipeline = RD::get_singleton()->compute_pipeline_create(temporal_shader.version_get_shader(temporal_shader_version, 1));
 }
 
 AsosRTAO::~AsosRTAO() {
@@ -51,6 +56,7 @@ AsosRTAO::~AsosRTAO() {
 	shadow_shader.version_free(shadow_shader_version);
 	denoise_shader.version_free(denoise_shader_version);
 	gi_shader.version_free(gi_shader_version);
+	temporal_shader.version_free(temporal_shader_version);
 }
 
 void AsosRTAO::_dispatch(RID p_pipeline, RID p_shader, RID p_tlas, RID p_depth_texture, RID p_dest,
@@ -215,6 +221,46 @@ void AsosRTAO::render_gi(RID p_tlas, RID p_depth_texture, RID p_instance_buffer,
 	RD::get_singleton()->compute_list_bind_uniform_set(compute_list,
 			uniform_set_cache->get_cache(gi_shader_rid, 0, u_tlas, u_depth, u_dest, u_instances), 0);
 	RD::get_singleton()->compute_list_set_push_constant(compute_list, &push_constant, sizeof(GiPushConstant));
+	RD::get_singleton()->compute_list_dispatch_threads(compute_list, p_size.x, p_size.y, 1);
+	RD::get_singleton()->compute_list_end();
+}
+
+void AsosRTAO::accumulate(RID p_source, RID p_history, RID p_depth_texture, RID p_dest,
+		const Size2i &p_size, const Projection &p_reproject, float p_blend, bool p_color) {
+	ERR_FAIL_COND(p_source.is_null());
+	ERR_FAIL_COND(p_history.is_null());
+	ERR_FAIL_COND(p_depth_texture.is_null());
+	ERR_FAIL_COND(p_dest.is_null());
+	ERR_FAIL_COND(p_source == p_dest || p_history == p_dest);
+	ERR_FAIL_COND(p_size.x <= 0 || p_size.y <= 0);
+
+	UniformSetCacheRD *uniform_set_cache = UniformSetCacheRD::get_singleton();
+	ERR_FAIL_NULL(uniform_set_cache);
+	MaterialStorage *material_storage = MaterialStorage::get_singleton();
+	ERR_FAIL_NULL(material_storage);
+
+	TemporalPushConstant push_constant = {};
+	MaterialStorage::store_camera(p_reproject, push_constant.reproject);
+	push_constant.screen_size[0] = float(p_size.x);
+	push_constant.screen_size[1] = float(p_size.y);
+	push_constant.blend = p_blend;
+
+	RID linear_sampler = material_storage->sampler_rd_get_default(RSE::CANVAS_ITEM_TEXTURE_FILTER_LINEAR, RSE::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED);
+	RID point_sampler = material_storage->sampler_rd_get_default(RSE::CANVAS_ITEM_TEXTURE_FILTER_NEAREST, RSE::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED);
+	RID tm_shader = temporal_shader.version_get_shader(temporal_shader_version, p_color ? 1 : 0);
+
+	RD::Uniform u_source(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 0, Vector<RID>({ point_sampler, p_source }));
+	// History is sampled at a reprojected, non-integer position, so it needs
+	// filtering; the current frame does not.
+	RD::Uniform u_history(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 1, Vector<RID>({ linear_sampler, p_history }));
+	RD::Uniform u_depth(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 2, Vector<RID>({ point_sampler, p_depth_texture }));
+	RD::Uniform u_dest(RD::UNIFORM_TYPE_IMAGE, 3, Vector<RID>({ p_dest }));
+
+	RD::ComputeListID compute_list = RD::get_singleton()->compute_list_begin();
+	RD::get_singleton()->compute_list_bind_compute_pipeline(compute_list, p_color ? temporal_color_pipeline : temporal_pipeline);
+	RD::get_singleton()->compute_list_bind_uniform_set(compute_list,
+			uniform_set_cache->get_cache(tm_shader, 0, u_source, u_history, u_depth, u_dest), 0);
+	RD::get_singleton()->compute_list_set_push_constant(compute_list, &push_constant, sizeof(TemporalPushConstant));
 	RD::get_singleton()->compute_list_dispatch_threads(compute_list, p_size.x, p_size.y, 1);
 	RD::get_singleton()->compute_list_end();
 }
