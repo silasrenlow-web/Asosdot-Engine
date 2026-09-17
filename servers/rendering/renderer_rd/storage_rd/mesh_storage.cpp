@@ -260,6 +260,19 @@ void MeshStorage::mesh_set_blend_shape_count(RID p_mesh, int p_blend_shape_count
 }
 
 /// Returns stride
+// True when this device can both trace rays and expose buffer device
+// addresses, which is what acceleration structure builds need.
+static bool _raytracing_build_supported() {
+	RenderingDevice *rd = RD::get_singleton();
+	if (rd == nullptr) {
+		return false;
+	}
+	if (!rd->has_feature(RD::SUPPORTS_BUFFER_DEVICE_ADDRESS)) {
+		return false;
+	}
+	return rd->has_feature(RD::SUPPORTS_RAY_QUERY) || rd->has_feature(RD::SUPPORTS_RAYTRACING_PIPELINE);
+}
+
 void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::SurfaceData &p_surface) {
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
@@ -375,7 +388,16 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 	s->primitive = new_surface.primitive;
 
 	const bool use_as_storage = (new_surface.skin_data.size() || mesh->blend_shape_count > 0);
-	const BitField<RD::BufferCreationBits> as_storage_flag = use_as_storage ? RD::BUFFER_CREATION_AS_STORAGE_BIT : 0;
+
+	// Ray tracing reads mesh geometry directly as acceleration structure build
+	// input, which requires the buffers to expose a device address. Only pay
+	// the cost on devices that can actually trace rays.
+	const bool use_for_raytracing = _raytracing_build_supported();
+	const BitField<RD::BufferCreationBits> rt_buffer_flags = use_for_raytracing
+			? (RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT | RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT)
+			: 0;
+	const BitField<RD::BufferCreationBits> as_storage_flag =
+			(use_as_storage ? RD::BUFFER_CREATION_AS_STORAGE_BIT : 0) | rt_buffer_flags;
 
 	if (new_surface.vertex_data.size()) {
 		// If we have an uncompressed surface that contains normals, but not tangents, we need to differentiate the array
@@ -415,7 +437,7 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 	if (new_surface.index_count) {
 		bool is_index_16 = new_surface.vertex_count <= 65536 && new_surface.vertex_count > 0;
 
-		s->index_buffer = RD::get_singleton()->index_buffer_create(new_surface.index_count, is_index_16 ? RD::INDEX_BUFFER_FORMAT_UINT16 : RD::INDEX_BUFFER_FORMAT_UINT32, new_surface.index_data, false);
+		s->index_buffer = RD::get_singleton()->index_buffer_create(new_surface.index_count, is_index_16 ? RD::INDEX_BUFFER_FORMAT_UINT16 : RD::INDEX_BUFFER_FORMAT_UINT32, new_surface.index_data, false, rt_buffer_flags);
 		s->index_buffer_size = new_surface.index_data.size();
 		s->index_count = new_surface.index_count;
 		s->index_array = RD::get_singleton()->index_array_create(s->index_buffer, 0, s->index_count);
@@ -517,6 +539,14 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 void MeshStorage::_mesh_surface_clear(Mesh *p_mesh, int p_surface) {
 	Mesh::Surface &s = *p_mesh->surfaces[p_surface];
 
+	// The BLAS is registered as a dependent of the vertex and index buffers
+	// (see blas_create), so it has to be freed before them -- freeing those
+	// buffers first would destroy it implicitly and leave this a double free.
+	if (s.blas.is_valid()) {
+		RD::get_singleton()->free_rid(s.blas);
+		s.blas = RID();
+	}
+
 	if (s.vertex_buffer.is_valid()) {
 		RD::get_singleton()->free_rid(s.vertex_buffer); // Clears arrays as dependency automatically, including all versions.
 	}
@@ -546,6 +576,78 @@ void MeshStorage::_mesh_surface_clear(Mesh *p_mesh, int p_surface) {
 	}
 
 	memdelete(p_mesh->surfaces[p_surface]);
+}
+
+MeshStorage::Mesh::Surface *MeshStorage::_ensure_surface_blas(RID p_mesh, int p_surface) {
+	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
+	ERR_FAIL_NULL_V(mesh, nullptr);
+	ERR_FAIL_INDEX_V(p_surface, (int)mesh->surface_count, nullptr);
+
+	Mesh::Surface *s = mesh->surfaces[p_surface];
+
+	if (s->blas.is_valid() || s->blas_attempted) {
+		return s;
+	}
+
+	// Mark up front: a surface that cannot be built must not be retried
+	// every frame, since a failed build is not free.
+	s->blas_attempted = true;
+
+	if (s->primitive != RSE::PRIMITIVE_TRIANGLES) {
+		// Acceleration structures only hold triangles.
+		return s;
+	}
+	if (!s->vertex_buffer.is_valid() || s->vertex_count == 0) {
+		return s;
+	}
+
+	RD::AccelerationStructureGeometry geometry;
+	geometry.flags = RD::ACCELERATION_STRUCTURE_GEOMETRY_OPAQUE_BIT;
+	geometry.vertex_buffer = s->vertex_buffer;
+	// Positions occupy the first contiguous block of the vertex buffer.
+	geometry.vertex_offset = 0;
+	geometry.vertex_count = s->vertex_count;
+	geometry.vertex_stride = RS::get_singleton()->mesh_surface_get_format_vertex_stride(s->format, s->vertex_count);
+
+	if (s->format & RSE::ARRAY_FLAG_COMPRESS_ATTRIBUTES) {
+		// Compressed positions are four uint16 normalized into the surface
+		// AABB. The acceleration structure stores them as-is and the decode
+		// is folded into the instance transform instead of rewriting data.
+		geometry.vertex_format = RD::DATA_FORMAT_R16G16B16A16_UNORM;
+		s->blas_to_model = Transform3D(Basis().scaled(s->aabb.size), s->aabb.position);
+	} else {
+		geometry.vertex_format = RD::DATA_FORMAT_R32G32B32_SFLOAT;
+		s->blas_to_model = Transform3D();
+	}
+
+	if (s->index_buffer.is_valid() && s->index_count > 0) {
+		geometry.index_buffer = s->index_buffer;
+		geometry.index_offset = 0;
+		geometry.index_count = s->index_count;
+	}
+
+	RID blas = RD::get_singleton()->blas_create(Span<RD::AccelerationStructureGeometry>(&geometry, 1), RD::ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT);
+	if (!blas.is_valid()) {
+		return s;
+	}
+
+	if (RD::get_singleton()->blas_build(blas) != OK) {
+		RD::get_singleton()->free_rid(blas);
+		return s;
+	}
+
+	s->blas = blas;
+	return s;
+}
+
+RID MeshStorage::mesh_surface_get_blas(RID p_mesh, int p_surface) {
+	Mesh::Surface *s = _ensure_surface_blas(p_mesh, p_surface);
+	return s != nullptr ? s->blas : RID();
+}
+
+Transform3D MeshStorage::mesh_surface_get_blas_transform(RID p_mesh, int p_surface) {
+	Mesh::Surface *s = _ensure_surface_blas(p_mesh, p_surface);
+	return s != nullptr ? s->blas_to_model : Transform3D();
 }
 
 int MeshStorage::mesh_get_blend_shape_count(RID p_mesh) const {

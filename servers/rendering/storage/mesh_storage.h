@@ -69,6 +69,11 @@ public:
 
 	virtual int mesh_get_surface_count(RID p_mesh) const = 0;
 
+	// Ray tracing. Deliberately not pure virtual: backends without
+	// acceleration structure support inherit a safe "unavailable" answer.
+	virtual RID mesh_surface_get_blas(RID p_mesh, int p_surface) { return RID(); }
+	virtual Transform3D mesh_surface_get_blas_transform(RID p_mesh, int p_surface) { return Transform3D(); }
+
 	virtual void mesh_set_custom_aabb(RID p_mesh, const AABB &p_aabb) = 0;
 	virtual AABB mesh_get_custom_aabb(RID p_mesh) const = 0;
 	virtual AABB mesh_get_aabb(RID p_mesh, RID p_skeleton = RID()) = 0;

@@ -128,6 +128,14 @@ private:
 
 			AABB aabb;
 
+			// Ray tracing. Built on demand by mesh_surface_get_blas(), never as
+			// part of surface creation -- most meshes in a scene are never traced.
+			// blas_to_model decodes acceleration structure space back to model
+			// space, which is only non-identity for compressed surfaces.
+			RID blas;
+			Transform3D blas_to_model;
+			bool blas_attempted = false;
+
 			Vector<AABB> bone_aabbs;
 
 			// Transform used in runtime bone AABBs compute.
@@ -213,6 +221,8 @@ private:
 	RD::VertexFormatID _mesh_surface_generate_vertex_format(uint64_t p_surface_format, uint64_t p_input_mask, bool p_instanced_surface, bool p_input_motion_vectors, bool p_point_size_emulated, uint32_t &r_position_stride);
 	void _mesh_surface_generate_version_for_input_mask(Mesh::Surface::Version &v, Mesh::Surface *s, uint64_t p_input_mask, bool p_input_motion_vectors, bool p_point_size_emulated, MeshInstance::Surface *mis = nullptr, uint32_t p_current_buffer = 0, uint32_t p_previous_buffer = 0);
 	void _mesh_surface_clear(Mesh *p_mesh, int p_surface);
+	// Builds the surface BLAS if needed; returns nullptr when untraceable.
+	Mesh::Surface *_ensure_surface_blas(RID p_mesh, int p_surface);
 
 	void _mesh_instance_clear(MeshInstance *mi);
 	void _mesh_instance_add_surface(MeshInstance *mi, Mesh *mesh, uint32_t p_surface);
@@ -393,6 +403,16 @@ public:
 	virtual RenderingServerTypes::SurfaceData mesh_get_surface(RID p_mesh, int p_surface) const override;
 
 	virtual int mesh_get_surface_count(RID p_mesh) const override;
+
+	// Ray tracing: lazily builds the bottom level acceleration structure for
+	// one surface. Returns an invalid RID for geometry that cannot be traced
+	// (non-triangle primitives, no vertex data, or a failed build) and never
+	// retries a build that already failed.
+	virtual RID mesh_surface_get_blas(RID p_mesh, int p_surface) override;
+	// Maps acceleration structure space to model space. Identity except for
+	// compressed surfaces, whose positions are normalized into the surface
+	// AABB. Fold this into the TLAS instance transform.
+	virtual Transform3D mesh_surface_get_blas_transform(RID p_mesh, int p_surface) override;
 
 	virtual void mesh_set_custom_aabb(RID p_mesh, const AABB &p_aabb) override;
 	virtual AABB mesh_get_custom_aabb(RID p_mesh) const override;

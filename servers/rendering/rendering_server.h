@@ -230,6 +230,12 @@ public:
 
 	virtual int mesh_get_surface_count(RID p_mesh) const = 0;
 
+	// Ray tracing: per-surface bottom level acceleration structure, built on
+	// first request. Exposed so acceleration structures can be driven from
+	// script while the ray traced lighting path is being developed.
+	virtual RID mesh_surface_get_blas(RID p_mesh, int p_surface) = 0;
+	virtual Transform3D mesh_surface_get_blas_transform(RID p_mesh, int p_surface) = 0;
+
 	virtual void mesh_set_custom_aabb(RID p_mesh, const AABB &p_aabb) = 0;
 	virtual AABB mesh_get_custom_aabb(RID p_mesh) const = 0;
 

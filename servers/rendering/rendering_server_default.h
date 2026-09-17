@@ -408,6 +408,8 @@ public:
 	FUNC2RC(RenderingServerTypes::SurfaceData, mesh_get_surface, RID, int)
 
 	FUNC1RC(int, mesh_get_surface_count, RID)
+	FUNC2R(RID, mesh_surface_get_blas, RID, int)
+	FUNC2R(Transform3D, mesh_surface_get_blas_transform, RID, int)
 
 	FUNC2(mesh_set_custom_aabb, RID, const AABB &)
 	FUNC1RC(AABB, mesh_get_custom_aabb, RID)
