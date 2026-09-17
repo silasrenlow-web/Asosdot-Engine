@@ -92,6 +92,66 @@ void RendererSceneRenderRD::environment_set_volumetric_fog_filter_active(bool p_
 	volumetric_fog_filter_active = p_enable;
 }
 
+void RendererSceneRenderRD::raytracing_update_tlas(const LocalVector<RaytracingInstance> &p_instances) {
+	RD *rd = RD::get_singleton();
+	if (rd == nullptr || !rd->has_feature(RD::SUPPORTS_RAY_QUERY)) {
+		return;
+	}
+
+	// One TLAS instance per traceable surface, since a BLAS is per surface.
+	thread_local LocalVector<RD::AccelerationStructureInstance> as_instances;
+	as_instances.clear();
+
+	for (uint32_t i = 0; i < p_instances.size(); i++) {
+		const RaytracingInstance &inst = p_instances[i];
+		if (inst.mesh.is_null()) {
+			continue;
+		}
+		const int surface_count = RSG::mesh_storage->mesh_get_surface_count(inst.mesh);
+		for (int s = 0; s < surface_count; s++) {
+			const RID blas = RSG::mesh_storage->mesh_surface_get_blas(inst.mesh, s);
+			if (blas.is_null()) {
+				// Untraceable surface (non-triangle, or the build failed).
+				continue;
+			}
+
+			RD::AccelerationStructureInstance as_inst;
+			// Acceleration structure space -> model space -> world space. The
+			// first step is identity except for compressed surfaces, whose
+			// positions are normalized into the surface AABB.
+			as_inst.transform = inst.transform * RSG::mesh_storage->mesh_surface_get_blas_transform(inst.mesh, s);
+			as_inst.id = i;
+			as_inst.mask = 0xFF;
+			// Ray queries dispatch no hit shaders, but tlas_build() rejects a
+			// zero range. The encoding is (count << 32) | offset.
+			as_inst.hit_sbt_range = int64_t(1) << 32;
+			as_inst.blas = blas;
+			as_instances.push_back(as_inst);
+		}
+	}
+
+	rt_tlas_instance_count = as_instances.size();
+	if (as_instances.is_empty()) {
+		return;
+	}
+
+	if (rt_tlas.is_null() || as_instances.size() > rt_tlas_capacity) {
+		if (rt_tlas.is_valid()) {
+			rd->free_rid(rt_tlas);
+			rt_tlas = RID();
+		}
+		// Round up so a slowly growing scene does not reallocate every frame.
+		rt_tlas_capacity = Math::next_power_of_2(as_instances.size());
+		rt_tlas = rd->tlas_create(rt_tlas_capacity, RD::ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT);
+		if (rt_tlas.is_null()) {
+			rt_tlas_capacity = 0;
+			return;
+		}
+	}
+
+	rd->tlas_build(rt_tlas, Span<RD::AccelerationStructureInstance>(as_instances.ptr(), as_instances.size()));
+}
+
 void RendererSceneRenderRD::environment_set_sdfgi_ray_count(RSE::EnvironmentSDFGIRayCount p_ray_count) {
 	gi.sdfgi_ray_count = p_ray_count;
 }
@@ -1885,6 +1945,14 @@ void RendererSceneRenderRD::init() {
 }
 
 RendererSceneRenderRD::~RendererSceneRenderRD() {
+	// Scene TLAS is owned by the renderer, not by any render buffer, so it has
+	// to be released explicitly. Its BLASes belong to the meshes and are freed
+	// with them.
+	if (rt_tlas.is_valid()) {
+		RD::get_singleton()->free_rid(rt_tlas);
+		rt_tlas = RID();
+	}
+
 	if (forward_id_storage) {
 		memdelete(forward_id_storage);
 	}

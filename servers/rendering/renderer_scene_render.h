@@ -31,6 +31,7 @@
 #pragma once
 
 #include "core/math/projection.h"
+#include "core/templates/local_vector.h"
 #include "core/templates/paged_array.h"
 #include "servers/rendering/renderer_geometry_instance.h"
 #include "servers/rendering/rendering_server_types.h"

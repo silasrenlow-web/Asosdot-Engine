@@ -2641,6 +2641,19 @@ void fragment_shader(in SceneData scene_data) {
 			}
 
 			shadow = mix(1.0, shadow, directional_lights.data[i].shadow_opacity);
+
+			// Asosdot: REPLACE the shadow map term with traced sun visibility.
+			// Multiplying would only ever darken pixels the shadow map already
+			// lit, hiding the difference wherever the two agree. Only the first
+			// directional light is traced for now.
+			if (i == 0 && bool(implementation_data.ss_effects_flags & SCREEN_SPACE_EFFECTS_FLAGS_USE_ASOS_RT_SHADOW)) {
+#ifdef USE_MULTIVIEW
+				float rt_vis = texture(sampler2DArray(asos_rt_shadow, SAMPLER_LINEAR_CLAMP), vec3(screen_uv, ViewIndex)).r;
+#else
+				float rt_vis = texture(sampler2D(asos_rt_shadow, SAMPLER_LINEAR_CLAMP), screen_uv).r;
+#endif
+				shadow = mix(1.0, rt_vis, directional_lights.data[i].shadow_opacity);
+			}
 #endif
 
 			blur_shadow(shadow);

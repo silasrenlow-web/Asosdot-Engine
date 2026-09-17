@@ -206,6 +206,19 @@ public:
 	virtual void environment_set_volumetric_fog_filter_active(bool p_enable) override;
 
 	virtual void environment_set_sdfgi_ray_count(RSE::EnvironmentSDFGIRayCount p_ray_count) override;
+
+	virtual void raytracing_update_tlas(const LocalVector<RaytracingInstance> &p_instances) override;
+	// Valid only while Asos Lighting is enabled and the device can trace.
+	_FORCE_INLINE_ RID raytracing_get_tlas() const { return rt_tlas; }
+
+private:
+	// Scene TLAS. Capacity is fixed at creation, so it is recreated (rather
+	// than rebuilt) whenever the instance count outgrows it.
+	RID rt_tlas;
+	uint32_t rt_tlas_capacity = 0;
+	uint32_t rt_tlas_instance_count = 0;
+
+public:
 	virtual void environment_set_sdfgi_frames_to_converge(RSE::EnvironmentSDFGIFramesToConverge p_frames) override;
 	virtual void environment_set_sdfgi_frames_to_update_light(RSE::EnvironmentSDFGIFramesToUpdateLight p_update) override;
 

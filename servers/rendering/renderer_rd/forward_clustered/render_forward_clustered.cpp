@@ -30,6 +30,8 @@
 
 #include "render_forward_clustered.h"
 
+#include "core/os/os.h"
+
 #include "core/config/project_settings.h"
 #include "servers/rendering/renderer_rd/environment/fog.h"
 #include "servers/rendering/renderer_rd/framebuffer_cache_rd.h"
@@ -757,7 +759,14 @@ uint32_t RenderForwardClustered::_setup_environment(const RenderDataRD *p_render
 		scene_state.ubo.ssao_light_affect = environment_get_ssao_direct_light_affect(p_render_data->environment);
 		uint32_t ss_flags = 0;
 		if (p_opaque_render_buffers) {
-			ss_flags |= environment_get_ssao_enabled(p_render_data->environment) ? (1 << 0) : 0;
+			// Asosdot RTAO writes into the same AO buffer as screen space AO, so
+			// the lighting has to be told to sample it even when SSAO is off.
+			const bool use_ao_buffer = environment_get_ssao_enabled(p_render_data->environment) ||
+					environment_get_asos_lighting(p_render_data->environment);
+			ss_flags |= use_ao_buffer ? (1 << 0) : 0;
+			// Tells the lighting to use traced sun visibility in place of the
+			// shadow map for the first directional light.
+			ss_flags |= environment_get_asos_lighting(p_render_data->environment) ? (1 << 4) : 0;
 			ss_flags |= environment_get_ssil_enabled(p_render_data->environment) ? (1 << 1) : 0;
 			ss_flags |= environment_get_ssr_enabled(p_render_data->environment) ? (1 << 2) : 0;
 
@@ -1419,6 +1428,82 @@ void RenderForwardClustered::setup_added_decal(const Transform3D &p_transform, c
 
 /* Render scene */
 
+void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_render_buffers, RenderDataRD *p_render_data) {
+	ERR_FAIL_NULL(asos_rtao);
+	ERR_FAIL_COND(p_render_buffers.is_null());
+
+	const RID tlas = raytracing_get_tlas();
+	if (tlas.is_null()) {
+		// Nothing traceable in the scenario yet.
+		return;
+	}
+
+	RENDER_TIMESTAMP("Asos RTAO");
+
+	// Screen space AO may not have allocated this. The lighting samples
+	// whatever texture lives at this slot, so create it when it is missing.
+	if (!p_render_buffers->has_texture(RB_SCOPE_SSAO, RB_FINAL)) {
+		p_render_buffers->create_texture(RB_SCOPE_SSAO, RB_FINAL, RD::DATA_FORMAT_R8_UNORM,
+				RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT, RD::TEXTURE_SAMPLES_1);
+	}
+
+	// Find the first directional light to trace shadows from. Godot lights
+	// shine along their local -Z, so +Z points back toward the sun.
+	RendererRD::LightStorage *light_storage = RendererRD::LightStorage::get_singleton();
+	Vector3 sun_dir;
+	float sun_angular_radius = 0.0f;
+	bool has_sun = false;
+	if (p_render_data->lights != nullptr) {
+		for (uint32_t li = 0; li < p_render_data->lights->size() && !has_sun; li++) {
+			const RID light_instance = (*p_render_data->lights)[li];
+			const RID base = light_storage->light_instance_get_base_light(light_instance);
+			if (base.is_null() || light_storage->light_get_type(base) != RSE::LIGHT_DIRECTIONAL) {
+				continue;
+			}
+			const Transform3D light_xform = light_storage->light_instance_get_base_transform(light_instance);
+			sun_dir = light_xform.basis.get_column(2).normalized();
+			// LIGHT_PARAM_SIZE is the angular diameter in degrees for directional
+			// lights; the cone sampler wants a radius in radians.
+			sun_angular_radius = Math::deg_to_rad(light_storage->light_get_param(base, RSE::LIGHT_PARAM_SIZE)) * 0.5f;
+			has_sun = true;
+		}
+	}
+
+	if (has_sun && !p_render_buffers->has_texture(RB_SCOPE_ASOS, RB_RT_SHADOW)) {
+		p_render_buffers->create_texture(RB_SCOPE_ASOS, RB_RT_SHADOW, RD::DATA_FORMAT_R8_UNORM,
+				RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT, RD::TEXTURE_SAMPLES_1);
+	}
+
+	const Size2i size = p_render_buffers->get_internal_size();
+	const Transform3D &cam = p_render_data->scene_data->cam_transform;
+	const Projection view = Projection(cam.affine_inverse());
+
+	asos_rtao_frame++;
+
+	for (uint32_t v = 0; v < p_render_buffers->get_view_count(); v++) {
+		// get_view_projection() applies Godot's depth correction (and TAA
+		// jitter), which is what makes this describe Vulkan NDC. Using the raw
+		// view_projection array here reconstructs positions that are subtly
+		// wrong -- plausible distances, wrong places.
+		const Projection view_proj = p_render_data->scene_data->get_view_projection(v) * view;
+		const RID depth = p_render_buffers->get_depth_texture(v);
+		const RID ao = p_render_buffers->get_texture_slice(RB_SCOPE_SSAO, RB_FINAL, v, 0);
+		if (depth.is_null() || ao.is_null()) {
+			continue;
+		}
+		asos_rtao->render(tlas, depth, ao, size, view_proj.inverse(), cam.origin,
+				2.0f /* radius */, 1.0f /* intensity */, 4u /* rays */, asos_rtao_frame);
+
+		if (has_sun) {
+			const RID rt_shadow = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_SHADOW, v, 0);
+			if (rt_shadow.is_valid()) {
+				asos_rtao->render_shadow(tlas, depth, rt_shadow, size, view_proj.inverse(), cam.origin,
+						sun_dir, sun_angular_radius, 8u /* rays */, asos_rtao_frame);
+			}
+		}
+	}
+}
+
 void RenderForwardClustered::_process_ssao(Ref<RenderSceneBuffersRD> p_render_buffers, RID p_environment, const RID *p_normal_buffers, const Projection *p_projections) {
 	ERR_FAIL_NULL(ss_effects);
 	ERR_FAIL_COND(p_render_buffers.is_null());
@@ -1639,6 +1724,13 @@ void RenderForwardClustered::_pre_opaque_render(RenderDataRD *p_render_data, boo
 		if (p_use_ssr) {
 			_process_ssr(rb, p_render_data->environment, p_normal_roughness_slices, p_render_data->scene_data->view_projection, p_render_data->scene_data->view_eye_offset, p_render_data->scene_data->cam_transform);
 		}
+	}
+
+	// Asosdot ray traced AO. Deliberately outside the ss_effects block above:
+	// it does not need SSAO enabled, only the toggle and a built TLAS.
+	if (rb_data.is_valid() && p_render_data->environment.is_valid() &&
+			environment_get_asos_lighting(p_render_data->environment)) {
+		_process_asos_rtao(rb, p_render_data);
 	}
 
 	RENDER_TIMESTAMP("Pre Opaque Render");
@@ -3761,6 +3853,18 @@ RID RenderForwardClustered::_setup_render_pass_uniform_set(RenderListType p_rend
 		u.append_id(texture);
 		uniforms.push_back(u);
 	}
+	{
+		RD::Uniform u;
+		u.binding = 37;
+		u.uniform_type = RD::UNIFORM_TYPE_TEXTURE;
+
+		// Asosdot traced sun visibility. Falls back to white so the multiply
+		// in the lighting is a no-op whenever the feature is off.
+		RID rt_shadow = (rb.is_valid() && rb->has_texture(RB_SCOPE_ASOS, RB_RT_SHADOW)) ? rb->get_texture(RB_SCOPE_ASOS, RB_RT_SHADOW) : RID();
+		RID texture = rt_shadow.is_valid() ? rt_shadow : texture_storage->texture_rd_get_default(is_multiview ? RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_2D_ARRAY_WHITE : RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_WHITE);
+		u.append_id(texture);
+		uniforms.push_back(u);
+	}
 
 	return UniformSetCacheRD::get_singleton()->get_cache_vec(scene_shader.default_shader_rd, RENDER_PASS_UNIFORM_SET, uniforms);
 }
@@ -5239,6 +5343,7 @@ RenderForwardClustered::RenderForwardClustered() {
 	taa = memnew(RendererRD::TAA);
 	fsr2_effect = memnew(RendererRD::FSR2Effect);
 	ss_effects = memnew(RendererRD::SSEffects);
+	asos_rtao = memnew(RendererRD::AsosRTAO);
 #ifdef METAL_MFXTEMPORAL_ENABLED
 	motion_vectors_store = memnew(RendererRD::MotionVectorsStore);
 	mfx_temporal_effect = memnew(RendererRD::MFXTemporalEffect);
@@ -5246,6 +5351,11 @@ RenderForwardClustered::RenderForwardClustered() {
 }
 
 RenderForwardClustered::~RenderForwardClustered() {
+	if (asos_rtao != nullptr) {
+		memdelete(asos_rtao);
+		asos_rtao = nullptr;
+	}
+
 	if (ss_effects != nullptr) {
 		memdelete(ss_effects);
 		ss_effects = nullptr;

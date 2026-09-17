@@ -35,6 +35,7 @@
 #include "servers/rendering/renderer_rd/cluster_builder_rd.h"
 #include "servers/rendering/renderer_rd/effects/fsr2.h"
 #include "servers/rendering/renderer_rd/effects/motion_vectors_store.h"
+#include "servers/rendering/renderer_rd/effects/asos_rtao.h"
 #include "servers/rendering/renderer_rd/effects/ss_effects.h"
 #include "servers/rendering/renderer_rd/effects/taa.h"
 #include "servers/rendering/renderer_rd/forward_clustered/scene_shader_forward_clustered.h"
@@ -773,6 +774,13 @@ private:
 	void _render_shadow_end();
 
 	/* Render Scene */
+	// Asosdot ray traced ambient occlusion. Runs independently of the screen
+	// space effects and writes into the same AO buffer the lighting samples,
+	// so nothing downstream needs to change.
+	RendererRD::AsosRTAO *asos_rtao = nullptr;
+	uint32_t asos_rtao_frame = 0;
+	void _process_asos_rtao(Ref<RenderSceneBuffersRD> p_render_buffers, RenderDataRD *p_render_data);
+
 	void _process_ssao(Ref<RenderSceneBuffersRD> p_render_buffers, RID p_environment, const RID *p_normal_buffers, const Projection *p_projections);
 	void _process_ssil(Ref<RenderSceneBuffersRD> p_render_buffers, RID p_environment, const RID *p_normal_buffers, const Projection *p_projections, const Transform3D &p_transform);
 	void _process_ssr(Ref<RenderSceneBuffersRD> p_render_buffers, RID p_environment, const RID *p_normal_slices, const Projection *p_projections, const Vector3 *p_eye_offsets, const Transform3D &p_transform);

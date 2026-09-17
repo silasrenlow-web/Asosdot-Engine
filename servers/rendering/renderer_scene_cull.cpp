@@ -3703,6 +3703,30 @@ void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_c
 	}
 
 	RENDER_TIMESTAMP("Render 3D Scene");
+	{
+		// Ray tracing runs against the whole scenario, NOT the camera frustum:
+		// rays routinely hit geometry that is off-screen, and culling that away
+		// would reintroduce exactly the missing-occlusion artifacts we are
+		// trying to get rid of. Only collected while Asos Lighting is on.
+		thread_local LocalVector<RendererSceneRender::RaytracingInstance> rt_instances;
+		rt_instances.clear();
+
+		if (p_environment.is_valid() && scene_render->environment_get_asos_lighting(p_environment)) {
+			for (SelfList<Instance> *E = scenario->instances.first(); E; E = E->next()) {
+				Instance *ins = E->self();
+				if (ins->base_type != RSE::INSTANCE_MESH || !ins->visible || ins->base.is_null()) {
+					continue;
+				}
+				RendererSceneRender::RaytracingInstance ri;
+				ri.mesh = ins->base;
+				ri.transform = ins->transform;
+				rt_instances.push_back(ri);
+			}
+		}
+
+		scene_render->raytracing_update_tlas(rt_instances);
+	}
+
 	scene_render->render_scene(p_render_buffers, p_camera_data, prev_camera_data, scene_cull_result.geometry_instances, scene_cull_result.light_instances, scene_cull_result.reflections, scene_cull_result.voxel_gi_instances, scene_cull_result.decals, scene_cull_result.lightmaps, scene_cull_result.fog_volumes, p_environment, camera_attributes, p_compositor, p_shadow_atlas, occluders_tex, p_reflection_probe.is_valid() ? RID() : scenario->reflection_atlas, p_reflection_probe, p_reflection_probe_pass, p_screen_mesh_lod_threshold, render_shadow_data, max_shadows_used, render_sdfgi_data, cull.sdfgi.region_count, p_window_output_max_value, &sdfgi_update_data, r_render_info);
 
 	if (p_viewport.is_valid()) {
