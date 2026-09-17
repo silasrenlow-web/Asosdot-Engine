@@ -665,6 +665,14 @@ void RendererSceneRender::environment_set_sdfgi(RID p_env, bool p_enable, int p_
 	environment_storage.environment_set_sdfgi(p_env, p_enable, p_cascades, p_min_cell_size, p_y_scale, p_use_occlusion, p_bounce_feedback, p_read_sky, p_energy, p_normal_bias, p_probe_bias);
 }
 
+void RendererSceneRender::environment_set_asos_lighting(RID p_env, bool p_enabled) {
+	environment_storage.environment_set_asos_lighting(p_env, p_enabled);
+}
+
+bool RendererSceneRender::environment_get_asos_lighting(RID p_env) const {
+	return environment_storage.environment_get_asos_lighting(p_env);
+}
+
 bool RendererSceneRender::environment_get_sdfgi_enabled(RID p_env) const {
 	return environment_storage.environment_get_sdfgi_enabled(p_env);
 }

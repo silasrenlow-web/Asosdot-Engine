@@ -834,6 +834,18 @@ void RendererEnvironmentStorage::environment_set_sdfgi(RID p_env, bool p_enable,
 	env->sdfgi_y_scale = p_y_scale;
 }
 
+void RendererEnvironmentStorage::environment_set_asos_lighting(RID p_env, bool p_enabled) {
+	Environment *env = environment_owner.get_or_null(p_env);
+	ERR_FAIL_NULL(env);
+	env->asos_lighting = p_enabled;
+}
+
+bool RendererEnvironmentStorage::environment_get_asos_lighting(RID p_env) const {
+	Environment *env = environment_owner.get_or_null(p_env);
+	ERR_FAIL_NULL_V(env, false);
+	return env->asos_lighting;
+}
+
 bool RendererEnvironmentStorage::environment_get_sdfgi_enabled(RID p_env) const {
 	Environment *env = environment_owner.get_or_null(p_env);
 	ERR_FAIL_NULL_V(env, false);

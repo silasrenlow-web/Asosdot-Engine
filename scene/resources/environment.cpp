@@ -588,6 +588,15 @@ float Environment::get_sdfgi_probe_bias() const {
 	return sdfgi_probe_bias;
 }
 
+void Environment::set_sdfgi_asos_lighting(bool p_enabled) {
+	sdfgi_asos_lighting = p_enabled;
+	RS::get_singleton()->environment_set_asos_lighting(environment, sdfgi_asos_lighting);
+}
+
+bool Environment::is_sdfgi_asos_lighting() const {
+	return sdfgi_asos_lighting;
+}
+
 void Environment::_update_sdfgi() {
 	RS::get_singleton()->environment_set_sdfgi(
 			environment,
@@ -1391,6 +1400,8 @@ void Environment::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_sdfgi_enabled", "enabled"), &Environment::set_sdfgi_enabled);
 	ClassDB::bind_method(D_METHOD("is_sdfgi_enabled"), &Environment::is_sdfgi_enabled);
+	ClassDB::bind_method(D_METHOD("set_sdfgi_asos_lighting", "enabled"), &Environment::set_sdfgi_asos_lighting);
+	ClassDB::bind_method(D_METHOD("is_sdfgi_asos_lighting"), &Environment::is_sdfgi_asos_lighting);
 	ClassDB::bind_method(D_METHOD("set_sdfgi_cascades", "amount"), &Environment::set_sdfgi_cascades);
 	ClassDB::bind_method(D_METHOD("get_sdfgi_cascades"), &Environment::get_sdfgi_cascades);
 	ClassDB::bind_method(D_METHOD("set_sdfgi_min_cell_size", "size"), &Environment::set_sdfgi_min_cell_size);
@@ -1416,6 +1427,7 @@ void Environment::_bind_methods() {
 
 	ADD_GROUP("SDFGI", "sdfgi_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sdfgi_enabled", PROPERTY_HINT_GROUP_ENABLE), "set_sdfgi_enabled", "is_sdfgi_enabled");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sdfgi_asos_lighting"), "set_sdfgi_asos_lighting", "is_sdfgi_asos_lighting");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sdfgi_use_occlusion"), "set_sdfgi_use_occlusion", "is_sdfgi_using_occlusion");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sdfgi_read_sky_light"), "set_sdfgi_read_sky_light", "is_sdfgi_reading_sky_light");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "sdfgi_bounce_feedback", PROPERTY_HINT_RANGE, "0,1.99,0.01"), "set_sdfgi_bounce_feedback", "get_sdfgi_bounce_feedback");

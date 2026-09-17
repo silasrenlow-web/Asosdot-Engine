@@ -151,6 +151,7 @@ private:
 
 	// SDFGI
 	bool sdfgi_enabled = false;
+	bool sdfgi_asos_lighting = false;
 	int sdfgi_cascades = 4;
 	float sdfgi_min_cell_size = 0.2;
 	SDFGIYScale sdfgi_y_scale = SDFGI_Y_SCALE_75_PERCENT;
@@ -326,6 +327,11 @@ public:
 	// SDFGI
 	void set_sdfgi_enabled(bool p_enabled);
 	bool is_sdfgi_enabled() const;
+
+	// Asosdot ray traced lighting. Shown in the inspector as "Asos Lighting"
+	// because ADD_GROUP("SDFGI", "sdfgi_") strips the prefix.
+	void set_sdfgi_asos_lighting(bool p_enabled);
+	bool is_sdfgi_asos_lighting() const;
 	void set_sdfgi_cascades(int p_cascades);
 	int get_sdfgi_cascades() const;
 	void set_sdfgi_min_cell_size(float p_size);

@@ -238,7 +238,19 @@ public:
 
 	// SDFGI
 	void environment_set_sdfgi(RID p_env, bool p_enable, int p_cascades, float p_min_cell_size, RSE::EnvironmentSDFGIYScale p_y_scale, bool p_use_occlusion, float p_bounce_feedback, bool p_read_sky, float p_energy, float p_normal_bias, float p_probe_bias);
+	// Ray tracing: one traceable mesh instance in the scenario.
+	struct RaytracingInstance {
+		RID mesh;
+		Transform3D transform;
+	};
+
+	// Rebuilds the scene top level acceleration structure for this frame.
+	// Default is a no-op so backends without ray tracing need no changes.
+	virtual void raytracing_update_tlas(const LocalVector<RaytracingInstance> &p_instances) {}
+
+	void environment_set_asos_lighting(RID p_env, bool p_enabled);
 	bool environment_get_sdfgi_enabled(RID p_env) const;
+	bool environment_get_asos_lighting(RID p_env) const;
 	int environment_get_sdfgi_cascades(RID p_env) const;
 	float environment_get_sdfgi_min_cell_size(RID p_env) const;
 	bool environment_get_sdfgi_use_occlusion(RID p_env) const;
