@@ -38,24 +38,64 @@ void Rope3D::_rebuild_points() {
 	const int count = MAX(segment_count, 1) + 1;
 	points.resize(count);
 
-	// Lay the rope out along -Y from the start attachment, which is the pose
-	// most people expect before physics has run: hanging straight down.
-	Vector3 origin = get_global_transform().origin;
-	Vector3 start;
-	if (_resolve_attachment(true, start)) {
-		origin = start;
+	_refresh_attachment_cache();
+
+	// Lay the rope out between whatever it is actually attached to. Building it
+	// somewhere else and letting _apply_attachments() teleport a pinned end
+	// onto its anchor is what made ropes snap on the first frame: an end could
+	// jump several metres in one tick and whip the rest of the rope behind it.
+	const Vector3 fall = gravity.length_squared() > CMP_EPSILON ? gravity.normalized() : Vector3(0, -1, 0);
+	const real_t length = MAX(rope_length, (real_t)0.001);
+
+	Vector3 from;
+	Vector3 to;
+	if (cached_start_valid && cached_end_valid) {
+		from = cached_start;
+		to = cached_end;
+	} else if (cached_start_valid) {
+		from = cached_start;
+		to = from + fall * length;
+	} else if (cached_end_valid) {
+		// Pinned by its far end, so the free end is the one that dangles.
+		to = cached_end;
+		from = to + fall * length;
+	} else {
+		from = is_inside_tree() ? get_global_transform().origin : Vector3();
+		to = from + fall * length;
 	}
 
-	const real_t step = MAX(rope_length, (real_t)0.001) / real_t(count - 1);
+	// Slack has to go somewhere. A straight line between two anchors would put
+	// all of it into the solver at once, so start from an approximate catenary
+	// and let the solver refine that instead. The parabolic estimate is good
+	// across most of the range but collapses to zero as the anchors converge,
+	// where half the leftover rope is the better answer.
+	const real_t span = from.distance_to(to);
+	real_t sag = 0.0;
+	if (length > span) {
+		sag = MAX(Math::sqrt(3.0 * span * (length - span) / 8.0), (length - span) * 0.5);
+	}
+
 	for (int i = 0; i < count; i++) {
+		const real_t t = real_t(i) / real_t(count - 1);
 		Point &p = points[i];
-		p.position = origin + Vector3(0, -step * real_t(i), 0);
+		p.position = from.lerp(to, t) + fall * (sag * 4.0 * t * (1.0 - t));
 		p.previous = p.position;
 		p.pinned = false;
+		p.has_contact = false;
 	}
 
-	_refresh_attachment_cache();
 	_apply_attachments();
+
+	// Relax the guess before anything is drawn or stepped, then clear the
+	// velocities the relaxation implied, so the first frame shows a rope at
+	// rest rather than one still resolving its own starting pose.
+	for (int i = 0; i < 4; i++) {
+		_solve_constraints();
+	}
+	for (uint32_t i = 0; i < points.size(); i++) {
+		points[i].previous = points[i].position;
+	}
+
 	_update_mesh();
 }
 
