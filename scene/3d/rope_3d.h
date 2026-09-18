@@ -111,6 +111,12 @@ private:
 	Ref<MultiMesh> segment_multimesh;
 	RID collision_shape;
 
+	// A rope is only clickable in the viewport through its gizmo, so the
+	// gizmo has to follow it -- but redrawing one builds a mesh, so it is
+	// refreshed only when the rope has actually moved.
+	Vector3 gizmo_sample[3];
+	bool gizmo_sampled = false;
+
 	void _rebuild_points();
 	void _simulate(double p_delta);
 	void _apply_attachments();
@@ -127,6 +133,7 @@ private:
 	void _update_tube_vertices();
 	void _build_segments();
 	void _clear_base();
+	void _update_gizmo_if_moved();
 
 protected:
 	void _notification(int p_what);

@@ -348,11 +348,11 @@ bool Rope3D::_rebuild_tube_surface(int p_rings, int p_ring_verts) {
 			const int c = a + p_ring_verts;
 			const int d = c + 1;
 			indices.push_back(a);
-			indices.push_back(c);
-			indices.push_back(b);
 			indices.push_back(b);
 			indices.push_back(c);
+			indices.push_back(b);
 			indices.push_back(d);
+			indices.push_back(c);
 		}
 	}
 
@@ -564,6 +564,32 @@ void Rope3D::_update_mesh() {
 /*                                  Lifecycle                                  */
 /* -------------------------------------------------------------------------- */
 
+void Rope3D::_update_gizmo_if_moved() {
+	if (!Engine::get_singleton()->is_editor_hint() || points.size() < 2) {
+		return;
+	}
+
+	// Three samples catch any movement large enough to matter for picking,
+	// for a fraction of the cost of comparing every point every tick.
+	const Vector3 sample[3] = {
+		points[0].position,
+		points[points.size() / 2].position,
+		points[points.size() - 1].position,
+	};
+
+	if (gizmo_sampled && sample[0].is_equal_approx(gizmo_sample[0]) &&
+			sample[1].is_equal_approx(gizmo_sample[1]) &&
+			sample[2].is_equal_approx(gizmo_sample[2])) {
+		return;
+	}
+
+	for (int i = 0; i < 3; i++) {
+		gizmo_sample[i] = sample[i];
+	}
+	gizmo_sampled = true;
+	update_gizmos();
+}
+
 void Rope3D::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
@@ -587,6 +613,7 @@ void Rope3D::_notification(int p_what) {
 				_solve_constraints();
 			}
 			_update_mesh();
+			_update_gizmo_if_moved();
 		} break;
 
 		case NOTIFICATION_TRANSFORM_CHANGED: {
@@ -623,6 +650,7 @@ real_t Rope3D::get_rope_length() const {
 void Rope3D::set_thickness(real_t p_thickness) {
 	thickness = MAX(p_thickness, (real_t)0.0001);
 	_update_mesh();
+	update_gizmos();
 }
 
 real_t Rope3D::get_thickness() const {
@@ -687,6 +715,7 @@ real_t Rope3D::get_stretch() const {
 
 void Rope3D::set_attach_start_enabled(bool p_enabled) {
 	attach_start_enabled = p_enabled;
+	update_gizmos();
 	notify_property_list_changed();
 	update_configuration_warnings();
 }
@@ -714,6 +743,7 @@ Vector3 Rope3D::get_attach_start_offset() const {
 
 void Rope3D::set_attach_end_enabled(bool p_enabled) {
 	attach_end_enabled = p_enabled;
+	update_gizmos();
 	notify_property_list_changed();
 	update_configuration_warnings();
 }
@@ -741,6 +771,7 @@ Vector3 Rope3D::get_attach_end_offset() const {
 
 void Rope3D::set_render_mode(RenderMode p_mode) {
 	render_mode = p_mode;
+	update_gizmos();
 	notify_property_list_changed();
 	update_configuration_warnings();
 	_update_mesh();
