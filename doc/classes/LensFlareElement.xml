@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="LensFlareElement" inherits="Resource" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		One drawn piece of a [LensFlare].
+	</brief_description>
+	<description>
+		A [LensFlareElement] is a single quad drawn somewhere along the axis that runs from the source, through the centre of the screen, and out the far side. [member position] places it on that axis, which is what makes a flare sweep across the frame as the source moves.
+		[member type] picks between three kinds of element. The first six are evaluated analytically in the shader, so they stay sharp at any resolution and cost no texture memory. The [code]TYPE_BUILTIN_*[/code] entries draw one of the flare textures bundled with the engine, which is what a new flare from [method LensFlare.create_default] is made of; an element that uses one stores only its type in a saved scene, not a copy of the image. [constant TYPE_TEXTURE] draws a [member texture] of your own.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="auto_rotate" type="bool" setter="set_auto_rotate" getter="is_auto_rotating" default="false">
+			If [code]true[/code], the element turns to stay aligned with the axis from the source to the centre of the screen, on top of [member rotation]. This is what keeps an anamorphic streak lying across the flare rather than fixed to the screen.
+		</member>
+		<member name="blend_mode" type="int" setter="set_blend_mode" getter="get_blend_mode" enum="LensFlareElement.BlendMode" default="0">
+			How the element is combined with the image behind it.
+		</member>
+		<member name="chromatic_aberration" type="float" setter="set_chromatic_aberration" getter="get_chromatic_aberration" default="0.0">
+			Spreads the red, green and blue channels radially about the element's own centre, giving it a coloured fringe. [code]0.0[/code] disables it.
+		</member>
+		<member name="color" type="Color" setter="set_color" getter="get_color" default="Color(1, 1, 1, 1)">
+			The element's tint.
+		</member>
+		<member name="count" type="int" setter="set_count" getter="get_count" default="1">
+			How many copies of the element to draw, each [member spacing] further along the axis than the last. Use it for a run of iris ghosts without authoring each one.
+		</member>
+		<member name="falloff" type="float" setter="set_falloff" getter="get_falloff" default="0.5">
+			Shapes the element's profile. It softens the edge of a [constant TYPE_DISC] or [constant TYPE_POLYGON], sets the width of a [constant TYPE_RING], tightens the core of a [constant TYPE_GLOW], thins a [constant TYPE_STREAK] and sharpens the spikes of a [constant TYPE_STARBURST]. Ignored by [constant TYPE_TEXTURE] and the built-in textures, which have whatever profile they were drawn with.
+		</member>
+		<member name="intensity" type="float" setter="set_intensity" getter="get_intensity" default="1.0">
+			Multiplies the element's brightness, on top of [member LensFlare3D.intensity].
+		</member>
+		<member name="position" type="float" setter="set_position" getter="get_position" default="0.0">
+			Where the element sits on the axis from the source to the centre of the screen. [code]0.0[/code] is on the source, [code]1.0[/code] is the centre of the screen and [code]2.0[/code] is the same distance out the far side. Values outside that range are allowed.
+		</member>
+		<member name="rotation" type="float" setter="set_rotation" getter="get_rotation" default="0.0">
+			A fixed rotation applied to the element, added to the one [member auto_rotate] works out.
+		</member>
+		<member name="sides" type="int" setter="set_sides" getter="get_sides" default="6">
+			Number of sides of a [constant TYPE_POLYGON], or number of spikes of a [constant TYPE_STARBURST]. Six matches a common camera iris. Ignored by every other shape.
+		</member>
+		<member name="size" type="Vector2" setter="set_size" getter="get_size" default="Vector2(0.1, 0.1)">
+			The element's size, as a fraction of the screen's height on both axes, so a round element stays round whatever the aspect ratio.
+		</member>
+		<member name="spacing" type="float" setter="set_spacing" getter="get_spacing" default="0.25">
+			How far apart the copies made by [member count] sit along the axis. Has no effect when [member count] is [code]1[/code].
+		</member>
+		<member name="texture" type="Texture2D" setter="set_texture" getter="get_texture">
+			The texture drawn when [member type] is [constant TYPE_TEXTURE]. Its alpha and its luminance are multiplied together to get the element's coverage, so a greyscale flare texture with no alpha channel works as well as a cut out one.
+		</member>
+		<member name="tint_by_source" type="bool" setter="set_tint_by_source" getter="is_tinted_by_source" default="true">
+			If [code]true[/code], the element is also multiplied by [member LensFlare3D.color], so one flare resource follows the colour of whatever light it is attached to. Turn it off for an element whose colour is part of the flare's look, such as a blue anamorphic streak.
+		</member>
+		<member name="type" type="int" setter="set_type" getter="get_type" enum="LensFlareElement.Type" default="0">
+			The shape the element draws.
+		</member>
+	</members>
+	<constants>
+		<constant name="TYPE_GLOW" value="0" enum="Type">
+			A soft radial falloff. Use it on the source itself for the bloom around a bright light.
+		</constant>
+		<constant name="TYPE_DISC" value="1" enum="Type">
+			A filled circle with a soft rim, the plain round ghost thrown by a circular aperture.
+		</constant>
+		<constant name="TYPE_RING" value="2" enum="Type">
+			An annulus, for the halo that rings a bright source.
+		</constant>
+		<constant name="TYPE_POLYGON" value="3" enum="Type">
+			A filled regular polygon with [member sides] sides, the ghost thrown by a bladed iris.
+		</constant>
+		<constant name="TYPE_STREAK" value="4" enum="Type">
+			A horizontal bar with a soft falloff, the anamorphic streak an oval lens element throws.
+		</constant>
+		<constant name="TYPE_STARBURST" value="5" enum="Type">
+			A core with [member sides] spikes radiating from it, thrown by a stopped down iris.
+		</constant>
+		<constant name="TYPE_TEXTURE" value="6" enum="Type">
+			The [member texture], drawn as is. Use it for elements the procedural shapes cannot produce.
+		</constant>
+		<constant name="TYPE_BUILTIN_CORONA" value="7" enum="Type">
+			A bright core shot through with fine rays. Sits on the source.
+		</constant>
+		<constant name="TYPE_BUILTIN_NOVA" value="8" enum="Type">
+			A starburst with long, uneven rays. Sits on the source.
+		</constant>
+		<constant name="TYPE_BUILTIN_GLOW" value="9" enum="Type">
+			A plain soft round glow, the photographed counterpart to [constant TYPE_GLOW].
+		</constant>
+		<constant name="TYPE_BUILTIN_IRIS" value="10" enum="Type">
+			A ghost with the internal structure a real iris throws.
+		</constant>
+		<constant name="TYPE_BUILTIN_HEXAGON" value="11" enum="Type">
+			A filled hexagonal iris ghost.
+		</constant>
+		<constant name="TYPE_BUILTIN_HEXAGON_RING" value="12" enum="Type">
+			A hollow hexagonal iris ghost.
+		</constant>
+		<constant name="TYPE_BUILTIN_DISC" value="13" enum="Type">
+			A soft round ghost.
+		</constant>
+		<constant name="TYPE_BUILTIN_HALO" value="14" enum="Type">
+			A thin ring, for the halo around a bright source.
+		</constant>
+		<constant name="TYPE_BUILTIN_STREAK" value="15" enum="Type">
+			A twin lobed streak. Give it a wide, short [member size] and turn on [member auto_rotate] for an anamorphic flare.
+		</constant>
+		<constant name="TYPE_MAX" value="16" enum="Type">
+			Represents the size of the [enum Type] enum.
+		</constant>
+		<constant name="BLEND_MODE_ADD" value="0" enum="BlendMode">
+			Adds the element to the image behind it. This is how stray light actually behaves and is the right choice for nearly every element.
+		</constant>
+		<constant name="BLEND_MODE_SCREEN" value="1" enum="BlendMode">
+			Screens the element over the image behind it, which saturates less on top of an already bright background.
+		</constant>
+		<constant name="BLEND_MODE_MAX" value="2" enum="BlendMode">
+			Represents the size of the [enum BlendMode] enum.
+		</constant>
+	</constants>
+</class>

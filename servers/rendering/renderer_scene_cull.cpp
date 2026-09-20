@@ -153,6 +153,12 @@ void RendererSceneCull::camera_set_use_vertical_aspect(RID p_camera, bool p_enab
 	camera->vaspect = p_enable;
 }
 
+void RendererSceneCull::camera_set_lens_flare_cull_mask(RID p_camera, uint32_t p_layers) {
+	Camera *camera = camera_owner.get_or_null(p_camera);
+	ERR_FAIL_NULL(camera);
+	camera->lens_flare_cull_mask = p_layers;
+}
+
 bool RendererSceneCull::is_camera(RID p_camera) const {
 	return camera_owner.owns(p_camera);
 }
@@ -630,6 +636,13 @@ void RendererSceneCull::instance_set_base(RID p_instance, RID p_base) {
 				InstanceFogVolumeData *volume = static_cast<InstanceFogVolumeData *>(instance->base_data);
 				scene_render->free(volume->instance);
 			} break;
+			case RSE::INSTANCE_LENS_FLARE: {
+				InstanceLensFlareData *flare = static_cast<InstanceLensFlareData *>(instance->base_data);
+				if (scenario && flare->D) {
+					scenario->lens_flares.erase(flare->D);
+					flare->D = nullptr;
+				}
+			} break;
 			case RSE::INSTANCE_VISIBLITY_NOTIFIER: {
 				//none
 			} break;
@@ -694,6 +707,13 @@ void RendererSceneCull::instance_set_base(RID p_instance, RID p_base) {
 
 	if (p_base.is_valid()) {
 		instance->base_type = RSG::utilities->get_base_type(p_base);
+
+		// Lens flares live in a renderer agnostic storage, so no backend's
+		// get_base_type() knows about them. Resolve them here, the same way
+		// occluders are resolved just below.
+		if (instance->base_type == RSE::INSTANCE_NONE && RSG::lens_flare->owns_lens_flare(p_base)) {
+			instance->base_type = RSE::INSTANCE_LENS_FLARE;
+		}
 
 		// fix up a specific malfunctioning case before the switch, so it can be handled
 		if (instance->base_type == RSE::INSTANCE_NONE && RendererSceneOcclusionCull::get_singleton()->is_occluder(p_base)) {
@@ -761,6 +781,13 @@ void RendererSceneCull::instance_set_base(RID p_instance, RID p_base) {
 				volume->instance = scene_render->fog_volume_instance_create(p_base);
 				scene_render->fog_volume_instance_set_active(volume->instance, instance->visible);
 				instance->base_data = volume;
+			} break;
+			case RSE::INSTANCE_LENS_FLARE: {
+				InstanceLensFlareData *flare = memnew(InstanceLensFlareData);
+				if (scenario) {
+					flare->D = scenario->lens_flares.push_back(instance);
+				}
+				instance->base_data = flare;
 			} break;
 			case RSE::INSTANCE_VISIBLITY_NOTIFIER: {
 				InstanceVisibilityNotifierData *vnd = memnew(InstanceVisibilityNotifierData);
@@ -854,6 +881,13 @@ void RendererSceneCull::instance_set_scenario(RID p_instance, RID p_scenario) {
 				RSG::light_storage->reflection_probe_release_atlas_index(reflection_probe->instance);
 
 			} break;
+			case RSE::INSTANCE_LENS_FLARE: {
+				InstanceLensFlareData *flare = static_cast<InstanceLensFlareData *>(instance->base_data);
+				if (flare->D) {
+					instance->scenario->lens_flares.erase(flare->D);
+					flare->D = nullptr;
+				}
+			} break;
 			case RSE::INSTANCE_PARTICLES_COLLISION: {
 				heightfield_particle_colliders_update_list.erase(instance);
 			} break;
@@ -908,6 +942,10 @@ void RendererSceneCull::instance_set_scenario(RID p_instance, RID p_scenario) {
 				if (!voxel_gi->update_element.in_list()) {
 					voxel_gi_update_list.add(&voxel_gi->update_element);
 				}
+			} break;
+			case RSE::INSTANCE_LENS_FLARE: {
+				InstanceLensFlareData *flare = static_cast<InstanceLensFlareData *>(instance->base_data);
+				flare->D = scenario->lens_flares.push_back(instance);
 			} break;
 			case RSE::INSTANCE_OCCLUDER: {
 				RendererSceneOcclusionCull::get_singleton()->scenario_set_instance(scenario->self, p_instance, instance->base, instance->transform, instance->visible);
@@ -2780,7 +2818,7 @@ void RendererSceneCull::render_camera(const Ref<RenderSceneBuffers> &p_render_bu
 	// For now just cull on the first camera
 	RendererSceneOcclusionCull::get_singleton()->buffer_update(p_viewport, camera_data.main_transform, camera_data.main_projection, camera_data.is_orthogonal);
 
-	_render_scene(&camera_data, p_render_buffers, environment, camera->attributes, compositor, camera->visible_layers, p_scenario, p_viewport, p_shadow_atlas, RID(), -1, p_screen_mesh_lod_threshold, p_window_output_max_value, true, r_render_info);
+	_render_scene(&camera_data, p_render_buffers, environment, camera->attributes, compositor, camera->visible_layers, camera->lens_flare_cull_mask, p_scenario, p_viewport, p_shadow_atlas, RID(), -1, p_screen_mesh_lod_threshold, p_window_output_max_value, true, r_render_info);
 #endif
 }
 
@@ -3294,7 +3332,7 @@ void RendererSceneCull::_scene_particles_set_view_axis(RID p_particles, const Ve
 	RSG::particles_storage->particles_set_view_axis(p_particles, p_axis, p_up_axis);
 }
 
-void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_camera_data, const Ref<RenderSceneBuffers> &p_render_buffers, RID p_environment, RID p_force_camera_attributes, RID p_compositor, uint32_t p_visible_layers, RID p_scenario, RID p_viewport, RID p_shadow_atlas, RID p_reflection_probe, int p_reflection_probe_pass, float p_screen_mesh_lod_threshold, float p_window_output_max_value, bool p_using_shadows, RenderingServerTypes::RenderInfo *r_render_info) {
+void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_camera_data, const Ref<RenderSceneBuffers> &p_render_buffers, RID p_environment, RID p_force_camera_attributes, RID p_compositor, uint32_t p_visible_layers, uint32_t p_lens_flare_cull_mask, RID p_scenario, RID p_viewport, RID p_shadow_atlas, RID p_reflection_probe, int p_reflection_probe_pass, float p_screen_mesh_lod_threshold, float p_window_output_max_value, bool p_using_shadows, RenderingServerTypes::RenderInfo *r_render_info) {
 	Instance *render_reflection_probe = instance_owner.get_or_null(p_reflection_probe); //if null, not rendering to it
 
 	// Prepare the light - camera volume culling system.
@@ -3308,6 +3346,27 @@ void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_c
 	render_pass++;
 
 	scene_render->set_scene_pass(render_pass);
+
+	// Lens flares are not spatially indexed: a scenario holds a handful of them
+	// and each is a point, so walking the list costs less than a BVH query would.
+	// Off screen ones are dropped by the pass itself, which already has to project
+	// them, and streaks want sources that sit just past the edge of the frame.
+	{
+		LocalVector<RendererSceneRender::LensFlareInstance> visible_flares;
+		if (p_lens_flare_cull_mask != 0 && scenario) {
+			for (const Instance *instance : scenario->lens_flares) {
+				if (!instance->visible || (instance->layer_mask & p_lens_flare_cull_mask) == 0) {
+					continue;
+				}
+
+				RendererSceneRender::LensFlareInstance flare;
+				flare.flare = instance->base;
+				flare.transform = instance->transform;
+				visible_flares.push_back(flare);
+			}
+		}
+		scene_render->lens_flare_update_list(visible_flares);
+	}
 
 	if (p_reflection_probe.is_null()) {
 		//no rendering code here, this is only to set up what needs to be done, request regions, etc.
@@ -3863,7 +3922,7 @@ bool RendererSceneCull::_render_reflection_probe_step(Instance *p_instance, int 
 			camera_data.set_camera(xform, cm, false, false);
 
 			RENDER_TIMESTAMP("Render ReflectionProbe, Face " + itos(face));
-			_render_scene(&camera_data, render_buffers, environment, RID(), RID(), RSG::light_storage->reflection_probe_get_cull_mask(p_instance->base), p_instance->scenario->self, RID(), shadow_atlas, reflection_probe->instance, face, mesh_lod_threshold, use_shadows);
+			_render_scene(&camera_data, render_buffers, environment, RID(), RID(), RSG::light_storage->reflection_probe_get_cull_mask(p_instance->base), 0, p_instance->scenario->self, RID(), shadow_atlas, reflection_probe->instance, face, mesh_lod_threshold, use_shadows);
 		}
 
 		RSG::light_storage->reflection_probe_instance_end_render(reflection_probe->instance, scenario->reflection_atlas);
@@ -4407,6 +4466,11 @@ void RendererSceneCull::update() {
 
 bool RendererSceneCull::free(RID p_rid) {
 	if (p_rid.is_null()) {
+		return true;
+	}
+
+	if (RSG::lens_flare->owns_lens_flare(p_rid)) {
+		RSG::lens_flare->lens_flare_free(p_rid);
 		return true;
 	}
 

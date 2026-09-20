@@ -162,6 +162,14 @@
 				Sets camera to use frustum projection. This mode allows adjusting the [param offset] argument to create "tilted frustum" effects.
 			</description>
 		</method>
+		<method name="camera_set_lens_flare_cull_mask">
+			<return type="void" />
+			<param index="0" name="camera" type="RID" />
+			<param index="1" name="layers" type="int" />
+			<description>
+				Sets the layers a lens flare instance must be on for this camera to draw it, checked against the instance's layer mask. It is separate from [method camera_set_cull_mask]. A mask of [code]0[/code] draws no flares at all. Equivalent to [member Camera3D.lens_flare_cull_mask], which folds [member Camera3D.lens_flare_enabled] into the same mask.
+			</description>
+		</method>
 		<method name="camera_set_orthogonal">
 			<return type="void" />
 			<param index="0" name="camera" type="RID" />
@@ -2111,6 +2119,93 @@
 			<return type="bool" />
 			<description>
 				Returns [code]true[/code] if our code is currently executing on the rendering thread.
+			</description>
+		</method>
+		<method name="lens_flare_create">
+			<return type="RID" />
+			<description>
+				Creates a lens flare and adds it to the RenderingServer. It can be accessed with the RID that is returned. This RID will be used in all [code]lens_flare_*[/code] RenderingServer functions, and as the base of an instance so it picks up a transform, a visibility flag and a layer mask.
+				Once finished with your RID, you will want to free the RID using the RenderingServer's [method free_rid] method.
+				[b]Note:[/b] The equivalent node is [LensFlare3D].
+			</description>
+		</method>
+		<method name="lens_flare_set_element_color">
+			<return type="void" />
+			<param index="0" name="flare" type="RID" />
+			<param index="1" name="index" type="int" />
+			<param index="2" name="color" type="Color" />
+			<param index="3" name="intensity" type="float" />
+			<param index="4" name="blend_mode" type="int" enum="RenderingServer.LensFlareBlendMode" />
+			<param index="5" name="tint_by_source" type="bool" />
+			<description>
+				Sets how the element at [param index] is shaded. See [LensFlareElement] for what each value means.
+			</description>
+		</method>
+		<method name="lens_flare_set_element_count">
+			<return type="void" />
+			<param index="0" name="flare" type="RID" />
+			<param index="1" name="count" type="int" />
+			<description>
+				Sets how many elements the flare draws. Elements keep their settings when the count grows; new ones start with a zero size and draw nothing until they are given one.
+			</description>
+		</method>
+		<method name="lens_flare_set_element_layout">
+			<return type="void" />
+			<param index="0" name="flare" type="RID" />
+			<param index="1" name="index" type="int" />
+			<param index="2" name="position" type="float" />
+			<param index="3" name="size" type="Vector2" />
+			<param index="4" name="rotation" type="float" />
+			<param index="5" name="auto_rotate" type="bool" />
+			<param index="6" name="count" type="int" />
+			<param index="7" name="spacing" type="float" />
+			<description>
+				Sets where the element at [param index] is placed and how large it is. See [LensFlareElement] for what each value means.
+			</description>
+		</method>
+		<method name="lens_flare_set_element_shape">
+			<return type="void" />
+			<param index="0" name="flare" type="RID" />
+			<param index="1" name="index" type="int" />
+			<param index="2" name="type" type="int" enum="RenderingServer.LensFlareElementType" />
+			<param index="3" name="texture" type="RID" />
+			<param index="4" name="sides" type="int" />
+			<param index="5" name="falloff" type="float" />
+			<param index="6" name="chromatic_aberration" type="float" />
+			<description>
+				Sets what the element at [param index] draws. See [LensFlareElement] for what each value means.
+			</description>
+		</method>
+		<method name="lens_flare_set_fade">
+			<return type="void" />
+			<param index="0" name="flare" type="RID" />
+			<param index="1" name="distance_begin" type="float" />
+			<param index="2" name="distance_end" type="float" />
+			<param index="3" name="screen_edge" type="float" />
+			<param index="4" name="angle_limit" type="float" />
+			<param index="5" name="angle_fade" type="float" />
+			<description>
+				Sets the conditions under which the flare fades out. See [LensFlare3D] for what each value means. Distance and angle fading are ignored for a directional source.
+			</description>
+		</method>
+		<method name="lens_flare_set_occlusion">
+			<return type="void" />
+			<param index="0" name="flare" type="RID" />
+			<param index="1" name="enabled" type="bool" />
+			<param index="2" name="radius" type="float" />
+			<description>
+				Sets whether the flare is faded out by geometry in front of its source, and over how wide a disc of the depth buffer that is measured. Equivalent to [member LensFlare3D.occlusion_enabled] and [member LensFlare3D.occlusion_radius].
+			</description>
+		</method>
+		<method name="lens_flare_set_source">
+			<return type="void" />
+			<param index="0" name="flare" type="RID" />
+			<param index="1" name="intensity" type="float" />
+			<param index="2" name="scale" type="float" />
+			<param index="3" name="color" type="Color" />
+			<param index="4" name="directional" type="bool" />
+			<description>
+				Sets the brightness, size and colour of the source as a whole, and whether it sits at a point in the world or infinitely far away along the instance's +Z axis. See [LensFlare3D].
 			</description>
 		</method>
 		<method name="light_area_set_normalize_energy">
@@ -5912,6 +6007,66 @@
 		<constant name="DOF_BLUR_QUALITY_HIGH" value="3" enum="DOFBlurQuality">
 			Highest quality DOF blur. Results in the smoothest looking blur by taking the most samples, but is also significantly slower.
 		</constant>
+		<constant name="LENS_FLARE_ELEMENT_GLOW" value="0" enum="LensFlareElementType">
+			A soft radial falloff. See [constant LensFlareElement.TYPE_GLOW].
+		</constant>
+		<constant name="LENS_FLARE_ELEMENT_DISC" value="1" enum="LensFlareElementType">
+			A filled circle with a soft rim. See [constant LensFlareElement.TYPE_DISC].
+		</constant>
+		<constant name="LENS_FLARE_ELEMENT_RING" value="2" enum="LensFlareElementType">
+			An annulus. See [constant LensFlareElement.TYPE_RING].
+		</constant>
+		<constant name="LENS_FLARE_ELEMENT_POLYGON" value="3" enum="LensFlareElementType">
+			A filled regular polygon. See [constant LensFlareElement.TYPE_POLYGON].
+		</constant>
+		<constant name="LENS_FLARE_ELEMENT_STREAK" value="4" enum="LensFlareElementType">
+			A horizontal anamorphic streak. See [constant LensFlareElement.TYPE_STREAK].
+		</constant>
+		<constant name="LENS_FLARE_ELEMENT_STARBURST" value="5" enum="LensFlareElementType">
+			A core with radiating spikes. See [constant LensFlareElement.TYPE_STARBURST].
+		</constant>
+		<constant name="LENS_FLARE_ELEMENT_TEXTURE" value="6" enum="LensFlareElementType">
+			A user supplied texture. See [constant LensFlareElement.TYPE_TEXTURE].
+		</constant>
+		<constant name="LENS_FLARE_ELEMENT_BUILTIN_CORONA" value="7" enum="LensFlareElementType">
+			A flare texture bundled with the engine. See [constant LensFlareElement.TYPE_BUILTIN_CORONA].
+		</constant>
+		<constant name="LENS_FLARE_ELEMENT_BUILTIN_NOVA" value="8" enum="LensFlareElementType">
+			A flare texture bundled with the engine. See [constant LensFlareElement.TYPE_BUILTIN_NOVA].
+		</constant>
+		<constant name="LENS_FLARE_ELEMENT_BUILTIN_GLOW" value="9" enum="LensFlareElementType">
+			A flare texture bundled with the engine. See [constant LensFlareElement.TYPE_BUILTIN_GLOW].
+		</constant>
+		<constant name="LENS_FLARE_ELEMENT_BUILTIN_IRIS" value="10" enum="LensFlareElementType">
+			A flare texture bundled with the engine. See [constant LensFlareElement.TYPE_BUILTIN_IRIS].
+		</constant>
+		<constant name="LENS_FLARE_ELEMENT_BUILTIN_HEXAGON" value="11" enum="LensFlareElementType">
+			A flare texture bundled with the engine. See [constant LensFlareElement.TYPE_BUILTIN_HEXAGON].
+		</constant>
+		<constant name="LENS_FLARE_ELEMENT_BUILTIN_HEXAGON_RING" value="12" enum="LensFlareElementType">
+			A flare texture bundled with the engine. See [constant LensFlareElement.TYPE_BUILTIN_HEXAGON_RING].
+		</constant>
+		<constant name="LENS_FLARE_ELEMENT_BUILTIN_DISC" value="13" enum="LensFlareElementType">
+			A flare texture bundled with the engine. See [constant LensFlareElement.TYPE_BUILTIN_DISC].
+		</constant>
+		<constant name="LENS_FLARE_ELEMENT_BUILTIN_HALO" value="14" enum="LensFlareElementType">
+			A flare texture bundled with the engine. See [constant LensFlareElement.TYPE_BUILTIN_HALO].
+		</constant>
+		<constant name="LENS_FLARE_ELEMENT_BUILTIN_STREAK" value="15" enum="LensFlareElementType">
+			A flare texture bundled with the engine. See [constant LensFlareElement.TYPE_BUILTIN_STREAK].
+		</constant>
+		<constant name="LENS_FLARE_ELEMENT_MAX" value="16" enum="LensFlareElementType">
+			Represents the size of the [enum LensFlareElementType] enum.
+		</constant>
+		<constant name="LENS_FLARE_BLEND_ADD" value="0" enum="LensFlareBlendMode">
+			Adds the element to the image behind it.
+		</constant>
+		<constant name="LENS_FLARE_BLEND_SCREEN" value="1" enum="LensFlareBlendMode">
+			Screens the element over the image behind it.
+		</constant>
+		<constant name="LENS_FLARE_BLEND_MAX" value="2" enum="LensFlareBlendMode">
+			Represents the size of the [enum LensFlareBlendMode] enum.
+		</constant>
 		<constant name="INSTANCE_NONE" value="0" enum="InstanceType">
 			The instance does not have a type.
 		</constant>
@@ -5951,7 +6106,10 @@
 		<constant name="INSTANCE_FOG_VOLUME" value="12" enum="InstanceType">
 			The instance is a fog volume.
 		</constant>
-		<constant name="INSTANCE_MAX" value="13" enum="InstanceType">
+		<constant name="INSTANCE_LENS_FLARE" value="13" enum="InstanceType">
+			The instance is a lens flare.
+		</constant>
+		<constant name="INSTANCE_MAX" value="14" enum="InstanceType">
 			Represents the size of the [enum InstanceType] enum.
 		</constant>
 		<constant name="INSTANCE_GEOMETRY_MASK" value="14" enum="InstanceType">

@@ -253,6 +253,21 @@ public:
 	// Default is a no-op so backends without ray tracing need no changes.
 	virtual void raytracing_update_tlas(const LocalVector<RaytracingInstance> &p_instances) {}
 
+	// Lens flare: one flare source the camera being rendered can see.
+	struct LensFlareInstance {
+		RID flare;
+		// The node's world transform. The origin places a local flare; the +Z
+		// column points at the source of a directional one, matching the way a
+		// DirectionalLight3D shines down its own -Z.
+		Transform3D transform;
+	};
+
+	// Hands over the flares visible to this camera, already filtered by its lens
+	// flare cull mask. Called once per camera before render_scene(), so the post
+	// process pass can find them. Default is a no-op so backends without the pass
+	// need no changes.
+	virtual void lens_flare_update_list(const LocalVector<LensFlareInstance> &p_flares) {}
+
 	void environment_set_asos_lighting(RID p_env, bool p_enabled);
 	void environment_set_asos_lighting_params(RID p_env, uint32_t p_features, int p_rays,
 			float p_ao_radius, float p_ao_intensity, float p_gi_intensity,

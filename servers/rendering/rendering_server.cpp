@@ -2847,6 +2847,7 @@ void RenderingServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("camera_set_camera_attributes", "camera", "effects"), &RenderingServer::camera_set_camera_attributes);
 	ClassDB::bind_method(D_METHOD("camera_set_compositor", "camera", "compositor"), &RenderingServer::camera_set_compositor);
 	ClassDB::bind_method(D_METHOD("camera_set_use_vertical_aspect", "camera", "enable"), &RenderingServer::camera_set_use_vertical_aspect);
+	ClassDB::bind_method(D_METHOD("camera_set_lens_flare_cull_mask", "camera", "layers"), &RenderingServer::camera_set_lens_flare_cull_mask);
 
 	/* VIEWPORT */
 
@@ -3201,6 +3202,39 @@ void RenderingServer::_bind_methods() {
 	BIND_ENUM_CONSTANT(RSE::DOF_BLUR_QUALITY_MEDIUM);
 	BIND_ENUM_CONSTANT(RSE::DOF_BLUR_QUALITY_HIGH);
 
+	/* LENS FLARE */
+
+	ClassDB::bind_method(D_METHOD("lens_flare_create"), &RenderingServer::lens_flare_create);
+	ClassDB::bind_method(D_METHOD("lens_flare_set_element_count", "flare", "count"), &RenderingServer::lens_flare_set_element_count);
+	ClassDB::bind_method(D_METHOD("lens_flare_set_element_shape", "flare", "index", "type", "texture", "sides", "falloff", "chromatic_aberration"), &RenderingServer::lens_flare_set_element_shape);
+	ClassDB::bind_method(D_METHOD("lens_flare_set_element_layout", "flare", "index", "position", "size", "rotation", "auto_rotate", "count", "spacing"), &RenderingServer::lens_flare_set_element_layout);
+	ClassDB::bind_method(D_METHOD("lens_flare_set_element_color", "flare", "index", "color", "intensity", "blend_mode", "tint_by_source"), &RenderingServer::lens_flare_set_element_color);
+	ClassDB::bind_method(D_METHOD("lens_flare_set_source", "flare", "intensity", "scale", "color", "directional"), &RenderingServer::lens_flare_set_source);
+	ClassDB::bind_method(D_METHOD("lens_flare_set_occlusion", "flare", "enabled", "radius"), &RenderingServer::lens_flare_set_occlusion);
+	ClassDB::bind_method(D_METHOD("lens_flare_set_fade", "flare", "distance_begin", "distance_end", "screen_edge", "angle_limit", "angle_fade"), &RenderingServer::lens_flare_set_fade);
+
+	BIND_ENUM_CONSTANT(RSE::LENS_FLARE_ELEMENT_GLOW);
+	BIND_ENUM_CONSTANT(RSE::LENS_FLARE_ELEMENT_DISC);
+	BIND_ENUM_CONSTANT(RSE::LENS_FLARE_ELEMENT_RING);
+	BIND_ENUM_CONSTANT(RSE::LENS_FLARE_ELEMENT_POLYGON);
+	BIND_ENUM_CONSTANT(RSE::LENS_FLARE_ELEMENT_STREAK);
+	BIND_ENUM_CONSTANT(RSE::LENS_FLARE_ELEMENT_STARBURST);
+	BIND_ENUM_CONSTANT(RSE::LENS_FLARE_ELEMENT_TEXTURE);
+	BIND_ENUM_CONSTANT(RSE::LENS_FLARE_ELEMENT_BUILTIN_CORONA);
+	BIND_ENUM_CONSTANT(RSE::LENS_FLARE_ELEMENT_BUILTIN_NOVA);
+	BIND_ENUM_CONSTANT(RSE::LENS_FLARE_ELEMENT_BUILTIN_GLOW);
+	BIND_ENUM_CONSTANT(RSE::LENS_FLARE_ELEMENT_BUILTIN_IRIS);
+	BIND_ENUM_CONSTANT(RSE::LENS_FLARE_ELEMENT_BUILTIN_HEXAGON);
+	BIND_ENUM_CONSTANT(RSE::LENS_FLARE_ELEMENT_BUILTIN_HEXAGON_RING);
+	BIND_ENUM_CONSTANT(RSE::LENS_FLARE_ELEMENT_BUILTIN_DISC);
+	BIND_ENUM_CONSTANT(RSE::LENS_FLARE_ELEMENT_BUILTIN_HALO);
+	BIND_ENUM_CONSTANT(RSE::LENS_FLARE_ELEMENT_BUILTIN_STREAK);
+	BIND_ENUM_CONSTANT(RSE::LENS_FLARE_ELEMENT_MAX);
+
+	BIND_ENUM_CONSTANT(RSE::LENS_FLARE_BLEND_ADD);
+	BIND_ENUM_CONSTANT(RSE::LENS_FLARE_BLEND_SCREEN);
+	BIND_ENUM_CONSTANT(RSE::LENS_FLARE_BLEND_MAX);
+
 	/* SCENARIO */
 
 	ClassDB::bind_method(D_METHOD("scenario_create"), &RenderingServer::scenario_create);
@@ -3263,6 +3297,7 @@ void RenderingServer::_bind_methods() {
 	BIND_ENUM_CONSTANT(RSE::INSTANCE_OCCLUDER);
 	BIND_ENUM_CONSTANT(RSE::INSTANCE_VISIBLITY_NOTIFIER);
 	BIND_ENUM_CONSTANT(RSE::INSTANCE_FOG_VOLUME);
+	BIND_ENUM_CONSTANT(RSE::INSTANCE_LENS_FLARE);
 	BIND_ENUM_CONSTANT(RSE::INSTANCE_MAX);
 
 	BIND_ENUM_CONSTANT(RSE::INSTANCE_GEOMETRY_MASK);

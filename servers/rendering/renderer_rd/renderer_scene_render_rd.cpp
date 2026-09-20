@@ -796,6 +796,44 @@ void RendererSceneRenderRD::_render_buffers_post_process_and_tonemap(const Rende
 		RD::get_singleton()->draw_command_end_label();
 	}
 
+	// Lens flares go in before glow rather than over the finished image, because
+	// that is where a real lens puts them: stray light landing on the sensor. Sat
+	// here they bloom and get exposed along with the rest of the frame.
+	if (can_use_effects && !lens_flare_instances.is_empty()) {
+		RENDER_TIMESTAMP("Lens Flare");
+		RD::get_singleton()->draw_command_begin_label("Lens Flare");
+
+		const float luminance_multiplier = rb->get_luminance_multiplier();
+		const float aspect = float(color_size.width) / float(MAX(color_size.height, 1));
+
+		// The scene's own jitter is deliberately left out. It is subpixel, so it
+		// buys nothing against a depth buffer sampled over a disc, and it would
+		// make a flare shimmer in place while the camera is still.
+		Projection correction;
+		correction.set_depth_correction(p_render_data->scene_data->flip_y);
+
+		for (uint32_t v = 0; v < rb->get_view_count(); v++) {
+			RID depth_texture;
+			if (p_use_msaa && rb->has_texture(RB_SCOPE_BUFFERS, RB_TEX_BACK_DEPTH)) {
+				depth_texture = rb->get_texture_slice(RB_SCOPE_BUFFERS, RB_TEX_BACK_DEPTH, v, 0);
+			} else if (rb->has_depth_texture()) {
+				depth_texture = rb->get_depth_texture(v);
+			} else {
+				// No depth to test against, as when rendering to a target that
+				// supplies none. Black reads as the far plane under reverse Z, so
+				// the flares simply draw unoccluded rather than vanishing.
+				depth_texture = texture_storage->texture_rd_get_default(RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_BLACK);
+			}
+
+			RID view_color = use_upscaled_texture ? rb->get_upscaled_texture(v) : rb->get_internal_texture(v);
+			RID view_fb = FramebufferCacheRD::get_singleton()->get_cache(view_color);
+
+			lens_flare->draw(view_fb, depth_texture, lens_flare_instances, correction * p_render_data->scene_data->view_projection[v], p_render_data->scene_data->cam_transform, aspect, luminance_multiplier);
+		}
+
+		RD::get_singleton()->draw_command_end_label();
+	}
+
 	if (can_use_effects && p_render_data->environment.is_valid() && environment_get_glow_enabled(p_render_data->environment)) {
 		RENDER_TIMESTAMP("Glow");
 
@@ -2088,6 +2126,7 @@ void RendererSceneRenderRD::init() {
 	bokeh_dof = memnew(RendererRD::BokehDOF(!can_use_storage));
 	copy_effects = memnew(RendererRD::CopyEffects(raster_effects));
 	debug_effects = memnew(RendererRD::DebugEffects);
+	lens_flare = memnew(RendererRD::LensFlare);
 	luminance = memnew(RendererRD::Luminance(!can_use_storage));
 	smaa = memnew(RendererRD::SMAA);
 	tone_mapper = memnew(RendererRD::ToneMapper(!can_use_storage));
@@ -2136,6 +2175,9 @@ RendererSceneRenderRD::~RendererSceneRenderRD() {
 	}
 	if (debug_effects) {
 		memdelete(debug_effects);
+	}
+	if (lens_flare) {
+		memdelete(lens_flare);
 	}
 	if (luminance) {
 		memdelete(luminance);

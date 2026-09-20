@@ -536,6 +536,7 @@ public:
 	virtual void camera_set_camera_attributes(RID p_camera, RID p_camera_attributes) = 0;
 	virtual void camera_set_compositor(RID p_camera, RID p_compositor) = 0;
 	virtual void camera_set_use_vertical_aspect(RID p_camera, bool p_enable) = 0;
+	virtual void camera_set_lens_flare_cull_mask(RID p_camera, uint32_t p_layers) = 0;
 
 	/* VIEWPORT API */
 
@@ -719,6 +720,19 @@ public:
 	virtual void camera_attributes_set_dof_blur(RID p_camera_attributes, bool p_far_enable, float p_far_distance, float p_far_transition, bool p_near_enable, float p_near_distance, float p_near_transition, float p_amount) = 0;
 	virtual void camera_attributes_set_exposure(RID p_camera_attributes, float p_multiplier, float p_exposure_normalization) = 0;
 	virtual void camera_attributes_set_auto_exposure(RID p_camera_attributes, bool p_enable, float p_min_sensitivity, float p_max_sensitivity, float p_speed, float p_scale) = 0;
+
+	/* LENS FLARE API */
+
+	virtual RID lens_flare_create() = 0;
+
+	virtual void lens_flare_set_element_count(RID p_flare, int p_count) = 0;
+	virtual void lens_flare_set_element_shape(RID p_flare, int p_index, RSE::LensFlareElementType p_type, RID p_texture, int p_sides, float p_falloff, float p_chromatic_aberration) = 0;
+	virtual void lens_flare_set_element_layout(RID p_flare, int p_index, float p_position, const Vector2 &p_size, float p_rotation, bool p_auto_rotate, int p_count, float p_spacing) = 0;
+	virtual void lens_flare_set_element_color(RID p_flare, int p_index, const Color &p_color, float p_intensity, RSE::LensFlareBlendMode p_blend_mode, bool p_tint_by_source) = 0;
+
+	virtual void lens_flare_set_source(RID p_flare, float p_intensity, float p_scale, const Color &p_color, bool p_directional) = 0;
+	virtual void lens_flare_set_occlusion(RID p_flare, bool p_enabled, float p_radius) = 0;
+	virtual void lens_flare_set_fade(RID p_flare, float p_distance_begin, float p_distance_end, float p_screen_edge, float p_angle_limit, float p_angle_fade) = 0;
 
 	/* SCENARIO API */
 
@@ -1159,6 +1173,8 @@ VARIANT_ENUM_CAST_EXT(RSE::SubSurfaceScatteringQuality, RenderingServer::SubSurf
 VARIANT_ENUM_CAST_EXT(RSE::DOFBlurQuality, RenderingServer::DOFBlurQuality);
 VARIANT_ENUM_CAST_EXT(RSE::DOFBokehShape, RenderingServer::DOFBokehShape);
 VARIANT_ENUM_CAST_EXT(RSE::ShadowQuality, RenderingServer::ShadowQuality);
+VARIANT_ENUM_CAST_EXT(RSE::LensFlareElementType, RenderingServer::LensFlareElementType);
+VARIANT_ENUM_CAST_EXT(RSE::LensFlareBlendMode, RenderingServer::LensFlareBlendMode);
 VARIANT_ENUM_CAST_EXT(RSE::InstanceType, RenderingServer::InstanceType);
 VARIANT_ENUM_CAST_EXT(RSE::InstanceFlags, RenderingServer::InstanceFlags);
 VARIANT_ENUM_CAST_EXT(RSE::ShadowCastingSetting, RenderingServer::ShadowCastingSetting);

@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 from misc.utility.scons_hints import *
 
+import os
+
 import methods
 
 Import("env")
@@ -58,6 +60,41 @@ inline constexpr const unsigned char search_tex_png[] = {{
 
 
 env.CommandNoCache("smaa_search_tex.gen.h", "#thirdparty/smaa/SearchTex.png", env.Run(searchtex_builder))
+
+
+# The built-in LensFlareElement textures, embedded as their PNG bytes and decoded
+# once at startup. One header for all of them rather than one per file: they are
+# a set, and the renderer wants them in a fixed order.
+lens_flare_textures = [
+    "corona",
+    "nova",
+    "star",
+    "iris",
+    "hexangle",
+    "hexagon",
+    "pearl",
+    "ring",
+    "flaredouble",
+]
+
+
+def lens_flare_textures_builder(target, source, env):
+    with methods.generated_wrapper(str(target[0])) as file:
+        for src in source:
+            name = os.path.splitext(os.path.basename(str(src)))[0]
+            buffer = methods.get_buffer(str(src))
+            file.write(f"""inline constexpr const unsigned char lens_flare_{name}_png[] = {{
+{methods.format_buffer(buffer, 1)}
+}};
+
+""")
+
+
+env.CommandNoCache(
+    "lens_flare_textures.gen.h",
+    [f"#thirdparty/lens_flare/{name}.png" for name in lens_flare_textures],
+    env.Run(lens_flare_textures_builder),
+)
 
 # This flag doesn't actually control anything GCC specific in FSR2. It determines
 # if symbols should be exported, which is not required for Godot.

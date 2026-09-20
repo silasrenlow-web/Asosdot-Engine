@@ -679,6 +679,12 @@ void Camera3D::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_cull_mask_value", "layer_number", "value"), &Camera3D::set_cull_mask_value);
 	ClassDB::bind_method(D_METHOD("get_cull_mask_value", "layer_number"), &Camera3D::get_cull_mask_value);
+	ClassDB::bind_method(D_METHOD("set_lens_flare_enabled", "enabled"), &Camera3D::set_lens_flare_enabled);
+	ClassDB::bind_method(D_METHOD("is_lens_flare_enabled"), &Camera3D::is_lens_flare_enabled);
+	ClassDB::bind_method(D_METHOD("set_lens_flare_cull_mask", "mask"), &Camera3D::set_lens_flare_cull_mask);
+	ClassDB::bind_method(D_METHOD("get_lens_flare_cull_mask"), &Camera3D::get_lens_flare_cull_mask);
+	ClassDB::bind_method(D_METHOD("set_lens_flare_cull_mask_value", "layer_number", "value"), &Camera3D::set_lens_flare_cull_mask_value);
+	ClassDB::bind_method(D_METHOD("get_lens_flare_cull_mask_value", "layer_number"), &Camera3D::get_lens_flare_cull_mask_value);
 
 	//ClassDB::bind_method(D_METHOD("_camera_make_current"),&Camera::_camera_make_current );
 
@@ -697,6 +703,10 @@ void Camera3D::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "frustum_offset", PROPERTY_HINT_NONE, "suffix:m"), "set_frustum_offset", "get_frustum_offset");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "near", PROPERTY_HINT_RANGE, "0.001,10,0.001,or_greater,exp,suffix:m"), "set_near", "get_near");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "far", PROPERTY_HINT_RANGE, "0.01,4000,0.01,or_greater,exp,suffix:m"), "set_far", "get_far");
+
+	ADD_GROUP("Lens Flare", "lens_flare_");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "lens_flare_enabled", PROPERTY_HINT_GROUP_ENABLE), "set_lens_flare_enabled", "is_lens_flare_enabled");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "lens_flare_cull_mask", PROPERTY_HINT_LAYERS_3D_RENDER), "set_lens_flare_cull_mask", "get_lens_flare_cull_mask");
 
 	BIND_ENUM_CONSTANT(PROJECTION_PERSPECTIVE);
 	BIND_ENUM_CONSTANT(PROJECTION_ORTHOGONAL);
@@ -789,6 +799,50 @@ bool Camera3D::get_cull_mask_value(int p_layer_number) const {
 	return layers & (1 << (p_layer_number - 1));
 }
 
+void Camera3D::_update_lens_flare_cull_mask() {
+	// The rendering server only carries a mask. An empty one draws no flares at
+	// all, which is exactly what the enabled switch means, and folding the two
+	// together here keeps the switch from destroying the mask the user set up.
+	RenderingServer::get_singleton()->camera_set_lens_flare_cull_mask(camera, lens_flare_enabled ? lens_flare_layers : 0);
+}
+
+void Camera3D::set_lens_flare_enabled(bool p_enabled) {
+	lens_flare_enabled = p_enabled;
+	_update_lens_flare_cull_mask();
+	notify_property_list_changed();
+}
+
+bool Camera3D::is_lens_flare_enabled() const {
+	return lens_flare_enabled;
+}
+
+void Camera3D::set_lens_flare_cull_mask(uint32_t p_layers) {
+	lens_flare_layers = p_layers;
+	_update_lens_flare_cull_mask();
+}
+
+uint32_t Camera3D::get_lens_flare_cull_mask() const {
+	return lens_flare_layers;
+}
+
+void Camera3D::set_lens_flare_cull_mask_value(int p_layer_number, bool p_value) {
+	ERR_FAIL_COND_MSG(p_layer_number < 1, "Render layer number must be between 1 and 20 inclusive.");
+	ERR_FAIL_COND_MSG(p_layer_number > 20, "Render layer number must be between 1 and 20 inclusive.");
+	uint32_t mask = get_lens_flare_cull_mask();
+	if (p_value) {
+		mask |= 1 << (p_layer_number - 1);
+	} else {
+		mask &= ~(1 << (p_layer_number - 1));
+	}
+	set_lens_flare_cull_mask(mask);
+}
+
+bool Camera3D::get_lens_flare_cull_mask_value(int p_layer_number) const {
+	ERR_FAIL_COND_V_MSG(p_layer_number < 1, false, "Render layer number must be between 1 and 20 inclusive.");
+	ERR_FAIL_COND_V_MSG(p_layer_number > 20, false, "Render layer number must be between 1 and 20 inclusive.");
+	return lens_flare_layers & (1 << (p_layer_number - 1));
+}
+
 Vector<Plane> Camera3D::get_frustum() const {
 	ERR_FAIL_COND_V(!is_inside_world(), Vector<Plane>());
 
@@ -872,6 +926,7 @@ Camera3D::Camera3D() {
 	camera = RenderingServer::get_singleton()->camera_create();
 	set_perspective(75.0, 0.05, 4000.0);
 	RenderingServer::get_singleton()->camera_set_cull_mask(camera, layers);
+	_update_lens_flare_cull_mask();
 	//active=false;
 	velocity_tracker.instantiate();
 	set_notify_transform(true);

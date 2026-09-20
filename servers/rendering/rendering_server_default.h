@@ -719,6 +719,7 @@ public:
 	FUNC2(camera_set_camera_attributes, RID, RID)
 	FUNC2(camera_set_compositor, RID, RID)
 	FUNC2(camera_set_use_vertical_aspect, RID, bool)
+	FUNC2(camera_set_lens_flare_cull_mask, RID, uint32_t)
 
 	/* OCCLUDER */
 	FUNCRIDSPLIT(occluder)
@@ -919,6 +920,25 @@ public:
 	FUNC8(camera_attributes_set_dof_blur, RID, bool, float, float, bool, float, float, float)
 	FUNC3(camera_attributes_set_exposure, RID, float, float)
 	FUNC6(camera_attributes_set_auto_exposure, RID, bool, float, float, float, float)
+
+	/* LENS FLARE API */
+
+#undef server_name
+#undef ServerName
+//from now on, calls forwarded to this singleton
+#define ServerName RendererLensFlare
+#define server_name RSG::lens_flare
+
+	FUNCRIDSPLIT(lens_flare)
+
+	FUNC2(lens_flare_set_element_count, RID, int)
+	FUNC7(lens_flare_set_element_shape, RID, int, RSE::LensFlareElementType, RID, int, float, float)
+	FUNC8(lens_flare_set_element_layout, RID, int, float, const Vector2 &, float, bool, int, float)
+	FUNC6(lens_flare_set_element_color, RID, int, const Color &, float, RSE::LensFlareBlendMode, bool)
+
+	FUNC5(lens_flare_set_source, RID, float, float, const Color &, bool)
+	FUNC3(lens_flare_set_occlusion, RID, bool, float)
+	FUNC6(lens_flare_set_fade, RID, float, float, float, float, float)
 
 	/* SCENARIO API */
 

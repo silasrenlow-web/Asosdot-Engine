@@ -48,6 +48,13 @@
 				Returns the camera's frustum planes in world space units as an array of [Plane]s in the following order: near, far, left, top, right, bottom. Not to be confused with [member frustum_offset].
 			</description>
 		</method>
+		<method name="get_lens_flare_cull_mask_value" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="layer_number" type="int" />
+			<description>
+				Returns whether or not the specified layer of the [member lens_flare_cull_mask] is enabled, given a [param layer_number] between 1 and 20.
+			</description>
+		</method>
 		<method name="get_pyramid_shape_rid">
 			<return type="RID" />
 			<description>
@@ -120,6 +127,14 @@
 			<param index="3" name="z_far" type="float" />
 			<description>
 				Sets the camera projection to frustum mode (see [constant PROJECTION_FRUSTUM]), by specifying a [param size], an [param offset], and the [param z_near] and [param z_far] clip planes in world space units. The [param size] parameter represents the size of the near plane, either its width or height depending on the value of [member keep_aspect]. See also [member frustum_offset].
+			</description>
+		</method>
+		<method name="set_lens_flare_cull_mask_value">
+			<return type="void" />
+			<param index="0" name="layer_number" type="int" />
+			<param index="1" name="value" type="bool" />
+			<description>
+				Based on [param value], enables or disables the specified layer in the [member lens_flare_cull_mask], given a [param layer_number] between 1 and 20.
 			</description>
 		</method>
 		<method name="set_orthogonal">
@@ -200,6 +215,14 @@
 		</member>
 		<member name="keep_aspect" type="int" setter="set_keep_aspect_mode" getter="get_keep_aspect_mode" enum="Camera3D.KeepAspect" default="1">
 			The axis to lock during [member fov]/[member size] adjustments. Can be either [constant KEEP_WIDTH] or [constant KEEP_HEIGHT].
+		</member>
+		<member name="lens_flare_cull_mask" type="int" setter="set_lens_flare_cull_mask" getter="get_lens_flare_cull_mask" default="1048575">
+			The layers a [LensFlare3D] must be on for this camera to draw its flare, checked against [member VisualInstance3D.layers]. It is separate from [member cull_mask], so a flare can be hidden from one camera while whatever throws it stays visible, and a flare can be shown by a camera that culls the object it sits on.
+			Ignored while [member lens_flare_enabled] is [code]false[/code], which leaves the mask intact for when flares are switched back on.
+			To adjust it more easily using a script, use [method get_lens_flare_cull_mask_value] and [method set_lens_flare_cull_mask_value].
+		</member>
+		<member name="lens_flare_enabled" type="bool" setter="set_lens_flare_enabled" getter="is_lens_flare_enabled" default="true">
+			If [code]false[/code], this camera draws no lens flares at all, whatever [member lens_flare_cull_mask] says.
 		</member>
 		<member name="near" type="float" setter="set_near" getter="get_near" default="0.05">
 			The distance to the near culling boundary for this camera relative to its local Z axis. Lower values allow the camera to see objects more up close to its origin, at the cost of lower precision across the [i]entire[/i] range. Values lower than the default can lead to increased Z-fighting.

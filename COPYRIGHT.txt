@@ -58,6 +58,11 @@ Comment: Linux AppStream Metadata File
 Copyright: 2017-2022, Rémi Verschelde
 License: CC0-1.0
 
+Files: thirdparty/lens_flare/*
+Comment: Lens flare textures
+Copyright: 2012, hc (hackcraft.de)
+License: CC0-1.0
+
 Files: misc/logo/*
 Comment: Godot Engine logo
 Copyright: 2017, Andrea Calabró

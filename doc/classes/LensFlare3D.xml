@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="LensFlare3D" inherits="VisualInstance3D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		A source of lens flare, drawn in screen space wherever the camera can see it.
+	</brief_description>
+	<description>
+		A [LensFlare3D] marks a point in the world bright enough to scatter inside a camera lens: the sun, a headlamp, a window catching the light. The [member flare] resource says what that scattering looks like, and this node says where the source is, how bright it is, and when it should fade out.
+		The flare is drawn into the HDR colour buffer before glow and tonemapping, so it blooms and is exposed along with the rest of the frame rather than being painted over the finished image.
+		Which cameras pick a flare up is the camera's decision. [Camera3D] compares its [member Camera3D.lens_flare_cull_mask] against this node's [member VisualInstance3D.layers], separately from [member Camera3D.cull_mask], so a flare can be hidden from one camera without hiding whatever is throwing it.
+		With no [member flare] of its own the node draws the engine's default flare, so one dropped into a scene shows something straight away. Assign a [LensFlare] to replace it; [method LensFlare.create_default] returns a copy of that same default to edit.
+		[b]Note:[/b] Lens flares are only drawn by the Forward+ and Mobile renderers. The Compatibility renderer ignores them.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="angle_fade" type="float" setter="set_angle_fade" getter="get_angle_fade" default="0.2">
+			How softly the flare fades out as the camera leaves the cone set by [member angle_limit], as a fraction of the cone. [code]0.0[/code] cuts the flare off at the edge of the cone. Has no effect when [member angle_limit] is [code]0.0[/code] or [member directional] is [code]true[/code].
+		</member>
+		<member name="angle_limit" type="float" setter="set_angle_limit" getter="get_angle_limit" default="0.0">
+			Half-angle of a cone around the node's local -Z axis, outside of which the flare is not drawn. Use it for a source that only throws a flare when you are looking into it, such as a headlamp or a spotlight. [code]0.0[/code] disables the limit and the flare is drawn from every direction. Has no effect when [member directional] is [code]true[/code].
+		</member>
+		<member name="color" type="Color" setter="set_color" getter="get_color" default="Color(1, 1, 1, 1)">
+			The colour of the source. Elements with [member LensFlareElement.tint_by_source] enabled are multiplied by it, which is how one flare resource can serve lights of different colours.
+		</member>
+		<member name="directional" type="bool" setter="set_directional" getter="is_directional" default="false">
+			If [code]true[/code], the source is treated as infinitely far away and only the node's rotation matters, the way a [DirectionalLight3D] works. The source lies along the node's local +Z axis, so pointing the node the same way as a [DirectionalLight3D] puts the flare on that light.
+			While this is enabled the flare cannot be occluded by distance or angle, so [member fade_distance_begin], [member fade_distance_end], [member angle_limit] and [member angle_fade] are ignored.
+		</member>
+		<member name="fade_distance_begin" type="float" setter="set_fade_distance_begin" getter="get_fade_distance_begin" default="0.0">
+			Distance from the camera at which the flare starts fading out. Fading is disabled unless [member fade_distance_end] is greater than this. Ignored when [member directional] is [code]true[/code].
+		</member>
+		<member name="fade_distance_end" type="float" setter="set_fade_distance_end" getter="get_fade_distance_end" default="0.0">
+			Distance from the camera at which the flare has faded out completely. Ignored when [member directional] is [code]true[/code].
+		</member>
+		<member name="fade_screen_edge" type="float" setter="set_fade_screen_edge" getter="get_fade_screen_edge" default="0.2">
+			How far past the edge of the screen the source keeps throwing a flare, as a fraction of the screen. Larger values let a flare linger as the source leaves the frame instead of snapping off; [code]0.0[/code] cuts it at the edge.
+		</member>
+		<member name="flare" type="LensFlare" setter="set_flare" getter="get_flare">
+			The elements this source draws. Left empty, the node draws the engine's default flare instead of nothing.
+		</member>
+		<member name="flare_scale" type="float" setter="set_flare_scale" getter="get_flare_scale" default="1.0">
+			Multiplies the size of every element, so a whole flare can be resized without editing the resource.
+		</member>
+		<member name="intensity" type="float" setter="set_intensity" getter="get_intensity" default="1.0">
+			Multiplies the brightness of every element. Values above [code]1.0[/code] push the flare into the range where glow picks it up.
+		</member>
+		<member name="occlusion_enabled" type="bool" setter="set_occlusion_enabled" getter="is_occlusion_enabled" default="true">
+			If [code]true[/code], the flare is faded out by whatever the scene drew in front of the source, sampled from the depth buffer over a disc of [member occlusion_radius]. Partially hidden sources give a partially faded flare rather than an all-or-nothing pop.
+		</member>
+		<member name="occlusion_radius" type="float" setter="set_occlusion_radius" getter="get_occlusion_radius" default="0.25">
+			Radius of the disc sampled against the depth buffer, in metres at the source. A larger radius makes the flare fade earlier and more gradually as something moves in front of it.
+			When [member directional] is [code]true[/code] the source is at infinity and has no size in metres, so this is taken as the tangent of an angle instead: [code]0.01[/code] is roughly the angular size of the sun.
+		</member>
+	</members>
+</class>

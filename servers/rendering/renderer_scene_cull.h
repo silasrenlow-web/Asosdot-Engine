@@ -83,6 +83,9 @@ public:
 		float size;
 		Vector2 offset;
 		uint32_t visible_layers;
+		// Zero when the camera draws no flares at all, which is how Camera3D
+		// folds its lens_flares_enabled switch into the mask.
+		uint32_t lens_flare_cull_mask;
 		bool vaspect;
 		RID env;
 		RID attributes;
@@ -92,6 +95,7 @@ public:
 
 		Camera() {
 			visible_layers = 0xFFFFFFFF;
+			lens_flare_cull_mask = 0xFFFFFFFF;
 			fov = 75;
 			type = PERSPECTIVE;
 			znear = 0.05;
@@ -116,6 +120,7 @@ public:
 	virtual void camera_set_camera_attributes(RID p_camera, RID p_attributes);
 	virtual void camera_set_compositor(RID p_camera, RID p_compositor);
 	virtual void camera_set_use_vertical_aspect(RID p_camera, bool p_enable);
+	virtual void camera_set_lens_flare_cull_mask(RID p_camera, uint32_t p_layers);
 	virtual bool is_camera(RID p_camera) const;
 
 	/* OCCLUDER API */
@@ -336,6 +341,7 @@ public:
 		RID self;
 
 		List<Instance *> directional_lights;
+		List<Instance *> lens_flares;
 		RID environment;
 		RID fallback_environment;
 		RID camera_attributes;
@@ -675,6 +681,12 @@ public:
 	struct InstanceFogVolumeData : public InstanceBaseData {
 		RID instance;
 		bool is_global;
+	};
+
+	struct InstanceLensFlareData : public InstanceBaseData {
+		// Lens flares carry no AABB, so they are never spatially indexed. They are
+		// reached through Scenario::lens_flares instead, which this points into.
+		List<Instance *>::Element *D = nullptr;
 	};
 
 	struct InstanceVisibilityNotifierData : public InstanceBaseData {
@@ -1157,7 +1169,7 @@ public:
 
 	bool _render_reflection_probe_step(Instance *p_instance, int p_step);
 
-	void _render_scene(const RendererSceneRender::CameraData *p_camera_data, const Ref<RenderSceneBuffers> &p_render_buffers, RID p_environment, RID p_force_camera_attributes, RID p_compositor, uint32_t p_visible_layers, RID p_scenario, RID p_viewport, RID p_shadow_atlas, RID p_reflection_probe, int p_reflection_probe_pass, float p_screen_mesh_lod_threshold, float p_window_output_max_value, bool p_using_shadows = true, RenderingServerTypes::RenderInfo *r_render_info = nullptr);
+	void _render_scene(const RendererSceneRender::CameraData *p_camera_data, const Ref<RenderSceneBuffers> &p_render_buffers, RID p_environment, RID p_force_camera_attributes, RID p_compositor, uint32_t p_visible_layers, uint32_t p_lens_flare_cull_mask, RID p_scenario, RID p_viewport, RID p_shadow_atlas, RID p_reflection_probe, int p_reflection_probe_pass, float p_screen_mesh_lod_threshold, float p_window_output_max_value, bool p_using_shadows = true, RenderingServerTypes::RenderInfo *r_render_info = nullptr);
 	void render_empty_scene(const Ref<RenderSceneBuffers> &p_render_buffers, RID p_scenario, RID p_shadow_atlas, float p_window_output_max_value);
 
 	void render_camera(const Ref<RenderSceneBuffers> &p_render_buffers, RID p_camera, RID p_scenario, RID p_viewport, Size2 p_viewport_size, uint32_t p_jitter_phase_count, float p_screen_mesh_lod_threshold, RID p_shadow_atlas, Ref<XRInterface> &p_xr_interface, float p_window_output_max_value, RenderingServerTypes::RenderInfo *r_render_info = nullptr);

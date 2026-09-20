@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="LensFlare" inherits="Resource" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		The list of elements that make up one lens flare.
+	</brief_description>
+	<description>
+		A [LensFlare] is an ordered list of [LensFlareElement]s: the glow around the source, the ghosts strung out across the frame, the halo, the anamorphic streak. Assign one to a [LensFlare3D], which supplies the source's position, colour, intensity and occlusion.
+		The same [LensFlare] can be shared by any number of [LensFlare3D] nodes. Each node keeps its own copy of the element data on the rendering server, so sharing costs nothing at draw time.
+		Elements are drawn in list order. That only matters for elements using [constant LensFlareElement.BLEND_MODE_SCREEN], since additive ones give the same result whatever order they arrive in.
+		A new [LensFlare] is empty, the way a new [Curve3D] is. [method create_default] returns the classic eight element flare to start from instead.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="add_element">
+			<return type="void" />
+			<param index="0" name="element" type="LensFlareElement" />
+			<description>
+				Appends an element to the end of the list.
+			</description>
+		</method>
+		<method name="create_default" qualifiers="static">
+			<return type="LensFlare" />
+			<description>
+				Returns the classic eight element flare: a corona and a nova on the source, an anamorphic streak, a halo, two runs of iris ghosts and a pair of discs past the centre of the screen. It is built from the flare textures bundled with the engine (the [code]TYPE_BUILTIN_*[/code] entries of [enum LensFlareElement.Type]) and is meant to be edited rather than used as is.
+			</description>
+		</method>
+		<method name="get_element" qualifiers="const">
+			<return type="LensFlareElement" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Returns the element at [param index].
+			</description>
+		</method>
+		<method name="get_element_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the number of elements in the flare.
+			</description>
+		</method>
+		<method name="remove_element">
+			<return type="void" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Removes the element at [param index].
+			</description>
+		</method>
+		<method name="set_element">
+			<return type="void" />
+			<param index="0" name="index" type="int" />
+			<param index="1" name="element" type="LensFlareElement" />
+			<description>
+				Replaces the element at [param index].
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="elements" type="LensFlareElement[]" setter="set_elements" getter="get_elements" default="[]">
+			The elements this flare draws, in the order they are drawn.
+		</member>
+	</members>
+</class>

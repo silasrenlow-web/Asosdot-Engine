@@ -245,6 +245,7 @@
 #include "scene/3d/iterate_ik_3d.h"
 #include "scene/3d/jacobian_ik_3d.h"
 #include "scene/3d/label_3d.h"
+#include "scene/3d/lens_flare_3d.h"
 #include "scene/3d/light_3d.h"
 #include "scene/3d/lightmap_gi.h"
 #include "scene/3d/lightmap_probe.h"
@@ -754,6 +755,9 @@ void register_scene_types() {
 	GDREGISTER_CLASS(WorldEnvironment);
 	GDREGISTER_CLASS(FogVolume);
 	GDREGISTER_CLASS(FogMaterial);
+	GDREGISTER_CLASS(LensFlare3D);
+	GDREGISTER_CLASS(LensFlare);
+	GDREGISTER_CLASS(LensFlareElement);
 	GDREGISTER_CLASS(RemoteTransform3D);
 
 #ifndef PHYSICS_3D_DISABLED

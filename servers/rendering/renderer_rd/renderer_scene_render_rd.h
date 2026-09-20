@@ -35,6 +35,7 @@
 #include "servers/rendering/renderer_rd/effects/copy_effects.h"
 #include "servers/rendering/renderer_rd/effects/debug_effects.h"
 #include "servers/rendering/renderer_rd/effects/fsr.h"
+#include "servers/rendering/renderer_rd/effects/lens_flare.h"
 #include "servers/rendering/renderer_rd/effects/luminance.h"
 #include "servers/rendering/renderer_rd/effects/resolve.h"
 #include "servers/rendering/renderer_rd/effects/smaa.h"
@@ -63,6 +64,7 @@ protected:
 	RendererRD::BokehDOF *bokeh_dof = nullptr;
 	RendererRD::CopyEffects *copy_effects = nullptr;
 	RendererRD::DebugEffects *debug_effects = nullptr;
+	RendererRD::LensFlare *lens_flare = nullptr;
 	RendererRD::Luminance *luminance = nullptr;
 	RendererRD::SMAA *smaa = nullptr;
 	RendererRD::ToneMapper *tone_mapper = nullptr;
@@ -72,6 +74,10 @@ protected:
 #ifdef METAL_ENABLED
 	RendererRD::MFXSpatialEffect *mfx_spatial = nullptr;
 #endif
+	// The flares the camera being rendered can see, handed over by the cull step
+	// before render_scene() and consumed by the post process pass.
+	LocalVector<LensFlareInstance> lens_flare_instances;
+
 	double time = 0.0;
 	double time_step = 0.0;
 
@@ -289,6 +295,10 @@ public:
 
 	virtual void set_scene_pass(uint64_t p_pass) override {
 		scene_pass = p_pass;
+	}
+
+	virtual void lens_flare_update_list(const LocalVector<LensFlareInstance> &p_flares) override {
+		lens_flare_instances = p_flares;
 	}
 	_FORCE_INLINE_ uint64_t get_scene_pass() {
 		return scene_pass;
