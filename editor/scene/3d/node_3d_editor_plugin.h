@@ -898,6 +898,12 @@ private:
 	void _generate_flare_pressed();
 	void _update_generate_flare_button();
 
+	Button *rope_simulate_button = nullptr;
+	Button *rope_reset_button = nullptr;
+	void _rope_simulate_toggled(bool p_pressed);
+	void _rope_reset_pressed();
+	void _update_rope_buttons();
+
 	DirectionalLight3D *preview_sun = nullptr;
 	bool preview_sun_dangling = false;
 	WorldEnvironment *preview_environment = nullptr;

@@ -117,6 +117,18 @@ private:
 	Vector3 gizmo_sample[3];
 	bool gizmo_sampled = false;
 
+#ifdef TOOLS_ENABLED
+	// The ropes currently in the edited scene. Only the scene being edited is
+	// actually in the tree, so this list is exactly the ropes the editor's
+	// simulation controls should act on, and they never have to walk the tree.
+	static LocalVector<Rope3D *> editor_ropes;
+
+	// Driven by the 3D toolbar. Deliberately not a property on the node: a
+	// preview toggle that wrote simulate_in_editor would dirty the scene and
+	// fill the undo history with something the user never edited.
+	static bool editor_force_simulation;
+#endif
+
 	void _rebuild_points();
 	void _simulate(double p_delta);
 	void _apply_attachments();
@@ -211,6 +223,13 @@ public:
 	Vector3 get_point_position(int p_index) const;
 	void set_point_position(int p_index, const Vector3 &p_position);
 	void reset_rope();
+
+#ifdef TOOLS_ENABLED
+	// Editor simulation preview, driven from the 3D toolbar.
+	static void set_editor_force_simulation(bool p_enabled);
+	static void reset_editor_ropes();
+	static bool has_editor_ropes();
+#endif
 
 	PackedStringArray get_configuration_warnings() const override;
 	AABB get_aabb() const override;

@@ -64,12 +64,10 @@
 #include "editor/scene/3d/gizmos/gpu_particles_collision_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/label_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/lens_flare_3d_gizmo_plugin.h"
-#include "editor/scene/3d/lens_flare_generator.h"
 #include "editor/scene/3d/gizmos/light_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/lightmap_gi_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/lightmap_probe_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/marker_3d_gizmo_plugin.h"
-#include "editor/scene/3d/gizmos/rope_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/mesh_instance_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/occluder_instance_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/particles_3d_emission_shape_gizmo_plugin.h"
@@ -84,11 +82,13 @@
 #include "editor/scene/3d/gizmos/physics/spring_arm_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/physics/vehicle_body_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/reflection_probe_gizmo_plugin.h"
+#include "editor/scene/3d/gizmos/rope_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/spring_bone_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/sprite_base_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/two_bone_ik_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/visible_on_screen_notifier_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/voxel_gi_gizmo_plugin.h"
+#include "editor/scene/3d/lens_flare_generator.h"
 #include "editor/scene/3d/node_3d_editor_gizmos.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/translations/editor_translation_preview_button.h"
@@ -100,6 +100,7 @@
 #include "scene/3d/mesh_instance_3d.h"
 #include "scene/3d/physics/collision_shape_3d.h"
 #include "scene/3d/physics/physics_body_3d.h"
+#include "scene/3d/rope_3d.h"
 #include "scene/3d/sprite_3d.h"
 #include "scene/3d/visual_instance_3d.h"
 #include "scene/3d/world_environment.h"
@@ -9283,6 +9284,7 @@ void Node3DEditor::update_grid() {
 void Node3DEditor::_selection_changed() {
 	_refresh_menu_icons();
 	_update_generate_flare_button();
+	_update_rope_buttons();
 
 	const HashMap<ObjectID, Object *> &selection = editor_selection->get_selection();
 
@@ -9595,6 +9597,34 @@ void Node3DEditor::_update_generate_flare_button() {
 					: TTR("Select a single DirectionalLight3D, OmniLight3D or SpotLight3D to generate a lens flare on it."));
 }
 
+void Node3DEditor::_rope_simulate_toggled(bool p_pressed) {
+	Rope3D::set_editor_force_simulation(p_pressed);
+	_update_rope_buttons();
+}
+
+void Node3DEditor::_rope_reset_pressed() {
+	Rope3D::reset_editor_ropes();
+}
+
+void Node3DEditor::_update_rope_buttons() {
+	// Disabled rather than hidden, for the same reason as the flare button: a
+	// toolbar that changes width as the scene changes moves every other button
+	// out from under the pointer.
+	const bool any_ropes = Rope3D::has_editor_ropes();
+	rope_simulate_button->set_disabled(!any_ropes);
+	rope_reset_button->set_disabled(!any_ropes);
+
+	const bool running = rope_simulate_button->is_pressed();
+	rope_simulate_button->set_tooltip_text(running
+					? TTR("Pause rope simulation.\nRopes keep the pose they have settled into.")
+					: TTR("Simulate every Rope3D in this scene, live in the editor.\nThis is only a preview: it does not modify the scene."));
+
+	// The theme is not available while the toolbar is being built.
+	if (is_inside_tree()) {
+		rope_simulate_button->set_button_icon(get_editor_theme_icon(running ? SNAME("Pause") : SNAME("Play")));
+	}
+}
+
 void Node3DEditor::_sun_environ_settings_pressed() {
 	Vector2 pos = sun_environ_settings->get_screen_position() + sun_environ_settings->get_size();
 	sun_environ_popup->set_position(pos - Vector2(sun_environ_popup->get_contents_minimum_size().width / 2, 0));
@@ -9696,6 +9726,8 @@ void Node3DEditor::_update_theme() {
 	sun_button->set_button_icon(get_editor_theme_icon(SNAME("PreviewSun")));
 	environ_button->set_button_icon(get_editor_theme_icon(SNAME("PreviewEnvironment")));
 	sun_environ_settings->set_button_icon(get_editor_theme_icon(SNAME("GuiTabMenuHl")));
+	rope_reset_button->set_button_icon(get_editor_theme_icon(SNAME("Reload")));
+	_update_rope_buttons();
 
 	sun_title->add_theme_font_override(SceneStringName(font), get_theme_font(SNAME("title_font"), SNAME("Window")));
 	environ_title->add_theme_font_override(SceneStringName(font), get_theme_font(SNAME("title_font"), SNAME("Window")));
@@ -10724,6 +10756,29 @@ Node3DEditor::Node3DEditor() {
 	lens_flare_generator = memnew(LensFlareGeneratorDialog);
 	add_child(lens_flare_generator);
 	_update_generate_flare_button();
+
+	rope_simulate_button = memnew(Button);
+	rope_simulate_button->set_toggle_mode(true);
+	rope_simulate_button->set_theme_type_variation(SceneStringName(FlatButton));
+	rope_simulate_button->set_accessibility_name(TTRC("Simulate ropes in the editor."));
+	rope_simulate_button->set_shortcut(ED_SHORTCUT("spatial_editor/simulate_ropes", TTRC("Simulate Ropes")));
+	rope_simulate_button->set_shortcut_context(this);
+	rope_simulate_button->connect(SceneStringName(toggled), callable_mp(this, &Node3DEditor::_rope_simulate_toggled));
+	main_menu_hbox->add_child(rope_simulate_button);
+
+	rope_reset_button = memnew(Button);
+	rope_reset_button->set_theme_type_variation(SceneStringName(FlatButton));
+	rope_reset_button->set_accessibility_name(TTRC("Reset ropes to their authored pose."));
+	rope_reset_button->set_tooltip_text(TTRC("Reset every Rope3D in this scene to the pose it was authored in."));
+	rope_reset_button->set_shortcut(ED_SHORTCUT("spatial_editor/reset_ropes", TTRC("Reset Ropes")));
+	rope_reset_button->set_shortcut_context(this);
+	rope_reset_button->connect(SceneStringName(pressed), callable_mp(this, &Node3DEditor::_rope_reset_pressed));
+	main_menu_hbox->add_child(rope_reset_button);
+
+	// The override is process wide and outlives any one editor session's
+	// toolbar state, so make sure the two agree on startup.
+	Rope3D::set_editor_force_simulation(false);
+	_update_rope_buttons();
 
 	main_menu_hbox->add_child(memnew(VSeparator));
 

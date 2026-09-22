@@ -14,6 +14,11 @@
 #include "servers/physics_3d/physics_server_3d.h"
 #endif
 
+#ifdef TOOLS_ENABLED
+LocalVector<Rope3D *> Rope3D::editor_ropes;
+bool Rope3D::editor_force_simulation = false;
+#endif
+
 Rope3D::Rope3D() {
 	set_notify_transform(true);
 	tube_mesh.instantiate();
@@ -635,7 +640,19 @@ void Rope3D::_notification(int p_what) {
 		case NOTIFICATION_ENTER_TREE: {
 			points_dirty = true;
 			set_physics_process_internal(true);
+#ifdef TOOLS_ENABLED
+			// Registered whatever is_editor_hint() says, so that enter and exit
+			// always pair up: the flag can be flipped while nodes are in the
+			// tree, and an unmatched erase would leave a dangling pointer here.
+			editor_ropes.push_back(this);
+#endif
 		} break;
+
+#ifdef TOOLS_ENABLED
+		case NOTIFICATION_EXIT_TREE: {
+			editor_ropes.erase(this);
+		} break;
+#endif
 
 		case NOTIFICATION_INTERNAL_PHYSICS_PROCESS: {
 			if (points_dirty) {
@@ -643,7 +660,20 @@ void Rope3D::_notification(int p_what) {
 			}
 
 			const bool in_editor = Engine::get_singleton()->is_editor_hint();
-			if (simulating && (!in_editor || simulate_in_editor)) {
+			bool run = simulating && !in_editor;
+			if (in_editor) {
+				// The toolbar override runs every rope without touching the
+				// per node flag, so a scene that was authored with
+				// simulate_in_editor set still behaves as authored once the
+				// override is switched back off.
+				bool editor_enabled = simulate_in_editor;
+#ifdef TOOLS_ENABLED
+				editor_enabled = editor_enabled || editor_force_simulation;
+#endif
+				run = simulating && editor_enabled;
+			}
+
+			if (run) {
 				_simulate(get_physics_process_delta_time());
 			} else {
 				// Still follow the attachments so dragging a target in the
@@ -651,6 +681,13 @@ void Rope3D::_notification(int p_what) {
 				_refresh_attachment_cache();
 				_apply_attachments();
 				_solve_constraints();
+
+				// A rope that is not being stepped has no velocity. Without
+				// this the constraint passes above accumulate into the Verlet
+				// history, and the rope lurches the moment it is resumed.
+				for (uint32_t i = 0; i < points.size(); i++) {
+					points[i].previous = points[i].position;
+				}
 			}
 			_update_mesh();
 			_update_gizmo_if_moved();
@@ -932,6 +969,24 @@ void Rope3D::reset_rope() {
 	points_dirty = true;
 }
 
+#ifdef TOOLS_ENABLED
+
+void Rope3D::set_editor_force_simulation(bool p_enabled) {
+	editor_force_simulation = p_enabled;
+}
+
+void Rope3D::reset_editor_ropes() {
+	for (Rope3D *rope : editor_ropes) {
+		rope->reset_rope();
+	}
+}
+
+bool Rope3D::has_editor_ropes() {
+	return !editor_ropes.is_empty();
+}
+
+#endif // TOOLS_ENABLED
+
 /* -------------------------------------------------------------------------- */
 /*                                   Editor                                    */
 /* -------------------------------------------------------------------------- */
@@ -953,7 +1008,8 @@ void Rope3D::_validate_property(PropertyInfo &p_property) const {
 		p_property.usage = PROPERTY_USAGE_NO_EDITOR;
 	}
 	if ((p_property.name == "collision_mask" || p_property.name == "collision_radius" ||
-			p_property.name == "collision_friction") && !collision_enabled) {
+				p_property.name == "collision_friction") &&
+			!collision_enabled) {
 		p_property.usage = PROPERTY_USAGE_NO_EDITOR;
 	}
 }
