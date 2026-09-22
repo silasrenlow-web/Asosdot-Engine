@@ -1,174 +1,178 @@
 """Generates the Asosdot Engine mark in every form the engine needs.
 
-The mark is a hexagonal camera iris with a bright core and an anamorphic
-streak: it points at the engine's own lens flare work, and an aperture opening
-in the dark suits what the engine is being used for. Geometry is defined once
-here so the SVGs the editor rasterises and the PNG/ICO the OS shows cannot
-drift apart.
+`asosdot_mark.png` beside this script is the source of truth: a white silhouette
+on transparency. Everything else is derived from it, so the vector and raster
+forms cannot drift apart.
+
+The editor rasterises its icons from SVG, so the silhouette is traced to paths
+rather than embedded, which keeps those icons crisp at any editor scale.
+
+Run from the repository root:
+
+    python misc/asosdot_icon.py .
 """
 
-import math
 import os
 import sys
 
+import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 OUT = sys.argv[1] if len(sys.argv) > 1 else "."
+SOURCE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "asosdot_mark.png")
 
-# Palette. Dark, cold, with one warm accent so the core reads as light rather
-# than as a hole.
+# Dark and cold, to suit what the engine is being used for. BG is also what
+# main_builders.py declares as the boot splash background, so the splash can sit
+# on it without showing a seam.
 BG = (0x14, 0x16, 0x1C)
-RING = (0xE4, 0xEC, 0xF7)
-CORE = (0xFF, 0xFF, 0xFF)
-STREAK = (0x7F, 0xC4, 0xFF)
-GHOST = (0xFF, 0xB4, 0x5E)
+MARK = (0xFF, 0xFF, 0xFF)
+CONSOLE_MARK = (0xFF, 0xD9, 0xA8)
+TEXT = (0xE4, 0xEC, 0xF7)
+SUBTEXT = (0x8A, 0x93, 0xA6)
 
-# In unit coordinates on a 0..1 square, centred on 0.5.
-R_OUTER = 0.400
-R_INNER = 0.300
-R_CORE = 0.105
-STREAK_HALF_W = 0.480
-STREAK_HALF_H = 0.055
+# Fraction of the icon the mark occupies, leaving a margin inside the badge.
+MARK_INSET = 0.76
 
 
-def hexagon(cx, cy, r, rot=0.0):
-    return [(cx + r * math.cos(rot + i * math.pi / 3.0), cy + r * math.sin(rot + i * math.pi / 3.0)) for i in range(6)]
+def load_mark(color=MARK):
+    src = Image.open(SOURCE).convert("RGBA")
+    a = np.asarray(src)
+    out = np.zeros_like(a)
+    out[..., 0], out[..., 1], out[..., 2] = color
+    out[..., 3] = a[..., 3]
+    return Image.fromarray(out, "RGBA")
 
 
-def svg_poly(pts, scale, digits=2):
-    return "M" + "L".join(f"{x * scale:.{digits}f} {y * scale:.{digits}f}" for x, y in pts) + "Z"
+def fit(mark, box):
+    """Scales the mark to fit a square of `box` pixels, preserving its aspect."""
+    w, h = mark.size
+    scale = box / max(w, h)
+    return mark.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
 
 
-def ring_path(scale):
-    """Hexagonal annulus as one path, outer clockwise and inner reversed so the
-    even-odd fill leaves the middle open."""
-    outer = hexagon(0.5, 0.5, R_OUTER)
-    inner = hexagon(0.5, 0.5, R_INNER)[::-1]
-    return svg_poly(outer, scale) + svg_poly(inner, scale)
-
-
-def render(size, rounded_bg, detail):
-    """Supersampled raster of the mark. rounded_bg draws the dark badge behind
-    it; detail adds the ghosts that only survive at larger sizes."""
-    ss = 8
+def render(size, badge, color=MARK):
+    ss = 4
     n = size * ss
     img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
 
-    if rounded_bg:
-        d.rounded_rectangle([0, 0, n - 1, n - 1], radius=int(n * 0.22), fill=BG + (255,))
+    if badge:
+        ImageDraw.Draw(img).rounded_rectangle([0, 0, n - 1, n - 1], radius=int(n * 0.22), fill=BG + (255,))
 
-    # The iris itself.
-    d.polygon([(x * n, y * n) for x, y in hexagon(0.5, 0.5, R_OUTER)], fill=RING + (255,))
-    d.polygon([(x * n, y * n) for x, y in hexagon(0.5, 0.5, R_INNER)], fill=(0, 0, 0, 0))
-
-    if detail:
-        ghosts = Image.new("RGBA", (n, n), (0, 0, 0, 0))
-        gd = ImageDraw.Draw(ghosts)
-        for t, rad, col, alpha in ((0.26, 0.062, GHOST, 210), (0.76, 0.042, STREAK, 190)):
-            cx = 0.5 + (t - 0.5) * 1.34
-            cy = 0.5 - (t - 0.5) * 0.52
-            gd.polygon([(x * n, y * n) for x, y in hexagon(cx, cy, rad)], fill=col + (alpha,))
-        img.alpha_composite(ghosts)
-
-    # Streak and core go on top of the iris, the way stray light actually falls
-    # across a lens rather than behind it. Both are soft falloffs built in numpy;
-    # a hard ellipse read as a blue nub poking out either side of the hexagon.
-    yy, xx = np.mgrid[0:n, 0:n]
-    u = xx / n - 0.5
-    v = yy / n - 0.5
-
-    streak = np.clip(1.0 - np.abs(u) / STREAK_HALF_W, 0.0, 1.0) ** 1.5
-    streak = streak * np.exp(-((v / STREAK_HALF_H) ** 2) * 2.2)
-    layer = np.zeros((n, n, 4), dtype=np.uint8)
-    layer[..., 0], layer[..., 1], layer[..., 2] = STREAK
-    layer[..., 3] = (np.clip(streak, 0.0, 1.0) * 235).astype(np.uint8)
-    img.alpha_composite(Image.fromarray(layer, "RGBA"))
-
-    core = np.clip(1.0 - np.hypot(u, v) / R_CORE, 0.0, 1.0) ** 1.5
-    layer = np.zeros((n, n, 4), dtype=np.uint8)
-    layer[..., 0], layer[..., 1], layer[..., 2] = CORE
-    layer[..., 3] = (core * 255).astype(np.uint8)
-    img.alpha_composite(Image.fromarray(layer, "RGBA"))
-
+    mark = fit(load_mark(color), int(n * MARK_INSET))
+    img.alpha_composite(mark, ((n - mark.size[0]) // 2, (n - mark.size[1]) // 2))
     return img.resize((size, size), Image.LANCZOS)
 
 
-def write(path, img):
+def trace(scale, trace_res=512, epsilon_frac=0.0015):
+    """Traces the silhouette to SVG path data in a `scale` unit square.
+
+    Outer contours and the holes inside them come back in one path; the caller
+    pairs it with fill-rule="evenodd" so the counter of the A and the bite out of
+    the crescent stay open.
+    """
+    src = Image.open(SOURCE).convert("RGBA").resize((trace_res, trace_res), Image.LANCZOS)
+    alpha = np.asarray(src)[..., 3]
+    _, binary = cv2.threshold(alpha, 127, 255, cv2.THRESH_BINARY)
+
+    contours, _ = cv2.findContours(binary, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+
+    parts = []
+    for contour in contours:
+        simplified = cv2.approxPolyDP(contour, epsilon_frac * cv2.arcLength(contour, True), True)
+        if len(simplified) < 3:
+            continue
+        points = simplified.reshape(-1, 2) * (scale / trace_res)
+        parts.append("M" + "L".join(f"{x:.2f} {y:.2f}" for x, y in points) + "Z")
+
+    return "".join(parts)
+
+
+def write_svg(path, body, size):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", newline="\n") as file:
+        file.write(f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}">{body}</svg>\n')
+    print(f"  {path}")
+
+
+def write_png(path, img):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     img.save(path)
     print(f"  {path}  {img.size}")
 
 
 def main():
+    ico_sizes = [(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
+
     print("rasters:")
-    write(os.path.join(OUT, "main/app_icon.png"), render(128, True, True))
+    write_png(os.path.join(OUT, "main/app_icon.png"), render(128, badge=True))
 
     ico = os.path.join(OUT, "platform/windows/asosdot.ico")
-    os.makedirs(os.path.dirname(ico), exist_ok=True)
-    render(256, True, True).save(ico, sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+    render(256, badge=True).save(ico, sizes=ico_sizes)
     print(f"  {ico}  multi-size")
 
-    # The console binary gets the same mark with a warmer core so the two are
-    # tellable apart in a taskbar.
-    global CORE, STREAK
-    keep = (CORE, STREAK)
-    CORE, STREAK = (0xFF, 0xE9, 0xC8), GHOST
-    ico_c = os.path.join(OUT, "platform/windows/asosdot_console.ico")
-    render(256, True, True).save(ico_c, sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
-    print(f"  {ico_c}  multi-size")
-    CORE, STREAK = keep
+    # The console binary is tinted so the two are tellable apart in a taskbar.
+    ico_console = os.path.join(OUT, "platform/windows/asosdot_console.ico")
+    render(256, badge=True, color=CONSOLE_MARK).save(ico_console, sizes=ico_sizes)
+    print(f"  {ico_console}  multi-size")
 
-    # Boot splash: the mark on the dark badge colour, with a wordmark under it.
-    splash = Image.new("RGBA", (800, 600), BG + (255,))
-    mark = render(220, False, True)
-    splash.alpha_composite(mark, (290, 150))
+    # Boot splash, left transparent on purpose. The engine clears to
+    # application/boot_splash/bg_color and draws this over it, so a transparent
+    # splash matches whatever that colour is instead of baking one in and showing
+    # a rectangle wherever the two disagree.
+    splash = Image.new("RGBA", (800, 600), (0, 0, 0, 0))
+    mark = fit(load_mark(), 240)
+    splash.alpha_composite(mark, ((800 - mark.size[0]) // 2, 120))
     draw = ImageDraw.Draw(splash)
-    font = None
-    for cand in ("C:/Windows/Fonts/segoeuisb.ttf", "C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/arial.ttf"):
-        if os.path.exists(cand):
-            font = ImageFont.truetype(cand, 46)
-            break
-    text = "ASOSDOT ENGINE"
-    if font:
-        w = draw.textbbox((0, 0), text, font=font)[2]
-        draw.text(((800 - w) / 2, 400), text, font=font, fill=(0xE4, 0xEC, 0xF7, 255))
-        sub = ImageFont.truetype(font.path, 20)
-        s = "Base model of Godot"
-        sw = draw.textbbox((0, 0), s, font=sub)[2]
-        draw.text(((800 - sw) / 2, 462), s, font=sub, fill=(0x8A, 0x93, 0xA6, 255))
-    write(os.path.join(OUT, "main/splash.png"), splash)
+
+    font_path = next(
+        (
+            candidate
+            for candidate in (
+                "C:/Windows/Fonts/segoeuisb.ttf",
+                "C:/Windows/Fonts/segoeui.ttf",
+                "C:/Windows/Fonts/arial.ttf",
+            )
+            if os.path.exists(candidate)
+        ),
+        None,
+    )
+    if font_path:
+        title_font = ImageFont.truetype(font_path, 46)
+        sub_font = ImageFont.truetype(font_path, 20)
+        for text, font, y, fill in (
+            ("ASOSDOT ENGINE", title_font, 400, TEXT),
+            ("Base model of Godot", sub_font, 462, SUBTEXT),
+        ):
+            width = draw.textbbox((0, 0), text, font=font)[2]
+            draw.text(((800 - width) / 2, y), text, font=font, fill=fill + (255,))
+    write_png(os.path.join(OUT, "main/splash.png"), splash)
+
+    # The same art on the boot colour, for the README. GitHub composites images
+    # onto whichever theme the reader has, so the transparent splash would go
+    # invisible on a light one.
+    banner = Image.new("RGBA", splash.size, BG + (255,))
+    banner.alpha_composite(splash)
+    write_png(os.path.join(OUT, "misc/asosdot_banner.png"), banner)
 
     print("svgs:")
-    # Editor icons. Flat, no gradients: the editor rasterises these with ThorVG
-    # and recolours some of them, so they stay to simple filled paths.
-    small = f'''<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><path fill="#7fc4ff" d="M0.7 7.2h14.6v1.6H0.7z"/><path fill="#e4ecf7" fill-rule="evenodd" d="{ring_path(16)}"/><circle cx="8" cy="8" r="1.7" fill="#fff"/></svg>
-'''
+    # Flat filled paths only: the editor rasterises these with ThorVG and
+    # recolours some of them.
+    small = f'<path fill="#e4ecf7" fill-rule="evenodd" d="{trace(16)}"/>'
     for name in ("Godot", "GodotMonochrome"):
-        p = os.path.join(OUT, f"editor/icons/{name}.svg")
-        open(p, "w", newline="\n").write(small)
-        print(f"  {p}")
+        write_svg(os.path.join(OUT, f"editor/icons/{name}.svg"), small, 16)
 
-    # The project.godot file icon: same mark, with a page behind it.
-    gfile = f'''<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><path fill="#e4ecf7" d="M3 1h6l4 4v10H3z" opacity=".25"/><path fill="#7fc4ff" d="M2.6 7.4h10.8v1.3H2.6z"/><path fill="#e4ecf7" fill-rule="evenodd" d="{ring_path(16)}"/><circle cx="8" cy="8" r="1.6" fill="#fff"/></svg>
-'''
-    p = os.path.join(OUT, "editor/icons/GodotFile.svg")
-    open(p, "w", newline="\n").write(gfile)
-    print(f"  {p}")
+    page = '<path fill="#e4ecf7" d="M3 1h6l4 4v10H3z" opacity=".25"/>'
+    mark_small = (
+        f'<g transform="translate(3.2 3.2) scale(0.6)"><path fill="#e4ecf7" fill-rule="evenodd" d="{trace(16)}"/></g>'
+    )
+    write_svg(os.path.join(OUT, "editor/icons/GodotFile.svg"), page + mark_small, 16)
 
-    # About dialog mark, drawn large enough to carry the ghosts.
-    s = 120
-    ghosts = ""
-    for t, rad, col in ((0.30, 0.055, "#ffb45e"), (0.72, 0.035, "#7fc4ff")):
-        cx = 0.5 + (t - 0.5) * 1.30
-        cy = 0.5 - (t - 0.5) * 0.55
-        ghosts += f'<path fill="{col}" d="{svg_poly(hexagon(cx, cy, rad), s)}"/>'
-    logo = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{s}" height="{s}"><path fill="#7fc4ff" d="M{0.045 * s:.1f} {0.470 * s:.1f}h{0.910 * s:.1f}v{0.060 * s:.1f}h-{0.910 * s:.1f}z"/>{ghosts}<path fill="#e4ecf7" fill-rule="evenodd" d="{ring_path(s)}"/><circle cx="{s / 2}" cy="{s / 2}" r="{R_CORE * s:.1f}" fill="#fff"/></svg>
-'''
-    p = os.path.join(OUT, "editor/icons/Logo.svg")
-    open(p, "w", newline="\n").write(logo)
-    print(f"  {p}")
+    write_svg(
+        os.path.join(OUT, "editor/icons/Logo.svg"),
+        f'<path fill="#e4ecf7" fill-rule="evenodd" d="{trace(120, epsilon_frac=0.0008)}"/>',
+        120,
+    )
 
 
 main()

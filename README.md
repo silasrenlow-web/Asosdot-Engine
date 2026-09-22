@@ -1,7 +1,7 @@
 # Asosdot Engine
 
 <p align="center">
-  <img src="main/splash.png" width="500" alt="Asosdot Engine">
+  <img src="misc/asosdot_banner.png" width="500" alt="Asosdot Engine">
 </p>
 
 **Created by Aosjes or formerly Multi-Games Studio. Base model of Godot.**
