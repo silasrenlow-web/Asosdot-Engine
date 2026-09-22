@@ -37,7 +37,6 @@
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/rich_text_label.h"
 #include "scene/gui/split_container.h"
-#include "scene/gui/tab_container.h"
 #include "scene/gui/texture_rect.h"
 #include "scene/gui/tree.h"
 
@@ -46,7 +45,7 @@ void EditorAbout::_notification(int p_what) {
 		case NOTIFICATION_TRANSLATION_CHANGED: {
 			_about_text_label->set_text(
 					TTR("Created by Aosjes or formerly Multi-Games Studio. Base model of Godot.") + "\n" +
-					TTR("A fork of Godot Engine. Every Godot developer and contributor is credited under its MIT licence; the notice it requires is kept in full under Third-party Licenses.") + "\n\n" +
+					TTR("A fork of Godot Engine. Its developers and contributors are credited below, under the MIT licence.") + "\n\n" +
 					String(U"© 2014-present ") + TTR("Godot Engine contributors") + ".\n" +
 					String(U"© 2007-2014 Juan Linietsky, Ariel Manzur.\n"));
 		} break;
@@ -101,29 +100,25 @@ EditorAbout::EditorAbout() {
 	_about_text_label->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
 	_about_text_label->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
 	_about_text_label->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
+	_about_text_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	_about_text_label->set_custom_minimum_size(Size2(460, 0) * EDSCALE);
 	version_info_vbc->add_child(_about_text_label);
 
 	hbc->add_child(version_info_vbc);
 
-	TabContainer *tc = memnew(TabContainer);
-	tc->set_tab_alignment(TabBar::ALIGNMENT_CENTER);
-	tc->set_custom_minimum_size(Size2(400, 200) * EDSCALE);
-	tc->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	tc->set_theme_type_variation("TabContainerOdd");
-	vbc->add_child(tc);
-
 	// Thirdparty License.
 
 	VBoxContainer *license_thirdparty = memnew(VBoxContainer);
-	license_thirdparty->set_name(TTRC("Third-party Licenses"));
+	license_thirdparty->set_custom_minimum_size(Size2(400, 200) * EDSCALE);
 	license_thirdparty->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	tc->add_child(license_thirdparty);
+	license_thirdparty->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	vbc->add_child(license_thirdparty);
 
 	Label *tpl_label = memnew(Label(TTRC("Asosdot Engine, and the Godot Engine it is built on, rely on a number of third-party free and open source libraries and assets, all compatible with the terms of its MIT license. The following is an exhaustive list of all such third-party components with their respective copyright statements and license terms.")));
 	tpl_label->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
 	tpl_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	tpl_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
-	tpl_label->set_size(Size2(630, 1) * EDSCALE);
+	tpl_label->set_custom_minimum_size(Size2(630, 0) * EDSCALE);
 	license_thirdparty->add_child(tpl_label);
 
 	HSplitContainer *tpl_hbc = memnew(HSplitContainer);
