@@ -58,6 +58,7 @@ import gles3_builders
 import glsl_builders
 import methods
 import scu_builders
+import version
 from misc.utility.color import is_stderr_color, print_error, print_info, print_warning
 from platform_methods import architecture_aliases, architectures, compatibility_platform_aliases
 
@@ -120,6 +121,7 @@ if "TERM" in os.environ:  # Used for colored output.
 
 env.disabled_modules = set()
 env.module_version_string = ""
+env["binary_name"] = version.short_name
 env.msvc = False
 env.scons_version = env._get_major_minor_revision(scons_raw_version)
 

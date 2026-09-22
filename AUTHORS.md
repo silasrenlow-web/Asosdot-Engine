@@ -1,3 +1,13 @@
+# Asosdot Engine authors
+
+Asosdot Engine is created by Aosjes, formerly Multi-Games Studio. It is built on
+Godot Engine, which is where everything below this section comes from.
+
+The engine specific work in this fork is the ray traced lighting path, the
+Rope3D node and the lens flare system. The flare textures bundled with it are
+CC0, by hc (hackcraft.de); see `thirdparty/lens_flare/README.md` and
+`COPYRIGHT.txt`.
+
 # Godot Engine authors
 
 Godot Engine is developed by a community of voluntary contributors who
