@@ -33,6 +33,8 @@
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
 
+#include <iterator>
+
 void LensFlareElement::set_type(Type p_type) {
 	ERR_FAIL_INDEX(p_type, TYPE_MAX);
 	if (type == p_type) {
@@ -398,43 +400,28 @@ void LensFlare::remove_element(int p_index) {
 	emit_changed();
 }
 
-Ref<LensFlare> LensFlare::create_default() {
-	struct Preset {
-		LensFlareElement::Type type;
-		float position;
-		Vector2 size;
-		float intensity;
-		Color color;
-		float falloff;
-		int sides;
-		int count;
-		float spacing;
-		float aberration;
-		bool auto_rotate;
-	};
+namespace {
 
-	// Positions run from 0 at the source to 1 at the centre of the screen, so the
-	// ghosts past 1 are the ones that swing out the far side as the source moves.
-	// Built from the bundled CC0 textures rather than the analytic shapes: a
-	// photographed flare has grain and asymmetry that a formula does not, and
-	// these cost nothing in a saved scene because the element stores the type,
-	// not the image. Swap any of them for TYPE_GLOW and friends if you would
-	// rather have the resolution independent version.
-	static const Preset presets[] = {
-		{ LensFlareElement::TYPE_BUILTIN_CORONA, 0.0, Vector2(0.38, 0.38), 1.6, Color(1.0, 0.97, 0.9), 0.5, 6, 1, 0.0, 0.0, false },
-		{ LensFlareElement::TYPE_BUILTIN_NOVA, 0.0, Vector2(0.72, 0.72), 0.45, Color(1.0, 0.95, 0.85), 0.5, 6, 1, 0.0, 0.0, false },
-		{ LensFlareElement::TYPE_BUILTIN_STREAK, 0.0, Vector2(1.7, 0.16), 0.3, Color(0.55, 0.72, 1.0), 0.5, 6, 1, 0.0, 0.0, true },
-		{ LensFlareElement::TYPE_BUILTIN_HALO, 0.95, Vector2(0.46, 0.46), 0.16, Color(0.8, 0.9, 1.0), 0.5, 6, 1, 0.0, 0.04, false },
-		{ LensFlareElement::TYPE_BUILTIN_HEXAGON, 0.42, Vector2(0.1, 0.1), 0.16, Color(1.0, 0.8, 0.6), 0.5, 6, 1, 0.0, 0.08, true },
-		{ LensFlareElement::TYPE_BUILTIN_HEXAGON_RING, 0.68, Vector2(0.06, 0.06), 0.12, Color(0.7, 1.0, 0.8), 0.5, 6, 4, 0.19, 0.06, true },
-		{ LensFlareElement::TYPE_BUILTIN_IRIS, 1.35, Vector2(0.16, 0.16), 0.1, Color(0.6, 0.75, 1.0), 0.5, 6, 1, 0.0, 0.15, false },
-		{ LensFlareElement::TYPE_BUILTIN_DISC, 1.75, Vector2(0.08, 0.08), 0.14, Color(1.0, 0.65, 0.5), 0.5, 6, 1, 0.0, 0.1, false },
-	};
+struct Preset {
+	LensFlareElement::Type type;
+	float position;
+	Vector2 size;
+	float intensity;
+	Color color;
+	float falloff;
+	int sides;
+	int count;
+	float spacing;
+	float aberration;
+	bool auto_rotate;
+};
 
+Ref<LensFlare> build_preset(const Preset *p_presets, int p_count) {
 	Ref<LensFlare> result;
 	result.instantiate();
 
-	for (const Preset &preset : presets) {
+	for (int i = 0; i < p_count; i++) {
+		const Preset &preset = p_presets[i];
 		Ref<LensFlareElement> element;
 		element.instantiate();
 		element->set_type(preset.type);
@@ -454,6 +441,48 @@ Ref<LensFlare> LensFlare::create_default() {
 	return result;
 }
 
+} // namespace
+
+Ref<LensFlare> LensFlare::create_default() {
+	// Positions run from 0 at the source to 1 at the centre of the screen, so the
+	// ghosts past 1 are the ones that swing out the far side as the source moves.
+	// Built from the bundled CC0 textures rather than the analytic shapes: a
+	// photographed flare has grain and asymmetry that a formula does not, and
+	// these cost nothing in a saved scene because the element stores the type,
+	// not the image. Swap any of them for TYPE_GLOW and friends if you would
+	// rather have the resolution independent version.
+	static const Preset presets[] = {
+		{ LensFlareElement::TYPE_BUILTIN_CORONA, 0.0, Vector2(0.38, 0.38), 1.6, Color(1.0, 0.97, 0.9), 0.5, 6, 1, 0.0, 0.0, false },
+		{ LensFlareElement::TYPE_BUILTIN_NOVA, 0.0, Vector2(0.72, 0.72), 0.45, Color(1.0, 0.95, 0.85), 0.5, 6, 1, 0.0, 0.0, false },
+		{ LensFlareElement::TYPE_BUILTIN_STREAK, 0.0, Vector2(1.7, 0.16), 0.3, Color(0.55, 0.72, 1.0), 0.5, 6, 1, 0.0, 0.0, true },
+		{ LensFlareElement::TYPE_BUILTIN_HALO, 0.95, Vector2(0.46, 0.46), 0.16, Color(0.8, 0.9, 1.0), 0.5, 6, 1, 0.0, 0.04, false },
+		{ LensFlareElement::TYPE_BUILTIN_HEXAGON, 0.42, Vector2(0.1, 0.1), 0.16, Color(1.0, 0.8, 0.6), 0.5, 6, 1, 0.0, 0.08, true },
+		{ LensFlareElement::TYPE_BUILTIN_HEXAGON_RING, 0.68, Vector2(0.06, 0.06), 0.12, Color(0.7, 1.0, 0.8), 0.5, 6, 4, 0.19, 0.06, true },
+		{ LensFlareElement::TYPE_BUILTIN_IRIS, 1.35, Vector2(0.16, 0.16), 0.1, Color(0.6, 0.75, 1.0), 0.5, 6, 1, 0.0, 0.15, false },
+		{ LensFlareElement::TYPE_BUILTIN_DISC, 1.75, Vector2(0.08, 0.08), 0.14, Color(1.0, 0.65, 0.5), 0.5, 6, 1, 0.0, 0.1, false },
+	};
+
+	return build_preset(presets, (int)std::size(presets));
+}
+
+Ref<LensFlare> LensFlare::create_procedural() {
+	// The same flare drawn entirely from the analytic shapes. No texture memory
+	// and sharp at any resolution, at the cost of the grain and asymmetry a
+	// photographed element has.
+	static const Preset presets[] = {
+		{ LensFlareElement::TYPE_GLOW, 0.0, Vector2(0.22, 0.22), 1.4, Color(1.0, 0.97, 0.9), 0.8, 6, 1, 0.0, 0.0, false },
+		{ LensFlareElement::TYPE_STARBURST, 0.0, Vector2(0.5, 0.5), 0.35, Color(1.0, 0.95, 0.85), 0.55, 6, 1, 0.0, 0.0, false },
+		{ LensFlareElement::TYPE_STREAK, 0.0, Vector2(1.5, 0.035), 0.25, Color(0.55, 0.72, 1.0), 0.6, 6, 1, 0.0, 0.0, true },
+		{ LensFlareElement::TYPE_RING, 0.95, Vector2(0.4, 0.4), 0.12, Color(0.8, 0.9, 1.0), 0.08, 6, 1, 0.0, 0.04, false },
+		{ LensFlareElement::TYPE_POLYGON, 0.42, Vector2(0.09, 0.09), 0.14, Color(1.0, 0.8, 0.6), 0.35, 6, 1, 0.0, 0.08, true },
+		{ LensFlareElement::TYPE_POLYGON, 0.68, Vector2(0.05, 0.05), 0.1, Color(0.7, 1.0, 0.8), 0.3, 6, 4, 0.19, 0.06, true },
+		{ LensFlareElement::TYPE_DISC, 1.35, Vector2(0.13, 0.13), 0.08, Color(0.6, 0.75, 1.0), 0.6, 6, 1, 0.0, 0.18, false },
+		{ LensFlareElement::TYPE_DISC, 1.75, Vector2(0.06, 0.06), 0.12, Color(1.0, 0.65, 0.5), 0.5, 6, 1, 0.0, 0.1, false },
+	};
+
+	return build_preset(presets, (int)std::size(presets));
+}
+
 LensFlare::~LensFlare() {
 	for (const Ref<LensFlareElement> &element : elements) {
 		if (element.is_valid()) {
@@ -471,6 +500,7 @@ void LensFlare::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("add_element", "element"), &LensFlare::add_element);
 	ClassDB::bind_method(D_METHOD("remove_element", "index"), &LensFlare::remove_element);
 	ClassDB::bind_static_method("LensFlare", D_METHOD("create_default"), &LensFlare::create_default);
+	ClassDB::bind_static_method("LensFlare", D_METHOD("create_procedural"), &LensFlare::create_procedural);
 
 	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "elements", PROPERTY_HINT_ARRAY_TYPE, MAKE_RESOURCE_TYPE_HINT("LensFlareElement")), "set_elements", "get_elements");
 }

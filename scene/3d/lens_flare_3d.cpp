@@ -77,7 +77,15 @@ void LensFlare3D::_update_source() {
 	ERR_FAIL_NULL(rs);
 
 	rs->lens_flare_set_source(flare_rid, intensity, flare_scale, color, directional);
-	rs->lens_flare_set_occlusion(flare_rid, occlusion_enabled, occlusion_radius);
+
+	// The server takes one number, the distance to step sideways from the source
+	// before projecting, so a directional source turns its angle into a tangent
+	// here. Sharing one property between the two would mean a radius sensible in
+	// metres reading as a wildly wide angle: the old 0.25 default came out at 14
+	// degrees, a disc no ordinary wall could cover, which is why the sun used to
+	// shine through one.
+	const float sample_radius = directional ? Math::tan(occlusion_angle) : occlusion_radius;
+	rs->lens_flare_set_occlusion(flare_rid, occlusion_enabled, sample_radius);
 
 	// A directional source is infinitely far away and has no cone, so neither
 	// fade means anything for it.
@@ -187,6 +195,15 @@ float LensFlare3D::get_occlusion_radius() const {
 	return occlusion_radius;
 }
 
+void LensFlare3D::set_occlusion_angle(float p_radians) {
+	occlusion_angle = CLAMP(p_radians, 0.0f, Math::deg_to_rad(45.0f));
+	_update_source();
+}
+
+float LensFlare3D::get_occlusion_angle() const {
+	return occlusion_angle;
+}
+
 void LensFlare3D::set_fade_distance_begin(float p_distance) {
 	fade_distance_begin = MAX(p_distance, 0.0f);
 	_update_source();
@@ -234,7 +251,10 @@ float LensFlare3D::get_angle_fade() const {
 }
 
 void LensFlare3D::_validate_property(PropertyInfo &p_property) const {
-	if (p_property.name == "occlusion_radius" && !occlusion_enabled) {
+	if (p_property.name == "occlusion_radius" && (!occlusion_enabled || directional)) {
+		p_property.usage = PROPERTY_USAGE_NO_EDITOR;
+	}
+	if (p_property.name == "occlusion_angle" && (!occlusion_enabled || !directional)) {
 		p_property.usage = PROPERTY_USAGE_NO_EDITOR;
 	}
 
@@ -265,6 +285,8 @@ void LensFlare3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_occlusion_enabled"), &LensFlare3D::is_occlusion_enabled);
 	ClassDB::bind_method(D_METHOD("set_occlusion_radius", "radius"), &LensFlare3D::set_occlusion_radius);
 	ClassDB::bind_method(D_METHOD("get_occlusion_radius"), &LensFlare3D::get_occlusion_radius);
+	ClassDB::bind_method(D_METHOD("set_occlusion_angle", "radians"), &LensFlare3D::set_occlusion_angle);
+	ClassDB::bind_method(D_METHOD("get_occlusion_angle"), &LensFlare3D::get_occlusion_angle);
 
 	ClassDB::bind_method(D_METHOD("set_fade_distance_begin", "distance"), &LensFlare3D::set_fade_distance_begin);
 	ClassDB::bind_method(D_METHOD("get_fade_distance_begin"), &LensFlare3D::get_fade_distance_begin);
@@ -286,6 +308,7 @@ void LensFlare3D::_bind_methods() {
 	ADD_GROUP("Occlusion", "occlusion_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "occlusion_enabled"), "set_occlusion_enabled", "is_occlusion_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "occlusion_radius", PROPERTY_HINT_RANGE, "0,8,0.001,or_greater,suffix:m"), "set_occlusion_radius", "get_occlusion_radius");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "occlusion_angle", PROPERTY_HINT_RANGE, "0,45,0.01,radians_as_degrees"), "set_occlusion_angle", "get_occlusion_angle");
 
 	ADD_GROUP("Fade", "");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "fade_distance_begin", PROPERTY_HINT_RANGE, "0,4096,0.01,or_greater,suffix:m"), "set_fade_distance_begin", "get_fade_distance_begin");

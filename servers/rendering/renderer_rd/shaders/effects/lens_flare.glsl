@@ -71,16 +71,13 @@ float sample_occlusion(vec2 p_uv, float p_depth, float p_radius) {
 	float visible = 0.0;
 
 	for (int i = 0; i < 12; i++) {
-		vec2 tap_uv = p_uv + occlusion_taps[i] * p_radius * vec2(1.0, params.camera_position.w);
-
-		// Taps that leave the frame have no depth to test against. Counting them
-		// as visible is what keeps a source near the edge from flickering dark as
-		// the disc slides off screen.
-		if (tap_uv != clamp(tap_uv, vec2(0.0), vec2(1.0))) {
-			visible += 1.0;
-			continue;
-		}
-
+		// Clamped into the frame rather than skipped. A tap that falls outside
+		// reads the nearest edge texel, which is the best evidence available for
+		// what sits between the lens and a source just off screen. Counting those
+		// taps as unoccluded instead, which is what this did, switched occlusion
+		// off entirely the moment a source left the frame and let a flare shine
+		// straight through a wall.
+		vec2 tap_uv = clamp(p_uv + occlusion_taps[i] * p_radius * vec2(1.0, params.camera_position.w), vec2(0.0), vec2(1.0));
 		visible += textureLod(source_depth, tap_uv, 0.0).r <= p_depth ? 1.0 : 0.0;
 	}
 
@@ -100,15 +97,27 @@ void main() {
 		vec3 ndc = clip.xyz / clip.w;
 		source_uv = ndc.xy * 0.5 + 0.5;
 
+		// Reverse Z puts the near plane at 1 and the far plane at 0, so a source
+		// outside that range is behind the camera or past the far plane. The
+		// clip.w test above already catches the first case under a perspective
+		// projection, but not under an orthogonal one: its w is 1 everywhere, so
+		// a source behind an orthogonal camera projects onto the screen as
+		// though it were in front. That is what puts flares in the editor's Top
+		// and Front views.
+		if (flare.source.w > 0.5) {
+			fade *= (ndc.z >= 0.0 && ndc.z <= 1.0) ? 1.0 : 0.0;
+		}
+
 		// A directional source sits at infinity, where the projected depth is the
 		// far plane and a depth compare is all floating point noise. Anything the
 		// scene drew at all is in front of it.
 		float source_depth = flare.source.w > 0.5 ? ndc.z : 0.0;
 
-		if (flare.params.x > 0.0) {
+		if (fade > 0.0 && flare.params.x > 0.0) {
 			// Offsetting along the camera's right vector turns a radius given in
 			// world units into one in UV, and the same expression covers a
-			// directional source, where it lands on the tangent of an angle.
+			// directional source, where the offset is the tangent of an angle
+			// because the source itself is a direction of unit length.
 			vec4 probe = params.view_projection * vec4(flare.source.xyz + params.camera_right.xyz * flare.params.x, flare.source.w);
 			float radius = probe.w > 0.0 ? distance(probe.xy / probe.w * 0.5 + 0.5, source_uv) : 0.0;
 			fade *= sample_occlusion(source_uv, source_depth, radius);

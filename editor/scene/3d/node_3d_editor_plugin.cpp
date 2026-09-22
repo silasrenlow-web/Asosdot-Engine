@@ -64,6 +64,7 @@
 #include "editor/scene/3d/gizmos/gpu_particles_collision_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/label_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/lens_flare_3d_gizmo_plugin.h"
+#include "editor/scene/3d/lens_flare_generator.h"
 #include "editor/scene/3d/gizmos/light_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/lightmap_gi_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/lightmap_probe_gizmo_plugin.h"
@@ -4600,6 +4601,15 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 			view_display_menu->get_popup()->set_item_checked(idx, current);
 
 		} break;
+		case VIEW_LENS_FLARES: {
+			int idx = view_display_menu->get_popup()->get_item_index(VIEW_LENS_FLARES);
+			bool current = !view_display_menu->get_popup()->is_item_checked(idx);
+			// The viewport camera is a real Camera3D, so this is the same switch
+			// a game camera uses rather than an editor only code path.
+			camera->set_lens_flare_enabled(current);
+			view_display_menu->get_popup()->set_item_checked(idx, current);
+
+		} break;
 		case VIEW_TRANSFORM_GIZMO: {
 			int idx = view_display_menu->get_popup()->get_item_index(VIEW_TRANSFORM_GIZMO);
 			bool current = view_display_menu->get_popup()->is_item_checked(idx);
@@ -5239,6 +5249,14 @@ void Node3DEditorViewport::set_state(const Dictionary &p_state) {
 			_menu_option(VIEW_GIZMOS);
 		}
 	}
+	if (p_state.has("lens_flares")) {
+		bool lens_flares = p_state["lens_flares"];
+
+		int idx = view_display_menu->get_popup()->get_item_index(VIEW_LENS_FLARES);
+		if (view_display_menu->get_popup()->is_item_checked(idx) != lens_flares) {
+			_menu_option(VIEW_LENS_FLARES);
+		}
+	}
 	if (p_state.has("transform_gizmo")) {
 		bool transform_gizmo = p_state["transform_gizmo"];
 
@@ -5348,6 +5366,7 @@ Dictionary Node3DEditorViewport::get_state() const {
 	d["listener"] = viewport->is_audio_listener_3d();
 	d["doppler"] = view_display_menu->get_popup()->is_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_AUDIO_DOPPLER));
 	d["gizmos"] = view_display_menu->get_popup()->is_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_GIZMOS));
+	d["lens_flares"] = view_display_menu->get_popup()->is_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_LENS_FLARES));
 	d["transform_gizmo"] = view_display_menu->get_popup()->is_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_TRANSFORM_GIZMO));
 	d["grid"] = view_display_menu->get_popup()->is_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_GRID));
 	d["information"] = view_display_menu->get_popup()->is_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_INFORMATION));
@@ -6880,6 +6899,7 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	view_display_menu->get_popup()->add_separator();
 	view_display_menu->get_popup()->add_check_shortcut(ED_SHORTCUT("spatial_editor/view_environment", TTRC("View Environment")), VIEW_ENVIRONMENT);
 	view_display_menu->get_popup()->add_check_shortcut(ED_SHORTCUT("spatial_editor/view_gizmos", TTRC("View Gizmos")), VIEW_GIZMOS);
+	view_display_menu->get_popup()->add_check_shortcut(ED_SHORTCUT("spatial_editor/view_lens_flares", TTRC("View Lens Flares")), VIEW_LENS_FLARES);
 	view_display_menu->get_popup()->add_check_shortcut(ED_SHORTCUT("spatial_editor/view_transform_gizmo", TTRC("View Transform Gizmo")), VIEW_TRANSFORM_GIZMO);
 	view_display_menu->get_popup()->add_check_shortcut(ED_SHORTCUT("spatial_editor/view_grid_lines", TTRC("View Grid")), VIEW_GRID);
 	view_display_menu->get_popup()->add_check_shortcut(ED_SHORTCUT("spatial_editor/view_information", TTRC("View Information")), VIEW_INFORMATION);
@@ -6891,6 +6911,7 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	view_display_menu->get_popup()->add_check_shortcut(ED_SHORTCUT("spatial_editor/view_audio_listener", TTRC("Audio Listener")), VIEW_AUDIO_LISTENER);
 	view_display_menu->get_popup()->add_check_shortcut(ED_SHORTCUT("spatial_editor/view_audio_doppler", TTRC("Enable Doppler")), VIEW_AUDIO_DOPPLER);
 	view_display_menu->get_popup()->set_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_GIZMOS), true);
+	view_display_menu->get_popup()->set_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_LENS_FLARES), true);
 	view_display_menu->get_popup()->set_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_TRANSFORM_GIZMO), true);
 	view_display_menu->get_popup()->set_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_GRID), true);
 
@@ -9261,6 +9282,7 @@ void Node3DEditor::update_grid() {
 
 void Node3DEditor::_selection_changed() {
 	_refresh_menu_icons();
+	_update_generate_flare_button();
 
 	const HashMap<ObjectID, Object *> &selection = editor_selection->get_selection();
 
@@ -9556,6 +9578,21 @@ void Node3DEditor::shortcut_input(const Ref<InputEvent> &p_event) {
 	}
 
 	snap_key_enabled = Input::get_singleton()->is_key_pressed(Key::CMD_OR_CTRL);
+}
+
+void Node3DEditor::_generate_flare_pressed() {
+	lens_flare_generator->popup_for_selection();
+}
+
+void Node3DEditor::_update_generate_flare_button() {
+	// Only lights, because the generator reads the light's type to decide how
+	// the flare should behave. Kept disabled rather than hidden so the button
+	// does not move around under the pointer as the selection changes.
+	Light3D *light = LensFlareGeneratorDialog::get_selected_light();
+	generate_flare_button->set_disabled(light == nullptr);
+	generate_flare_button->set_tooltip_text(light
+					? vformat(TTR("Add a LensFlare3D to %s, set up for its light type."), light->get_name())
+					: TTR("Select a single DirectionalLight3D, OmniLight3D or SpotLight3D to generate a lens flare on it."));
 }
 
 void Node3DEditor::_sun_environ_settings_pressed() {
@@ -10672,6 +10709,21 @@ Node3DEditor::Node3DEditor() {
 	sun_environ_settings->connect(SceneStringName(pressed), callable_mp(this, &Node3DEditor::_sun_environ_settings_pressed));
 
 	main_menu_hbox->add_child(sun_environ_settings);
+
+	main_menu_hbox->add_child(memnew(VSeparator));
+
+	generate_flare_button = memnew(Button);
+	generate_flare_button->set_text(TTRC("Generate flare"));
+	generate_flare_button->set_theme_type_variation(SceneStringName(FlatButton));
+	generate_flare_button->set_accessibility_name(TTRC("Generate lens flare on the selected light."));
+	generate_flare_button->set_shortcut(ED_SHORTCUT("spatial_editor/generate_lens_flare", TTRC("Generate Lens Flare")));
+	generate_flare_button->set_shortcut_context(this);
+	generate_flare_button->connect(SceneStringName(pressed), callable_mp(this, &Node3DEditor::_generate_flare_pressed));
+	main_menu_hbox->add_child(generate_flare_button);
+
+	lens_flare_generator = memnew(LensFlareGeneratorDialog);
+	add_child(lens_flare_generator);
+	_update_generate_flare_button();
 
 	main_menu_hbox->add_child(memnew(VSeparator));
 

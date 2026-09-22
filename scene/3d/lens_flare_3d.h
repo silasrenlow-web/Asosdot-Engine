@@ -53,6 +53,7 @@ class LensFlare3D : public VisualInstance3D {
 
 	bool occlusion_enabled = true;
 	float occlusion_radius = 0.25;
+	float occlusion_angle = Math::deg_to_rad(1.0);
 
 	float fade_distance_begin = 0.0;
 	float fade_distance_end = 0.0;
@@ -92,6 +93,9 @@ public:
 
 	void set_occlusion_radius(float p_radius);
 	float get_occlusion_radius() const;
+
+	void set_occlusion_angle(float p_radians);
+	float get_occlusion_angle() const;
 
 	void set_fade_distance_begin(float p_distance);
 	float get_fade_distance_begin() const;

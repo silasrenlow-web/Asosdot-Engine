@@ -53,6 +53,7 @@ class EditorSpinSlider;
 class HSplitContainer;
 class LineEdit;
 class MenuButton;
+class LensFlareGeneratorDialog;
 class Node3DEditor;
 class Node3DEditorViewport;
 class OptionButton;
@@ -134,6 +135,7 @@ class Node3DEditorViewport : public Control {
 		VIEW_AUDIO_LISTENER,
 		VIEW_AUDIO_DOPPLER,
 		VIEW_GIZMOS,
+		VIEW_LENS_FLARES,
 		VIEW_TRANSFORM_GIZMO,
 		VIEW_GRID,
 		VIEW_INFORMATION,
@@ -890,6 +892,11 @@ private:
 	Button *environ_add_to_scene = nullptr;
 
 	Button *sun_environ_settings = nullptr;
+
+	Button *generate_flare_button = nullptr;
+	LensFlareGeneratorDialog *lens_flare_generator = nullptr;
+	void _generate_flare_pressed();
+	void _update_generate_flare_button();
 
 	DirectionalLight3D *preview_sun = nullptr;
 	bool preview_sun_dangling = false;

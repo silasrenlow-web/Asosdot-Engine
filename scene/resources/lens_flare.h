@@ -177,5 +177,9 @@ public:
 	// node's configuration warning points at it.
 	static Ref<LensFlare> create_default();
 
+	// The same eight elements drawn from the analytic shapes instead of the
+	// bundled textures: no texture memory, sharp at any resolution.
+	static Ref<LensFlare> create_procedural();
+
 	~LensFlare();
 };

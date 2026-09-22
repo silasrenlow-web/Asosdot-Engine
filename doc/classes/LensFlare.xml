@@ -25,6 +25,12 @@
 				Returns the classic eight element flare: a corona and a nova on the source, an anamorphic streak, a halo, two runs of iris ghosts and a pair of discs past the centre of the screen. It is built from the flare textures bundled with the engine (the [code]TYPE_BUILTIN_*[/code] entries of [enum LensFlareElement.Type]) and is meant to be edited rather than used as is.
 			</description>
 		</method>
+		<method name="create_procedural" qualifiers="static">
+			<return type="LensFlare" />
+			<description>
+				Returns the same eight element flare as [method create_default], drawn from the analytic shapes instead of the bundled textures. It costs no texture memory and stays sharp at any resolution, at the cost of the grain and asymmetry a photographed element has.
+			</description>
+		</method>
 		<method name="get_element" qualifiers="const">
 			<return type="LensFlareElement" />
 			<param index="0" name="index" type="int" />

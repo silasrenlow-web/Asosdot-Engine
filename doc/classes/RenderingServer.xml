@@ -2194,7 +2194,7 @@
 			<param index="1" name="enabled" type="bool" />
 			<param index="2" name="radius" type="float" />
 			<description>
-				Sets whether the flare is faded out by geometry in front of its source, and over how wide a disc of the depth buffer that is measured. Equivalent to [member LensFlare3D.occlusion_enabled] and [member LensFlare3D.occlusion_radius].
+				Sets whether the flare is faded out by geometry in front of its source, and how far the sampling disc steps sideways from it. [param radius] is in world units for a positional source and the tangent of an angle for a directional one, since that source is only a direction. See [member LensFlare3D.occlusion_enabled], [member LensFlare3D.occlusion_radius] and [member LensFlare3D.occlusion_angle].
 			</description>
 		</method>
 		<method name="lens_flare_set_source">

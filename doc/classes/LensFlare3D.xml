@@ -44,12 +44,16 @@
 		<member name="intensity" type="float" setter="set_intensity" getter="get_intensity" default="1.0">
 			Multiplies the brightness of every element. Values above [code]1.0[/code] push the flare into the range where glow picks it up.
 		</member>
+		<member name="occlusion_angle" type="float" setter="set_occlusion_angle" getter="get_occlusion_angle" default="0.017453292">
+			Angular radius of the disc sampled against the depth buffer, used instead of [member occlusion_radius] when [member directional] is [code]true[/code], because a source at infinity has no size in metres. The sun is about half a degree across; the default of one degree fades a little more softly than that.
+			Keep it small. A wide angle samples a disc larger than most things that could block the source, so the flare goes on showing through them.
+		</member>
 		<member name="occlusion_enabled" type="bool" setter="set_occlusion_enabled" getter="is_occlusion_enabled" default="true">
-			If [code]true[/code], the flare is faded out by whatever the scene drew in front of the source, sampled from the depth buffer over a disc of [member occlusion_radius]. Partially hidden sources give a partially faded flare rather than an all-or-nothing pop.
+			If [code]true[/code], the flare is faded out by whatever the scene drew in front of the source, sampled from the depth buffer over a disc of [member occlusion_radius] (or [member occlusion_angle] for a directional source). Partially hidden sources give a partially faded flare rather than an all-or-nothing pop.
+			Samples that fall outside the frame are clamped to the nearest edge of the depth buffer, so a source just off screen is still occluded by whatever fills the edge of the view.
 		</member>
 		<member name="occlusion_radius" type="float" setter="set_occlusion_radius" getter="get_occlusion_radius" default="0.25">
-			Radius of the disc sampled against the depth buffer, in metres at the source. A larger radius makes the flare fade earlier and more gradually as something moves in front of it.
-			When [member directional] is [code]true[/code] the source is at infinity and has no size in metres, so this is taken as the tangent of an angle instead: [code]0.01[/code] is roughly the angular size of the sun.
+			Radius of the disc sampled against the depth buffer, in metres at the source. A larger radius makes the flare fade earlier and more gradually as something moves in front of it. Replaced by [member occlusion_angle] when [member directional] is [code]true[/code].
 		</member>
 	</members>
 </class>
