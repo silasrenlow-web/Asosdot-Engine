@@ -9588,13 +9588,14 @@ void Node3DEditor::_generate_flare_pressed() {
 
 void Node3DEditor::_update_generate_flare_button() {
 	// Only lights, because the generator reads the light's type to decide how
-	// the flare should behave. Kept disabled rather than hidden so the button
-	// does not move around under the pointer as the selection changes.
+	// the flare should behave. Hidden rather than greyed out: this is the one
+	// button in the toolbar carrying a word of text, so leaving it there for
+	// the selections it cannot act on costs more room than it is worth.
 	Light3D *light = LensFlareGeneratorDialog::get_selected_light();
-	generate_flare_button->set_disabled(light == nullptr);
-	generate_flare_button->set_tooltip_text(light
-					? vformat(TTR("Add a LensFlare3D to %s, set up for its light type."), light->get_name())
-					: TTR("Select a single DirectionalLight3D, OmniLight3D or SpotLight3D to generate a lens flare on it."));
+	generate_flare_button->set_visible(light != nullptr);
+	if (light) {
+		generate_flare_button->set_tooltip_text(vformat(TTR("Add a LensFlare3D to %s, set up for its light type."), light->get_name()));
+	}
 }
 
 void Node3DEditor::_rope_simulate_toggled(bool p_pressed) {
