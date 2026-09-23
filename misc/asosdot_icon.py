@@ -142,7 +142,7 @@ def main():
         sub_font = ImageFont.truetype(font_path, 20)
         for text, font, y, fill in (
             ("ASOSDOT ENGINE", title_font, 400, TEXT),
-            ("Base model of Godot", sub_font, 462, SUBTEXT),
+            ("A better implemented features for Godot Engine.", sub_font, 462, SUBTEXT),
         ):
             width = draw.textbbox((0, 0), text, font=font)[2]
             draw.text(((800 - width) / 2, y), text, font=font, fill=fill + (255,))
