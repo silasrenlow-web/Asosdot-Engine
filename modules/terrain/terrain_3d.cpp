@@ -220,7 +220,9 @@ void Terrain3D::_process_updates() {
 			_rebuild_layout();
 			dirty_regions.clear();
 			dirty_collision.clear();
-		} else {
+		} else if (_get_layer_texture_key() != layer_texture_key) {
+			// Tints, tiling and the like are material parameters; only new
+			// pixels need the arrays built again.
 			_rebuild_layer_textures();
 		}
 		layers_dirty = false;
@@ -488,8 +490,26 @@ static Vector<Ref<Image>> normalize_slices(const Vector<Ref<Image>> &p_images, b
 	return result;
 }
 
+Vector<uint64_t> Terrain3D::_get_layer_texture_key() const {
+	Vector<uint64_t> key;
+	if (data.is_null()) {
+		return key;
+	}
+	for (const Ref<TerrainLayer> &layer : data->get_layer_list()) {
+		if (layer.is_null()) {
+			continue;
+		}
+		key.push_back(layer->get_instance_id());
+		key.push_back(layer->get_texture_version());
+		key.push_back(layer->get_albedo_texture().is_valid() ? (uint64_t)layer->get_albedo_texture()->get_instance_id() : 0);
+		key.push_back(layer->get_normal_texture().is_valid() ? (uint64_t)layer->get_normal_texture()->get_instance_id() : 0);
+	}
+	return key;
+}
+
 void Terrain3D::_rebuild_layer_textures() {
 	RenderingServer *rs = RenderingServer::get_singleton();
+	layer_texture_key = _get_layer_texture_key();
 	if (layer_albedo_array.is_valid()) {
 		rs->free_rid(layer_albedo_array);
 		layer_albedo_array = RID();

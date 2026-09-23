@@ -24,6 +24,10 @@ class TerrainLayer : public Resource {
 	bool triplanar = false;
 	float detiling = 0.0;
 
+	// Bumped whenever the pixels behind the layer change, so the terrain can
+	// tell a new texture from a new tint and skip re-uploading its arrays.
+	uint32_t texture_version = 0;
+
 	void _texture_changed();
 
 protected:
@@ -35,6 +39,7 @@ public:
 
 	void set_albedo_texture(const Ref<Texture2D> &p_texture);
 	Ref<Texture2D> get_albedo_texture() const { return albedo_texture; }
+	uint32_t get_texture_version() const { return texture_version; }
 	void set_normal_texture(const Ref<Texture2D> &p_texture);
 	Ref<Texture2D> get_normal_texture() const { return normal_texture; }
 

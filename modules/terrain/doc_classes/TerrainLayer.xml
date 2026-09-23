@@ -24,6 +24,7 @@
 		</member>
 		<member name="albedo_texture" type="Texture2D" setter="set_albedo_texture" getter="get_albedo_texture">
 			The layer's colour, with an optional height map in the alpha channel for [member TerrainMaterial.height_blending]. A texture without alpha blends as though it were flat.
+			In the editor, an imported texture assigned here is reimported for 3D use the way a material's would be: with mipmaps and VRAM compression, unless its [b]Detect 3D[/b] import option was turned off.
 		</member>
 		<member name="detiling" type="float" setter="set_detiling" getter="get_detiling" default="0.0">
 			Breaks up visible repetition by shifting the texture by a different random amount in different places and cross-fading between them. It samples each texture twice, so leave it at [code]0.0[/code] for layers that do not tile noticeably.
@@ -32,7 +33,7 @@
 			Scales the bumps of the normal texture.
 		</member>
 		<member name="normal_texture" type="Texture2D" setter="set_normal_texture" getter="get_normal_texture">
-			The layer's normal map, in Godot's OpenGL convention (green pointing up). Normal maps imported with the Normal Map option are supported.
+			The layer's normal map, in Godot's OpenGL convention (green pointing up). In the editor, an imported texture assigned here is reimported as a normal map, with red-green compression, unless its import settings already say how to treat it.
 		</member>
 		<member name="roughness" type="float" setter="set_roughness" getter="get_roughness" default="0.9">
 			How rough the surface is. Painted wetness makes it smoother.

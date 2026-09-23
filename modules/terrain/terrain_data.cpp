@@ -703,6 +703,7 @@ int TerrainData::add_layer(const Ref<TerrainLayer> &p_layer) {
 		p_layer->connect_changed(callable_mp(this, &TerrainData::_layer_changed));
 	}
 	_layer_changed();
+	notify_property_list_changed();
 	return layers.size() - 1;
 }
 
@@ -764,6 +765,7 @@ void TerrainData::remove_layer(int p_index) {
 	}
 	_remap_layers(remap);
 	_layer_changed();
+	notify_property_list_changed();
 }
 
 void TerrainData::move_layer(int p_from, int p_to) {
@@ -933,6 +935,7 @@ void TerrainData::_set_layers(const Array &p_layers) {
 		}
 	}
 	emit_signal(SNAME("layers_changed"));
+	notify_property_list_changed();
 }
 
 Array TerrainData::_get_layers() const {
@@ -1030,6 +1033,44 @@ void TerrainData::_apply_layers_snapshot(const Array &p_layers, const Array &p_s
 	_set_layers(p_layers);
 	_mark_edited();
 	_apply_snapshots(p_splat_snapshots);
+}
+
+bool TerrainData::_set(const StringName &p_name, const Variant &p_value) {
+	const String prop = p_name;
+	if (!prop.begins_with("layer_") || !prop.trim_prefix("layer_").is_valid_int()) {
+		return false;
+	}
+	const int index = prop.trim_prefix("layer_").to_int();
+	if (index < 0 || index >= layers.size()) {
+		return false;
+	}
+	Ref<TerrainLayer> layer = p_value;
+	if (layer.is_null()) {
+		// A slot is never empty; clearing it starts the layer over.
+		layer.instantiate();
+	}
+	set_layer(index, layer);
+	return true;
+}
+
+bool TerrainData::_get(const StringName &p_name, Variant &r_ret) const {
+	const String prop = p_name;
+	if (!prop.begins_with("layer_") || !prop.trim_prefix("layer_").is_valid_int()) {
+		return false;
+	}
+	const int index = prop.trim_prefix("layer_").to_int();
+	if (index < 0 || index >= layers.size()) {
+		return false;
+	}
+	r_ret = layers[index];
+	return true;
+}
+
+void TerrainData::_get_property_list(List<PropertyInfo> *p_list) const {
+	p_list->push_back(PropertyInfo(Variant::NIL, "Layers", PROPERTY_HINT_NONE, "layer_", PROPERTY_USAGE_GROUP));
+	for (int i = 0; i < layers.size(); i++) {
+		p_list->push_back(PropertyInfo(Variant::OBJECT, vformat("layer_%d", i), PROPERTY_HINT_RESOURCE_TYPE, "TerrainLayer", PROPERTY_USAGE_EDITOR));
+	}
 }
 
 void TerrainData::_bind_methods() {

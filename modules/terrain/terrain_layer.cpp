@@ -9,7 +9,38 @@
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
 
+#ifdef TOOLS_ENABLED
+#include "core/config/engine.h"
+#include "core/io/file_access.h"
+#include "scene/resources/compressed_texture.h"
+#endif
+
+namespace {
+
+// Imported textures start out set up for 2D: lossless and without mipmaps.
+// A material tells the editor when one is used in 3D, and the editor
+// reimports it with mipmaps and VRAM compression (and, for normal maps,
+// red-green compression). Terrain layers are copied into texture arrays
+// rather than bound to a material, so they ask for the same thing here.
+void request_3d_import(const Ref<Texture2D> &p_texture, bool p_normal) {
+#ifdef TOOLS_ENABLED
+	const Ref<CompressedTexture2D> ctex = p_texture;
+	if (ctex.is_null() || !Engine::get_singleton()->is_editor_hint() || ctex->get_path().is_empty() || !FileAccess::exists(ctex->get_path() + ".import")) {
+		return;
+	}
+	if (CompressedTexture2D::request_3d_callback) {
+		CompressedTexture2D::request_3d_callback(ctex);
+	}
+	if (p_normal && CompressedTexture2D::request_normal_callback) {
+		CompressedTexture2D::request_normal_callback(ctex);
+	}
+#endif
+}
+
+} // namespace
+
 void TerrainLayer::_texture_changed() {
+	texture_version++;
 	// A reimported texture changes size or format underneath us, and the
 	// terrain has to rebuild its texture arrays to match.
 	emit_changed();
@@ -31,6 +62,8 @@ void TerrainLayer::set_albedo_texture(const Ref<Texture2D> &p_texture) {
 	if (albedo_texture.is_valid()) {
 		albedo_texture->connect_changed(callable_mp(this, &TerrainLayer::_texture_changed));
 	}
+	request_3d_import(albedo_texture, false);
+	texture_version++;
 	emit_changed();
 }
 
@@ -45,6 +78,8 @@ void TerrainLayer::set_normal_texture(const Ref<Texture2D> &p_texture) {
 	if (normal_texture.is_valid()) {
 		normal_texture->connect_changed(callable_mp(this, &TerrainLayer::_texture_changed));
 	}
+	request_3d_import(normal_texture, true);
+	texture_version++;
 	emit_changed();
 }
 

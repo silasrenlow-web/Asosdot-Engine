@@ -29,6 +29,7 @@
 #include "editor/file_system/editor_file_system.h"
 #include "editor/gui/editor_file_dialog.h"
 #include "editor/gui/editor_spin_slider.h"
+#include "editor/inspector/editor_inspector.h"
 #include "editor/inspector/editor_resource_preview.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
 #include "editor/settings/editor_command_palette.h"
@@ -47,6 +48,8 @@
 #include "scene/gui/menu_button.h"
 #include "scene/gui/separator.h"
 #include "scene/gui/spin_box.h"
+#include "scene/gui/split_container.h"
+#include "scene/gui/tab_container.h"
 #include "scene/resources/image_texture.h"
 
 namespace {
@@ -237,6 +240,11 @@ void TerrainEditor::_tool_toggled(bool p_pressed, int p_tool) {
 		tool = TerrainBrush::TOOL_NONE;
 	}
 	_show_transform_gizmo(tool == TerrainBrush::TOOL_NONE);
+	if (tool == TerrainBrush::TOOL_PAINT) {
+		palette_tabs->set_current_tab(0);
+	} else if (TerrainBrush::is_foliage(tool)) {
+		palette_tabs->set_current_tab(1);
+	}
 	_update_tool_ui();
 	_update_brush_preview();
 }
@@ -524,7 +532,10 @@ void TerrainEditor::_ensure_external(const Ref<Resource> &p_res, Node *p_node, c
 void TerrainEditor::_refresh_layers() {
 	layer_list->clear();
 	const Ref<TerrainData> tdata = _get_data();
+	layer_empty->set_visible(tdata.is_null() || tdata->get_layer_count() == 0);
 	if (tdata.is_null()) {
+		layer_inspector->edit(nullptr);
+		_update_layer_buttons();
 		return;
 	}
 	for (int i = 0; i < tdata->get_layer_count(); i++) {
@@ -536,120 +547,359 @@ void TerrainEditor::_refresh_layers() {
 		if (icon.is_null()) {
 			icon = make_swatch(layer->get_albedo_color());
 		}
-		const int item = layer_list->add_item(layer->get_display_name(), icon);
-		layer_list->set_item_tooltip(item, vformat(TTR("Layer %d: %s"), i, layer->get_display_name()));
+		// The index is shown because foliage refers to layers by it.
+		const int item = layer_list->add_item(vformat("%d  %s", i, layer->get_display_name()), icon);
+		String tip = vformat(TTR("Layer %d: %s"), i, layer->get_display_name());
+		if (!layer->get_path().is_empty() && !layer->is_built_in()) {
+			tip += "\n" + layer->get_path();
+		}
+		layer_list->set_item_tooltip(item, tip);
 	}
 	if (tdata->get_layer_count() > 0) {
 		settings.layer = CLAMP(settings.layer, 0, tdata->get_layer_count() - 1);
 		layer_list->select(settings.layer);
 	}
+	_inspect_selected_layer();
+	_update_layer_buttons();
+}
+
+void TerrainEditor::_update_layer_buttons() {
+	const Ref<TerrainData> tdata = _get_data();
+	const int count = tdata.is_valid() ? tdata->get_layer_count() : 0;
+	const bool selected = count > 0 && settings.layer >= 0 && settings.layer < count;
+	layer_duplicate_button->set_disabled(!selected || count >= TerrainData::MAX_LAYERS);
+	layer_left_button->set_disabled(!selected || settings.layer == 0);
+	layer_right_button->set_disabled(!selected || settings.layer >= count - 1);
+	layer_save_button->set_disabled(!selected);
+	layer_remove_button->set_disabled(!selected);
+}
+
+void TerrainEditor::_inspect_selected_layer() {
+	const Ref<TerrainData> tdata = _get_data();
+	TerrainLayer *layer = nullptr;
+	if (tdata.is_valid() && settings.layer >= 0 && settings.layer < tdata->get_layer_count()) {
+		layer = tdata->get_layer(settings.layer).ptr();
+	}
+	// edit() does nothing for the object already shown, so tweaking a slider,
+	// which refreshes the list, does not reset the inspector under the pointer.
+	layer_inspector->edit(layer);
 }
 
 void TerrainEditor::_layer_selected(int p_index) {
 	settings.layer = p_index;
+	_inspect_selected_layer();
+	_update_layer_buttons();
 	if (tool != TerrainBrush::TOOL_PAINT && tool_buttons[TerrainBrush::TOOL_PAINT] && !tool_buttons[TerrainBrush::TOOL_PAINT]->is_disabled()) {
 		// Choosing a layer is choosing to paint with it.
 		tool_buttons[TerrainBrush::TOOL_PAINT]->set_pressed(true);
 	}
 }
 
-void TerrainEditor::_add_layer_from(const Ref<Texture2D> &p_albedo) {
-	Terrain3D *terrain = _get_terrain();
-	const Ref<TerrainData> tdata = _get_data();
-	if (!terrain || tdata.is_null()) {
+void TerrainEditor::_layer_add_option(int p_option) {
+	if (!_get_terrain() || _get_data().is_null()) {
 		_show_message(TTR("Create the terrain first: Terrain > New Terrain..."));
 		return;
 	}
-	if (tdata->get_layer_count() >= TerrainData::MAX_LAYERS) {
-		_show_message(vformat(TTR("A terrain can have at most %d layers."), TerrainData::MAX_LAYERS));
-		return;
-	}
-	Ref<TerrainLayer> layer;
-	layer.instantiate();
-	layer->set_albedo_texture(p_albedo);
-	EditorUndoRedoManager *ur = EditorUndoRedoManager::get_singleton();
-	ur->create_action(TTR("Add Terrain Layer"), UndoRedo::MERGE_DISABLE, terrain);
-	ur->add_do_method(tdata.ptr(), "add_layer", layer);
-	ur->add_undo_method(tdata.ptr(), "remove_layer", tdata->get_layer_count());
-	ur->add_do_reference(layer.ptr());
-	ur->commit_action();
-	settings.layer = tdata->get_layer_count() - 1;
-	_refresh_layers();
-	if (p_albedo.is_null()) {
-		EditorInterface::get_singleton()->inspect_object(layer.ptr(), String(), true);
+	switch (p_option) {
+		case LAYER_NEW: {
+			Ref<TerrainLayer> layer;
+			layer.instantiate();
+			_add_layers({ layer });
+		} break;
+		case LAYER_FROM_TEXTURES: {
+			layer_textures_dialog->popup_file_dialog();
+		} break;
+		case LAYER_LOAD: {
+			layer_load_dialog->popup_file_dialog();
+		} break;
 	}
 }
 
-void TerrainEditor::_add_layer() {
-	_add_layer_from(Ref<Texture2D>());
+void TerrainEditor::_add_layers(const Vector<Ref<TerrainLayer>> &p_layers) {
+	Terrain3D *terrain = _get_terrain();
+	const Ref<TerrainData> tdata = _get_data();
+	if (!terrain || tdata.is_null() || p_layers.is_empty()) {
+		return;
+	}
+	const int base = tdata->get_layer_count();
+	const int room = TerrainData::MAX_LAYERS - base;
+	if (room <= 0) {
+		_show_message(vformat(TTR("A terrain can have at most %d layers."), TerrainData::MAX_LAYERS));
+		return;
+	}
+	const int count = MIN(room, p_layers.size());
+	EditorUndoRedoManager *ur = EditorUndoRedoManager::get_singleton();
+	ur->create_action(count == 1 ? TTR("Add Terrain Layer") : TTR("Add Terrain Layers"), UndoRedo::MERGE_DISABLE, terrain);
+	for (int i = 0; i < count; i++) {
+		ur->add_do_method(tdata.ptr(), "add_layer", p_layers[i]);
+		ur->add_do_reference(p_layers[i].ptr());
+	}
+	for (int i = count - 1; i >= 0; i--) {
+		ur->add_undo_method(tdata.ptr(), "remove_layer", base + i);
+	}
+	ur->commit_action();
+	settings.layer = base;
+	_refresh_layers();
+	if (count < p_layers.size()) {
+		_show_message(vformat(TTR("Only %d of the layers were added: a terrain can have at most %d."), count, TerrainData::MAX_LAYERS));
+	}
+}
+
+namespace {
+
+// Texture sets name their maps with a suffix: rock_diff_2k, rock_nor_gl_2k,
+// rock_rough_2k. Splitting the name into words and taking out the ones that
+// name a map or a resolution leaves the material's name, which pairs a
+// colour texture with its normal map.
+enum TextureRole {
+	ROLE_ALBEDO,
+	ROLE_NORMAL,
+	ROLE_OTHER,
+};
+
+TextureRole texture_role(const String &p_path, String &r_base) {
+	static const char *normal_words[] = { "normal", "normals", "nrm", "norm", "nor", "nml", "gl", "dx", "opengl", "directx" };
+	static const char *albedo_words[] = { "albedo", "diffuse", "diff", "basecolor", "base", "color", "colour", "col", "alb", "d", "a" };
+	static const char *other_words[] = { "rough", "roughness", "rgh", "ao", "occlusion", "ambientocclusion", "arm", "orm", "height", "disp", "displacement", "bump", "metal", "metallic", "metalness", "spec", "specular", "gloss", "mask", "emission", "emissive", "opacity" };
+
+	const String name = p_path.get_file().get_basename().to_lower();
+	Vector<String> words;
+	String word;
+	for (int i = 0; i < name.length(); i++) {
+		const char32_t c = name[i];
+		if (c == '_' || c == '-' || c == ' ' || c == '.') {
+			if (!word.is_empty()) {
+				words.push_back(word);
+			}
+			word = String();
+		} else {
+			word += c;
+		}
+	}
+	if (!word.is_empty()) {
+		words.push_back(word);
+	}
+
+	const auto is_one_of = [](const String &p_word, const char *const *p_list, int p_count) {
+		for (int i = 0; i < p_count; i++) {
+			if (p_word == p_list[i]) {
+				return true;
+			}
+		}
+		return false;
+	};
+	const auto is_resolution = [](const String &p_word) {
+		return p_word.length() <= 3 && p_word.ends_with("k") && p_word.trim_suffix("k").is_valid_int();
+	};
+
+	TextureRole role = ROLE_ALBEDO;
+	Vector<String> kept;
+	for (int i = 0; i < words.size(); i++) {
+		const String &w = words[i];
+		// Single letters only count as tags at the end of a name ("rock_n"),
+		// where they cannot be part of the material's own name.
+		const bool last = i == words.size() - 1 || (i == words.size() - 2 && is_resolution(words[i + 1]));
+		if (is_one_of(w, normal_words, std::size(normal_words)) || (w == "n" && last)) {
+			if (w != "gl" && w != "dx" && w != "opengl" && w != "directx") {
+				role = ROLE_NORMAL;
+			}
+			continue;
+		}
+		if (is_one_of(w, other_words, std::size(other_words))) {
+			role = role == ROLE_NORMAL ? ROLE_NORMAL : ROLE_OTHER;
+			continue;
+		}
+		if (is_one_of(w, albedo_words, std::size(albedo_words)) && (w.length() > 1 || last)) {
+			continue;
+		}
+		if (is_resolution(w)) {
+			continue;
+		}
+		kept.push_back(w);
+	}
+	r_base = String("_").join(kept);
+	if (r_base.is_empty()) {
+		r_base = name;
+	}
+	return role;
+}
+
+} // namespace
+
+void TerrainEditor::_add_layers_from_files(const Vector<String> &p_paths) {
+	// Group by material name first, so dropping a whole texture set makes one
+	// layer with its colour and normal map rather than one layer per file.
+	HashMap<String, String> albedo_for;
+	HashMap<String, String> normal_for;
+	Vector<String> order;
+	Vector<Ref<TerrainLayer>> layers;
+	PackedStringArray skipped;
+	for (const String &path : p_paths) {
+		const String type = ResourceLoader::get_resource_type(path);
+		if (type == "TerrainLayer") {
+			const Ref<TerrainLayer> layer = ResourceLoader::load(path);
+			if (layer.is_valid()) {
+				layers.push_back(layer);
+			}
+			continue;
+		}
+		if (!ClassDB::is_parent_class(type, "Texture2D")) {
+			skipped.push_back(path.get_file());
+			continue;
+		}
+		String base;
+		const TextureRole role = texture_role(path, base);
+		if (role == ROLE_OTHER) {
+			skipped.push_back(path.get_file());
+			continue;
+		}
+		if (!order.has(base)) {
+			order.push_back(base);
+		}
+		(role == ROLE_NORMAL ? normal_for : albedo_for)[base] = path;
+	}
+	for (const String &base : order) {
+		Ref<TerrainLayer> layer;
+		layer.instantiate();
+		if (albedo_for.has(base)) {
+			layer->set_albedo_texture(ResourceLoader::load(albedo_for[base]));
+		}
+		if (normal_for.has(base)) {
+			layer->set_normal_texture(ResourceLoader::load(normal_for[base]));
+		}
+		layer->set_surface_name(base.replace("_", " ").capitalize());
+		layers.push_back(layer);
+	}
+	_add_layers(layers);
+	if (!skipped.is_empty()) {
+		_show_message(vformat(TTR("Terrain layers use a colour texture and a normal map, so these were not used:\n%s"), String("\n").join(skipped)));
+	}
+}
+
+void TerrainEditor::_layer_load_selected(const Vector<String> &p_paths) {
+	_add_layers_from_files(p_paths);
+}
+
+void TerrainEditor::_duplicate_layer() {
+	const Ref<TerrainData> tdata = _get_data();
+	if (tdata.is_null() || settings.layer < 0 || settings.layer >= tdata->get_layer_count()) {
+		return;
+	}
+	const Ref<TerrainLayer> copy = tdata->get_layer(settings.layer)->duplicate();
+	_add_layers({ copy });
+}
+
+void TerrainEditor::_move_layer(int p_direction) {
+	Terrain3D *terrain = _get_terrain();
+	const Ref<TerrainData> tdata = _get_data();
+	if (!terrain || tdata.is_null()) {
+		return;
+	}
+	const int from = settings.layer;
+	const int to = from + p_direction;
+	if (from < 0 || to < 0 || to >= tdata->get_layer_count()) {
+		return;
+	}
+	// A move is a pure reordering, so moving back undoes it exactly, painted
+	// weights and all.
+	EditorUndoRedoManager *ur = EditorUndoRedoManager::get_singleton();
+	ur->create_action(TTR("Move Terrain Layer"), UndoRedo::MERGE_DISABLE, terrain);
+	ur->add_do_method(tdata.ptr(), "move_layer", from, to);
+	ur->add_undo_method(tdata.ptr(), "move_layer", to, from);
+	ur->commit_action();
+	settings.layer = to;
+	_refresh_layers();
 }
 
 void TerrainEditor::_remove_layer() {
 	Terrain3D *terrain = _get_terrain();
 	const Ref<TerrainData> tdata = _get_data();
-	const Vector<int> selected = layer_list->get_selected_items();
-	if (!terrain || tdata.is_null() || selected.is_empty()) {
+	if (!terrain || tdata.is_null() || settings.layer < 0 || settings.layer >= tdata->get_layer_count()) {
 		return;
 	}
-	const int index = selected[0];
 	// Removing a layer rewrites every region's splat maps, so the undo keeps a
 	// copy of all of them, not just the layer list.
 	const Array layers_before = tdata->call(SNAME("_get_layers"));
 	const Array splat_before = tdata->call(SNAME("_get_layers_snapshot"));
 	EditorUndoRedoManager *ur = EditorUndoRedoManager::get_singleton();
 	ur->create_action(TTR("Remove Terrain Layer"), UndoRedo::MERGE_DISABLE, terrain);
-	ur->add_do_method(tdata.ptr(), "remove_layer", index);
+	ur->add_do_method(tdata.ptr(), "remove_layer", settings.layer);
 	ur->add_undo_method(tdata.ptr(), "_apply_layers_snapshot", layers_before, splat_before);
 	ur->commit_action();
 	_refresh_layers();
 }
 
-void TerrainEditor::_edit_layer() {
-	const Ref<TerrainData> tdata = _get_data();
-	const Vector<int> selected = layer_list->get_selected_items();
-	if (tdata.is_null() || selected.is_empty()) {
+void TerrainEditor::_save_selected(bool p_foliage) {
+	saving_resource.unref();
+	if (p_foliage) {
+		const Foliage3D *foliage = _get_foliage();
+		const Ref<FoliageData> fd = foliage ? foliage->get_data() : Ref<FoliageData>();
+		if (fd.is_valid() && settings.foliage_type >= 0 && settings.foliage_type < fd->get_type_count()) {
+			saving_resource = fd->get_type(settings.foliage_type);
+		}
+	} else {
+		const Ref<TerrainData> tdata = _get_data();
+		if (tdata.is_valid() && settings.layer >= 0 && settings.layer < tdata->get_layer_count()) {
+			saving_resource = tdata->get_layer(settings.layer);
+		}
+	}
+	if (saving_resource.is_null()) {
 		return;
 	}
-	const Ref<TerrainLayer> layer = tdata->get_layer(selected[0]);
-	if (layer.is_valid()) {
-		// Inspector only, so the terrain stays selected and the dock stays open.
-		EditorInterface::get_singleton()->inspect_object(layer.ptr(), String(), true);
+	String hint = saving_resource->get_path();
+	if (hint.is_empty() || saving_resource->is_built_in()) {
+		const String name = p_foliage ? foliage_display_name(saving_resource, settings.foliage_type) : Ref<TerrainLayer>(saving_resource)->get_display_name();
+		hint = name.validate_filename().to_snake_case() + ".tres";
 	}
+	resource_save_dialog->set_title(p_foliage ? TTR("Save Foliage Type") : TTR("Save Terrain Layer"));
+	resource_save_dialog->set_current_path(hint);
+	resource_save_dialog->popup_file_dialog();
+}
+
+void TerrainEditor::_resource_save_selected(const String &p_path) {
+	if (saving_resource.is_null()) {
+		return;
+	}
+	// Saved to its own file, the layer or type can be shared by other
+	// terrains and scenes; the data now refers to the file instead of holding
+	// its own copy.
+	if (ResourceSaver::save(saving_resource, p_path) != OK) {
+		_show_message(vformat(TTR("Could not save to \"%s\"."), p_path));
+		return;
+	}
+	saving_resource->set_path(p_path, true);
+	EditorFileSystem::get_singleton()->update_file(p_path);
+	const Ref<TerrainData> tdata = _get_data();
+	if (tdata.is_valid()) {
+		tdata->set_edited(true);
+	}
+	const Foliage3D *foliage = _get_foliage();
+	if (foliage && foliage->get_data().is_valid()) {
+		foliage->get_data()->set_edited(true);
+	}
+	saving_resource.unref();
+	_refresh_layers();
+	_refresh_foliage();
 }
 
 bool TerrainEditor::_can_drop_layer(const Point2 &p_point, const Variant &p_data) const {
 	const Dictionary d = p_data;
-	if (String(d.get("type", "")) != "files") {
+	if (String(d.get("type", "")) != "files" || _get_data().is_null()) {
 		return false;
 	}
 	const Vector<String> files = d["files"];
 	for (const String &file : files) {
-		if (!ClassDB::is_parent_class(ResourceLoader::get_resource_type(file), "Texture2D") && ResourceLoader::get_resource_type(file) != "TerrainLayer") {
-			return false;
+		const String type = ResourceLoader::get_resource_type(file);
+		if (ClassDB::is_parent_class(type, "Texture2D") || type == "TerrainLayer") {
+			return true;
 		}
 	}
-	return !files.is_empty() && _get_data().is_valid();
+	return false;
 }
 
 void TerrainEditor::_drop_layer(const Point2 &p_point, const Variant &p_data) {
 	const Dictionary d = p_data;
-	const Vector<String> files = d["files"];
-	for (const String &file : files) {
-		const Ref<Resource> res = ResourceLoader::load(file);
-		const Ref<TerrainLayer> layer = res;
-		if (layer.is_valid()) {
-			Terrain3D *terrain = _get_terrain();
-			const Ref<TerrainData> tdata = _get_data();
-			EditorUndoRedoManager *ur = EditorUndoRedoManager::get_singleton();
-			ur->create_action(TTR("Add Terrain Layer"), UndoRedo::MERGE_DISABLE, terrain);
-			ur->add_do_method(tdata.ptr(), "add_layer", layer);
-			ur->add_undo_method(tdata.ptr(), "remove_layer", tdata->get_layer_count());
-			ur->commit_action();
-		} else {
-			_add_layer_from(res);
-		}
-	}
-	_refresh_layers();
+	_add_layers_from_files(d["files"]);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -698,7 +948,12 @@ void TerrainEditor::_refresh_foliage() {
 	const Foliage3D *foliage = _get_foliage();
 	const Ref<FoliageData> fd = foliage ? foliage->get_data() : Ref<FoliageData>();
 	foliage_empty->set_visible(fd.is_null() || fd->get_type_count() == 0);
+	const bool any = fd.is_valid() && fd->get_type_count() > 0;
+	foliage_duplicate_button->set_disabled(!any);
+	foliage_save_button->set_disabled(!any);
+	foliage_remove_button->set_disabled(!any);
 	if (fd.is_null()) {
+		foliage_inspector->edit(nullptr);
 		return;
 	}
 	for (int i = 0; i < fd->get_type_count(); i++) {
@@ -718,6 +973,26 @@ void TerrainEditor::_refresh_foliage() {
 		settings.foliage_type = CLAMP(settings.foliage_type, 0, fd->get_type_count() - 1);
 		foliage_list->select(settings.foliage_type);
 	}
+	_inspect_selected_foliage();
+}
+
+void TerrainEditor::_inspect_selected_foliage() {
+	const Foliage3D *foliage = _get_foliage();
+	const Ref<FoliageData> fd = foliage ? foliage->get_data() : Ref<FoliageData>();
+	FoliageType *type = nullptr;
+	if (fd.is_valid() && settings.foliage_type >= 0 && settings.foliage_type < fd->get_type_count()) {
+		type = fd->get_type(settings.foliage_type).ptr();
+	}
+	foliage_inspector->edit(type);
+}
+
+void TerrainEditor::_duplicate_foliage_type() {
+	const Foliage3D *foliage = _get_foliage();
+	const Ref<FoliageData> fd = foliage ? foliage->get_data() : Ref<FoliageData>();
+	if (fd.is_null() || settings.foliage_type < 0 || settings.foliage_type >= fd->get_type_count()) {
+		return;
+	}
+	_add_foliage_type(fd->get_type(settings.foliage_type)->duplicate());
 }
 
 void TerrainEditor::_foliage_preview_ready(const String &p_path, const Ref<Texture2D> &p_preview, const Ref<Texture2D> &p_small, int p_index) {
@@ -733,6 +1008,7 @@ void TerrainEditor::_foliage_selected(int p_index) {
 		return;
 	}
 	settings.foliage_type = p_index;
+	_inspect_selected_foliage();
 	const Foliage3D *foliage = _get_foliage();
 	const Ref<FoliageData> fd = foliage ? foliage->get_data() : Ref<FoliageData>();
 	if (fd.is_null() || p_index < 0 || p_index >= fd->get_type_count()) {
@@ -842,9 +1118,6 @@ void TerrainEditor::_foliage_files_selected(const Vector<String> &p_paths) {
 		_add_foliage_type(type);
 		last = type;
 	}
-	if (last.is_valid()) {
-		EditorInterface::get_singleton()->inspect_object(last.ptr(), String(), true);
-	}
 	if (!errors.is_empty()) {
 		_show_message(String("\n").join(errors));
 	}
@@ -865,19 +1138,6 @@ void TerrainEditor::_remove_foliage_type() {
 	ur->add_undo_method(fd.ptr(), "_apply_all_snapshot", types_before, data_before);
 	ur->commit_action();
 	_refresh_foliage();
-}
-
-void TerrainEditor::_edit_foliage_type() {
-	const Foliage3D *foliage = _get_foliage();
-	const Ref<FoliageData> fd = foliage ? foliage->get_data() : Ref<FoliageData>();
-	const Vector<int> selected = foliage_list->get_selected_items();
-	if (fd.is_null() || selected.is_empty()) {
-		return;
-	}
-	const Ref<FoliageType> type = fd->get_type(selected[0]);
-	if (type.is_valid()) {
-		EditorInterface::get_singleton()->inspect_object(type.ptr(), String(), true);
-	}
 }
 
 bool TerrainEditor::_can_drop_foliage(const Point2 &p_point, const Variant &p_data) const {
@@ -1200,6 +1460,9 @@ void TerrainEditor::draw_overlay(Control *p_overlay) {
 void TerrainEditor::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_THEME_CHANGED: {
+			for (Button *b : icon_buttons) {
+				b->set_button_icon(get_editor_theme_icon(b->get_meta(SNAME("_icon"))));
+			}
 			for (const ToolInfo &info : SCULPT_TOOLS) {
 				tool_buttons[info.tool]->set_button_icon(get_editor_theme_icon(info.icon));
 			}
@@ -1248,7 +1511,7 @@ TerrainEditor::TerrainEditor() {
 	set_available_layouts(EditorDock::DOCK_LAYOUT_HORIZONTAL | EditorDock::DOCK_LAYOUT_FLOATING);
 	set_global(false);
 	set_transient(true);
-	set_custom_minimum_size(Size2(0, 220 * EDSCALE));
+	set_custom_minimum_size(Size2(0, 280 * EDSCALE));
 	set_theme_type_variation("NoBorderBottomPanel");
 
 	HBoxContainer *main = memnew(HBoxContainer);
@@ -1384,78 +1647,148 @@ TerrainEditor::TerrainEditor() {
 
 	main->add_child(memnew(VSeparator));
 
-	// Layer palette.
-	layer_panel = memnew(VBoxContainer);
-	layer_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	main->add_child(layer_panel);
-	HBoxContainer *layer_bar = memnew(HBoxContainer);
-	layer_panel->add_child(layer_bar);
-	Label *layer_title = memnew(Label(TTR("Layers")));
-	layer_title->set_theme_type_variation("HeaderSmall");
-	layer_title->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	layer_bar->add_child(layer_title);
-	const auto add_bar_button = [&](HBoxContainer *p_bar, const String &p_text, const String &p_tooltip, const Callable &p_callable) {
+	// Layers and foliage.
+	palette_tabs = memnew(TabContainer);
+	palette_tabs->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	palette_tabs->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	palette_tabs->set_theme_type_variation("TabContainerOdd");
+	main->add_child(palette_tabs);
+
+	const auto add_icon_button = [&](HBoxContainer *p_bar, const StringName &p_icon, const String &p_tooltip, const Callable &p_callable) {
 		Button *b = memnew(Button);
-		b->set_text(p_text);
-		b->set_tooltip_text(p_tooltip);
 		b->set_theme_type_variation(SceneStringName(FlatButton));
+		b->set_tooltip_text(p_tooltip);
+		b->set_accessibility_name(p_tooltip);
+		b->set_meta(SNAME("_icon"), p_icon);
 		b->connect(SceneStringName(pressed), p_callable);
 		p_bar->add_child(b);
+		icon_buttons.push_back(b);
 		return b;
 	};
-	add_bar_button(layer_bar, TTR("Add"), TTR("Add a layer. You can also drag textures from the FileSystem dock into the list."), callable_mp(this, &TerrainEditor::_add_layer));
-	add_bar_button(layer_bar, TTR("Edit"), TTR("Show the selected layer in the Inspector."), callable_mp(this, &TerrainEditor::_edit_layer));
-	add_bar_button(layer_bar, TTR("Remove"), TTR("Remove the selected layer. Where it was painted, the others take over."), callable_mp(this, &TerrainEditor::_remove_layer));
-	layer_list = memnew(ItemList);
-	layer_list->set_max_columns(0);
-	layer_list->set_icon_mode(ItemList::ICON_MODE_TOP);
-	layer_list->set_fixed_icon_size(Size2(48, 48) * EDSCALE);
-	layer_list->set_fixed_column_width(76 * EDSCALE);
-	layer_list->set_max_text_lines(2);
-	layer_list->set_same_column_width(true);
-	layer_list->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	const auto make_inspector = []() {
+		EditorInspector *inspector = memnew(EditorInspector);
+		inspector->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		inspector->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+		inspector->set_custom_minimum_size(Size2(240, 0) * EDSCALE);
+		inspector->set_use_doc_hints(true);
+		inspector->set_hide_script(true);
+		inspector->set_hide_metadata(true);
+		inspector->set_autoclear(true);
+		return inspector;
+	};
+	const auto make_list = []() {
+		ItemList *list = memnew(ItemList);
+		list->set_max_columns(0);
+		list->set_icon_mode(ItemList::ICON_MODE_TOP);
+		list->set_fixed_icon_size(Size2(56, 56) * EDSCALE);
+		list->set_fixed_column_width(88 * EDSCALE);
+		list->set_max_text_lines(2);
+		list->set_same_column_width(true);
+		list->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+		list->set_custom_minimum_size(Size2(160, 0) * EDSCALE);
+		return list;
+	};
+
+	HSplitContainer *layer_split = memnew(HSplitContainer);
+	layer_split->set_name(TTR("Layers"));
+	palette_tabs->add_child(layer_split);
+	VBoxContainer *layer_side = memnew(VBoxContainer);
+	layer_side->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	layer_split->add_child(layer_side);
+	HBoxContainer *layer_bar = memnew(HBoxContainer);
+	layer_side->add_child(layer_bar);
+	MenuButton *layer_add = memnew(MenuButton);
+	layer_add->set_text(TTR("Add"));
+	layer_add->set_flat(false);
+	layer_add->set_theme_type_variation("FlatMenuButton");
+	layer_add->set_tooltip_text(TTR("Add layers. Dragging textures from the FileSystem dock into the list works too, and pairs each colour texture with its normal map by name."));
+	layer_add->get_popup()->add_item(TTR("New Layer"), LAYER_NEW);
+	layer_add->get_popup()->add_item(TTR("New Layers from Textures..."), LAYER_FROM_TEXTURES);
+	layer_add->get_popup()->add_item(TTR("Load Layer..."), LAYER_LOAD);
+	layer_add->get_popup()->connect(SceneStringName(id_pressed), callable_mp(this, &TerrainEditor::_layer_add_option));
+	layer_bar->add_child(layer_add);
+	layer_duplicate_button = add_icon_button(layer_bar, SNAME("Duplicate"), TTR("Duplicate the selected layer."), callable_mp(this, &TerrainEditor::_duplicate_layer));
+	layer_left_button = add_icon_button(layer_bar, SNAME("ArrowLeft"), TTR("Move the selected layer earlier. Its painted areas move with it."), callable_mp(this, &TerrainEditor::_move_layer).bind(-1));
+	layer_right_button = add_icon_button(layer_bar, SNAME("ArrowRight"), TTR("Move the selected layer later. Its painted areas move with it."), callable_mp(this, &TerrainEditor::_move_layer).bind(1));
+	layer_save_button = add_icon_button(layer_bar, SNAME("Save"), TTR("Save the selected layer to a file, to share it with other terrains."), callable_mp(this, &TerrainEditor::_save_selected).bind(false));
+	layer_remove_button = add_icon_button(layer_bar, SNAME("Remove"), TTR("Remove the selected layer. Where it was painted, the others take over."), callable_mp(this, &TerrainEditor::_remove_layer));
+	layer_list = make_list();
 	layer_list->connect(SceneStringName(item_selected), callable_mp(this, &TerrainEditor::_layer_selected));
-	layer_list->connect("item_activated", callable_mp(this, &TerrainEditor::_edit_layer).unbind(1));
 	layer_list->set_drag_forwarding(Callable(), callable_mp(this, &TerrainEditor::_can_drop_layer), callable_mp(this, &TerrainEditor::_drop_layer));
-	layer_panel->add_child(layer_list);
+	layer_side->add_child(layer_list);
+	layer_empty = memnew(Label);
+	layer_empty->set_text(TTR("No layers yet. Add one, or drag textures here from the FileSystem dock."));
+	layer_empty->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	layer_empty->set_modulate(Color(1, 1, 1, 0.6));
+	layer_side->add_child(layer_empty);
+	layer_inspector = make_inspector();
+	layer_split->add_child(layer_inspector);
 
-	main->add_child(memnew(VSeparator));
-
-	// Foliage palette.
-	foliage_panel = memnew(VBoxContainer);
-	foliage_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	main->add_child(foliage_panel);
+	HSplitContainer *foliage_split = memnew(HSplitContainer);
+	foliage_split->set_name(TTR("Foliage"));
+	palette_tabs->add_child(foliage_split);
+	VBoxContainer *foliage_side = memnew(VBoxContainer);
+	foliage_side->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	foliage_split->add_child(foliage_side);
 	HBoxContainer *foliage_bar = memnew(HBoxContainer);
-	foliage_panel->add_child(foliage_bar);
-	Label *foliage_title = memnew(Label(TTR("Foliage")));
-	foliage_title->set_theme_type_variation("HeaderSmall");
-	foliage_title->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	foliage_bar->add_child(foliage_title);
-	add_bar_button(foliage_bar, TTR("Add..."), TTR("Add grass or objects from your own meshes and scenes, choosing whether each is painted as grass or placed as objects. You can also drag them from the FileSystem dock into the list."), callable_mp(this, &TerrainEditor::_add_foliage_pressed));
-	add_bar_button(foliage_bar, TTR("Edit"), TTR("Show the selected type in the Inspector."), callable_mp(this, &TerrainEditor::_edit_foliage_type));
-	add_bar_button(foliage_bar, TTR("Remove"), TTR("Remove the selected type and everything painted with it."), callable_mp(this, &TerrainEditor::_remove_foliage_type));
-	foliage_list = memnew(ItemList);
-	foliage_list->set_max_columns(0);
-	foliage_list->set_icon_mode(ItemList::ICON_MODE_TOP);
-	foliage_list->set_fixed_icon_size(Size2(48, 48) * EDSCALE);
-	foliage_list->set_fixed_column_width(76 * EDSCALE);
-	foliage_list->set_max_text_lines(2);
-	foliage_list->set_same_column_width(true);
-	foliage_list->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	foliage_side->add_child(foliage_bar);
+	Button *foliage_add = memnew(Button);
+	foliage_add->set_text(TTR("Add..."));
+	foliage_add->set_theme_type_variation(SceneStringName(FlatButton));
+	foliage_add->set_tooltip_text(TTR("Add grass or objects from your own meshes and scenes, choosing whether each is painted as grass or placed as objects. You can also drag them from the FileSystem dock into the list."));
+	foliage_add->connect(SceneStringName(pressed), callable_mp(this, &TerrainEditor::_add_foliage_pressed));
+	foliage_bar->add_child(foliage_add);
+	foliage_duplicate_button = add_icon_button(foliage_bar, SNAME("Duplicate"), TTR("Duplicate the selected type, without what was painted with it."), callable_mp(this, &TerrainEditor::_duplicate_foliage_type));
+	foliage_save_button = add_icon_button(foliage_bar, SNAME("Save"), TTR("Save the selected type to a file, to share it with other terrains."), callable_mp(this, &TerrainEditor::_save_selected).bind(true));
+	foliage_remove_button = add_icon_button(foliage_bar, SNAME("Remove"), TTR("Remove the selected type and everything painted with it."), callable_mp(this, &TerrainEditor::_remove_foliage_type));
+	foliage_list = make_list();
 	foliage_list->connect(SceneStringName(item_selected), callable_mp(this, &TerrainEditor::_foliage_selected));
-	foliage_list->connect("item_activated", callable_mp(this, &TerrainEditor::_edit_foliage_type).unbind(1));
 	foliage_list->set_drag_forwarding(Callable(), callable_mp(this, &TerrainEditor::_can_drop_foliage), callable_mp(this, &TerrainEditor::_drop_foliage));
-	foliage_panel->add_child(foliage_list);
+	foliage_side->add_child(foliage_list);
 	foliage_empty = memnew(Label);
 	foliage_empty->set_text(TTR("No foliage yet. Use Add... to bring in a mesh or scene as grass or objects, or drag one here from the FileSystem dock."));
 	foliage_empty->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	foliage_empty->set_modulate(Color(1, 1, 1, 0.6));
-	foliage_panel->add_child(foliage_empty);
+	foliage_side->add_child(foliage_empty);
+	foliage_inspector = make_inspector();
+	foliage_split->add_child(foliage_inspector);
 
 	// Dialogs.
 	create_dialog = memnew(TerrainCreateDialog);
 	create_dialog->connect(SceneStringName(confirmed), callable_mp(this, &TerrainEditor::_create_confirmed));
 	add_child(create_dialog);
+
+	{
+		List<String> texture_extensions;
+		ResourceLoader::get_recognized_extensions_for_type("Texture2D", &texture_extensions);
+		PackedStringArray patterns;
+		for (const String &extension : texture_extensions) {
+			if (!patterns.has("*." + extension)) {
+				patterns.push_back("*." + extension);
+			}
+		}
+		layer_textures_dialog = memnew(EditorFileDialog);
+		layer_textures_dialog->set_title(TTR("New Layers from Textures"));
+		layer_textures_dialog->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_FILES);
+		layer_textures_dialog->set_access(EditorFileDialog::ACCESS_RESOURCES);
+		layer_textures_dialog->add_filter(String(",").join(patterns), TTR("Textures"));
+		layer_textures_dialog->connect("files_selected", callable_mp(this, &TerrainEditor::_add_layers_from_files));
+		add_child(layer_textures_dialog);
+	}
+	layer_load_dialog = memnew(EditorFileDialog);
+	layer_load_dialog->set_title(TTR("Load Terrain Layers"));
+	layer_load_dialog->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_FILES);
+	layer_load_dialog->set_access(EditorFileDialog::ACCESS_RESOURCES);
+	layer_load_dialog->add_filter("*.tres,*.res", TTR("Terrain Layers"));
+	layer_load_dialog->connect("files_selected", callable_mp(this, &TerrainEditor::_layer_load_selected));
+	add_child(layer_load_dialog);
+	resource_save_dialog = memnew(EditorFileDialog);
+	resource_save_dialog->set_file_mode(EditorFileDialog::FILE_MODE_SAVE_FILE);
+	resource_save_dialog->set_access(EditorFileDialog::ACCESS_RESOURCES);
+	resource_save_dialog->add_filter("*.tres", TTR("Text Resource"));
+	resource_save_dialog->add_filter("*.res", TTR("Binary Resource"));
+	resource_save_dialog->connect("file_selected", callable_mp(this, &TerrainEditor::_resource_save_selected));
+	add_child(resource_save_dialog);
 
 	foliage_add_dialog = memnew(EditorFileDialog);
 	foliage_add_dialog->set_title(TTR("Add Foliage"));

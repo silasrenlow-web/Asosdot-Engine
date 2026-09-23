@@ -19,6 +19,8 @@ class ButtonGroup;
 class CheckBox;
 class ColorPickerButton;
 class EditorFileDialog;
+class EditorInspector;
+class TabContainer;
 class EditorSpinSlider;
 class Foliage3D;
 class HBoxContainer;
@@ -48,6 +50,12 @@ class TerrainEditor : public EditorDock {
 		MENU_MOVE_DATA,
 	};
 
+	enum LayerAddOption {
+		LAYER_NEW,
+		LAYER_FROM_TEXTURES,
+		LAYER_LOAD,
+	};
+
 	ObjectID terrain_id;
 	ObjectID foliage_id;
 
@@ -72,15 +80,33 @@ class TerrainEditor : public EditorDock {
 	ColorPickerButton *color_picker = nullptr;
 	Label *hint_label = nullptr;
 
-	VBoxContainer *layer_panel = nullptr;
+	// Layers and foliage share a tabbed panel: a list on the left and, beside
+	// it, an inspector for whatever is selected, so a layer's textures and
+	// settings are edited without leaving the terrain.
+	TabContainer *palette_tabs = nullptr;
 	ItemList *layer_list = nullptr;
-	VBoxContainer *foliage_panel = nullptr;
+	Label *layer_empty = nullptr;
+	EditorInspector *layer_inspector = nullptr;
+	Button *layer_duplicate_button = nullptr;
+	Button *layer_left_button = nullptr;
+	Button *layer_right_button = nullptr;
+	Button *layer_save_button = nullptr;
+	Button *layer_remove_button = nullptr;
 	ItemList *foliage_list = nullptr;
 	Label *foliage_empty = nullptr;
+	EditorInspector *foliage_inspector = nullptr;
+	Button *foliage_duplicate_button = nullptr;
+	Button *foliage_save_button = nullptr;
+	Button *foliage_remove_button = nullptr;
 
 	TerrainCreateDialog *create_dialog = nullptr;
 	EditorFileDialog *export_dialog = nullptr;
 	EditorFileDialog *foliage_add_dialog = nullptr;
+	EditorFileDialog *layer_textures_dialog = nullptr;
+	EditorFileDialog *layer_load_dialog = nullptr;
+	EditorFileDialog *resource_save_dialog = nullptr;
+	Ref<Resource> saving_resource;
+	LocalVector<Button *> icon_buttons;
 	AcceptDialog *message_dialog = nullptr;
 
 	// Stroke.
@@ -123,11 +149,18 @@ class TerrainEditor : public EditorDock {
 	void _show_message(const String &p_text);
 
 	void _refresh_layers();
+	void _update_layer_buttons();
 	void _layer_selected(int p_index);
-	void _add_layer();
+	void _inspect_selected_layer();
+	void _layer_add_option(int p_option);
+	void _add_layers(const Vector<Ref<TerrainLayer>> &p_layers);
+	void _add_layers_from_files(const Vector<String> &p_paths);
+	void _layer_load_selected(const Vector<String> &p_paths);
+	void _duplicate_layer();
+	void _move_layer(int p_direction);
 	void _remove_layer();
-	void _edit_layer();
-	void _add_layer_from(const Ref<Texture2D> &p_albedo);
+	void _save_selected(bool p_foliage);
+	void _resource_save_selected(const String &p_path);
 
 	void _refresh_foliage();
 	void _foliage_selected(int p_index);
@@ -136,7 +169,8 @@ class TerrainEditor : public EditorDock {
 	Ref<FoliageType> _make_foliage_type(const Ref<Resource> &p_resource, FoliageType::Kind p_kind, String &r_error) const;
 	void _add_foliage_type(const Ref<FoliageType> &p_type);
 	void _remove_foliage_type();
-	void _edit_foliage_type();
+	void _duplicate_foliage_type();
+	void _inspect_selected_foliage();
 	void _foliage_preview_ready(const String &p_path, const Ref<Texture2D> &p_preview, const Ref<Texture2D> &p_small, int p_index);
 	Foliage3D *_ensure_foliage();
 

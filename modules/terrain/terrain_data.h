@@ -77,6 +77,11 @@ private:
 
 protected:
 	static void _bind_methods();
+	// Each layer shows in the Inspector as its own slot, so a layer can be
+	// opened and edited, or swapped for a saved one, from the data itself.
+	bool _set(const StringName &p_name, const Variant &p_value);
+	bool _get(const StringName &p_name, Variant &r_ret) const;
+	void _get_property_list(List<PropertyInfo> *p_list) const;
 
 public:
 	_FORCE_INLINE_ static int floor_div(int p_a, int p_b) {

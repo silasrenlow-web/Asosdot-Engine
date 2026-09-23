@@ -7,6 +7,7 @@
 		Everything that makes one terrain different from another. The terrain is cut into square regions of [member region_size] vertices a side and only the regions that exist are stored, so a world with land in a few places costs nothing in between.
 		Positions here are in the terrain's vertex grid: vertex [code](x, z)[/code] sits at [code]Vector3(x, height, z) * Terrain3D.vertex_spacing[/code] relative to the terrain, and belongs to region [code](floor(x / region_size), floor(z / region_size))[/code]. [method Terrain3D.global_to_vertex] converts from global positions.
 		Each region holds a height map, and optionally up to four splat maps of layer weights, a colour map whose alpha is wetness, and a hole map. A map that has never been painted is not stored and reads as its default.
+		In the Inspector, each layer appears in the [b]Layers[/b] group as its own slot, [code]layer_0[/code] and up, which can be opened to edit the layer or replaced with a saved [TerrainLayer]. These slots are not stored; the layers are saved as a list.
 		Changes made through this class are picked up by every [Terrain3D] using it on the next frame, so it can be edited at runtime, for craters or digging:
 		[codeblock]
 		# Lowers a bowl of the given radius, in vertices, around a global position.
