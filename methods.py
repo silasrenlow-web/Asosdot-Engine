@@ -153,6 +153,10 @@ def get_version_info(module_version_string="", silent=False):
         "module_config": str(version.module_config) + module_version_string,
         "website": str(version.website),
         "docs_branch": str(version.docs),
+        "asosdot_major": int(getattr(version, "asosdot_major", 1)),
+        "asosdot_minor": int(getattr(version, "asosdot_minor", 0)),
+        "asosdot_patch": int(getattr(version, "asosdot_patch", 0)),
+        "asosdot_status": str(getattr(version, "asosdot_status", "stable")),
     }
 
     # For dev snapshots (alpha, beta, RC, etc.) we do not commit status change to Git,

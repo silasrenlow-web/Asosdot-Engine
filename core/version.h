@@ -78,6 +78,21 @@
 // Example: "Godot v3.1.4.stable.official.mono.double"
 #define GODOT_VERSION_FULL_NAME GODOT_VERSION_NAME " v" GODOT_VERSION_FULL_BUILD
 
+// Asosdot's own version, which is what the engine shows as its version.
+// Everything above stays the Godot version it is built on, because that
+// is what extensions, projects and export templates check compatibility
+// against.
+#define ASOSDOT_VERSION_BRANCH _MKSTR(ASOSDOT_VERSION_MAJOR) "." _MKSTR(ASOSDOT_VERSION_MINOR)
+#if ASOSDOT_VERSION_PATCH
+#define ASOSDOT_VERSION_NUMBER ASOSDOT_VERSION_BRANCH "." _MKSTR(ASOSDOT_VERSION_PATCH)
+#else
+#define ASOSDOT_VERSION_NUMBER ASOSDOT_VERSION_BRANCH
+#endif
+// Example: "1.0.stable"
+#define ASOSDOT_VERSION_FULL_CONFIG ASOSDOT_VERSION_NUMBER "." ASOSDOT_VERSION_STATUS
+// Example: "Asosdot Engine v1.0.stable"
+#define ASOSDOT_VERSION_FULL_NAME GODOT_VERSION_NAME " v" ASOSDOT_VERSION_FULL_CONFIG
+
 // Git commit hash, generated at build time in `core/version_hash.gen.cpp`.
 extern const char *const GODOT_VERSION_HASH;
 

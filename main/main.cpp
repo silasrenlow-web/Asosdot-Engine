@@ -322,6 +322,17 @@ static String unescape_cmdline(const String &p_str) {
 	return p_str.replace("%20", " ");
 }
 
+// What the engine calls itself on screen: Asosdot's version, and the Godot
+// it is based on.
+static String get_display_version_string() {
+	String based_on = "Godot " + String(GODOT_VERSION_FULL_CONFIG);
+	const String hash = String(GODOT_VERSION_HASH);
+	if (!hash.is_empty()) {
+		based_on += ", " + hash.left(9);
+	}
+	return String(ASOSDOT_VERSION_FULL_CONFIG) + " (" + based_on + ")";
+}
+
 static String get_full_version_string() {
 	String hash = String(GODOT_VERSION_HASH);
 	if (!hash.is_empty()) {
@@ -438,15 +449,15 @@ void Main::print_header(bool p_rich) {
 	if (GODOT_VERSION_TIMESTAMP > 0) {
 		// Version timestamp available.
 		if (p_rich) {
-			Engine::get_singleton()->print_header_rich("\u001b[38;5;39m" + String(GODOT_VERSION_NAME) + "\u001b[0m v" + get_full_version_string() + " (" + Time::get_singleton()->get_datetime_string_from_unix_time(GODOT_VERSION_TIMESTAMP, true) + " UTC) - \u001b[4m" + String(GODOT_VERSION_WEBSITE));
+			Engine::get_singleton()->print_header_rich("\u001b[38;5;39m" + String(GODOT_VERSION_NAME) + "\u001b[0m v" + get_display_version_string() + " (" + Time::get_singleton()->get_datetime_string_from_unix_time(GODOT_VERSION_TIMESTAMP, true) + " UTC) - \u001b[4m" + String(GODOT_VERSION_WEBSITE));
 		} else {
-			Engine::get_singleton()->print_header(String(GODOT_VERSION_NAME) + " v" + get_full_version_string() + " (" + Time::get_singleton()->get_datetime_string_from_unix_time(GODOT_VERSION_TIMESTAMP, true) + " UTC) - " + String(GODOT_VERSION_WEBSITE));
+			Engine::get_singleton()->print_header(String(GODOT_VERSION_NAME) + " v" + get_display_version_string() + " (" + Time::get_singleton()->get_datetime_string_from_unix_time(GODOT_VERSION_TIMESTAMP, true) + " UTC) - " + String(GODOT_VERSION_WEBSITE));
 		}
 	} else {
 		if (p_rich) {
-			Engine::get_singleton()->print_header_rich("\u001b[38;5;39m" + String(GODOT_VERSION_NAME) + "\u001b[0m v" + get_full_version_string() + " - \u001b[4m" + String(GODOT_VERSION_WEBSITE));
+			Engine::get_singleton()->print_header_rich("\u001b[38;5;39m" + String(GODOT_VERSION_NAME) + "\u001b[0m v" + get_display_version_string() + " - \u001b[4m" + String(GODOT_VERSION_WEBSITE));
 		} else {
-			Engine::get_singleton()->print_header(String(GODOT_VERSION_NAME) + " v" + get_full_version_string() + " - " + String(GODOT_VERSION_WEBSITE));
+			Engine::get_singleton()->print_header(String(GODOT_VERSION_NAME) + " v" + get_display_version_string() + " - " + String(GODOT_VERSION_WEBSITE));
 		}
 	}
 }

@@ -30,6 +30,10 @@ def version_info_builder(target, source, env):
 #define GODOT_VERSION_WEBSITE "{website}"
 #define GODOT_VERSION_DOCS_BRANCH "{docs_branch}"
 #define GODOT_VERSION_DOCS_URL "https://docs.godotengine.org/en/" GODOT_VERSION_DOCS_BRANCH
+#define ASOSDOT_VERSION_MAJOR {asosdot_major}
+#define ASOSDOT_VERSION_MINOR {asosdot_minor}
+#define ASOSDOT_VERSION_PATCH {asosdot_patch}
+#define ASOSDOT_VERSION_STATUS "{asosdot_status}"
 """.format(**source[0].read())
         )
 

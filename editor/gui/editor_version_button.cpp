@@ -37,17 +37,19 @@
 String _get_version_string(EditorVersionButton::VersionFormat p_format) {
 	String main;
 	switch (p_format) {
+		// Asosdot's own version. The build name ("custom_build") is left out:
+		// every Asosdot build is a custom build of Godot, so it says nothing.
 		case EditorVersionButton::FORMAT_BASIC: {
-			return GODOT_VERSION_FULL_CONFIG;
+			return ASOSDOT_VERSION_FULL_CONFIG;
 		} break;
 		case EditorVersionButton::FORMAT_WITH_BUILD: {
-			main = "v" GODOT_VERSION_FULL_BUILD;
+			main = "v" ASOSDOT_VERSION_FULL_CONFIG;
 		} break;
 		case EditorVersionButton::FORMAT_WITH_NAME_AND_BUILD: {
-			main = GODOT_VERSION_FULL_NAME;
+			main = ASOSDOT_VERSION_FULL_NAME;
 		} break;
 		default: {
-			ERR_FAIL_V_MSG(GODOT_VERSION_FULL_NAME, "Unexpected format: " + itos(p_format));
+			ERR_FAIL_V_MSG(ASOSDOT_VERSION_FULL_NAME, "Unexpected format: " + itos(p_format));
 		} break;
 	}
 
@@ -73,13 +75,14 @@ void EditorVersionButton::_notification(int p_what) {
 			} else {
 				build_date = TTR("(unknown)");
 			}
-			set_tooltip_text(vformat(TTR("Git commit date: %s\nClick to copy the version information."), build_date));
+			set_tooltip_text(vformat(TTR("Based on Godot %s\nGit commit date: %s\nClick to copy the version information."), GODOT_VERSION_FULL_CONFIG, build_date));
 		} break;
 	}
 }
 
 void EditorVersionButton::pressed() {
-	DisplayServer::get_singleton()->clipboard_set(_get_version_string(FORMAT_WITH_BUILD));
+	// Bug reports need the Godot version underneath as well as Asosdot's.
+	DisplayServer::get_singleton()->clipboard_set(_get_version_string(FORMAT_WITH_NAME_AND_BUILD) + " (Godot " GODOT_VERSION_FULL_CONFIG ")");
 }
 
 EditorVersionButton::EditorVersionButton(VersionFormat p_format) {
