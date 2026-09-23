@@ -1,0 +1,323 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="TerrainData" inherits="Resource" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		The heights, painted layers, holes, tint and wetness of a [Terrain3D].
+	</brief_description>
+	<description>
+		Everything that makes one terrain different from another. The terrain is cut into square regions of [member region_size] vertices a side and only the regions that exist are stored, so a world with land in a few places costs nothing in between.
+		Positions here are in the terrain's vertex grid: vertex [code](x, z)[/code] sits at [code]Vector3(x, height, z) * Terrain3D.vertex_spacing[/code] relative to the terrain, and belongs to region [code](floor(x / region_size), floor(z / region_size))[/code]. [method Terrain3D.global_to_vertex] converts from global positions.
+		Each region holds a height map, and optionally up to four splat maps of layer weights, a colour map whose alpha is wetness, and a hole map. A map that has never been painted is not stored and reads as its default.
+		Changes made through this class are picked up by every [Terrain3D] using it on the next frame, so it can be edited at runtime, for craters or digging:
+		[codeblock]
+		# Lowers a bowl of the given radius, in vertices, around a global position.
+		func dig(at: Vector3, radius: int, depth: float):
+			var data := terrain.data
+			var centre := terrain.global_to_vertex(at)
+			for z in range(int(centre.y) - radius, int(centre.y) + radius + 1):
+				for x in range(int(centre.x) - radius, int(centre.x) + radius + 1):
+					var d := Vector2(x, z).distance_to(centre) / radius
+					if d &lt; 1.0:
+						var v := Vector2i(x, z)
+						data.set_height(v, data.get_height(v) - depth * (1.0 - d * d))
+		[/codeblock]
+		Terrain data is large, so the editor stores it in its own compressed [code].res[/code] file beside the scene rather than inside it.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="add_layer">
+			<return type="int" />
+			<param index="0" name="layer" type="TerrainLayer" />
+			<description>
+				Appends [param layer] to the layers and returns its index, or [code]-1[/code] if the terrain already has [constant MAX_LAYERS] layers.
+			</description>
+		</method>
+		<method name="add_region">
+			<return type="bool" />
+			<param index="0" name="region" type="Vector2i" />
+			<param index="1" name="height" type="float" default="0.0" />
+			<description>
+				Adds a flat region at [param height]. Returns [code]false[/code] if one is already there.
+			</description>
+		</method>
+		<method name="clear">
+			<return type="void" />
+			<description>
+				Removes every region. The layers are kept.
+			</description>
+		</method>
+		<method name="export_height_image" qualifiers="const">
+			<return type="Image" />
+			<param index="0" name="vertex_rect" type="Rect2i" default="Rect2i(0, 0, 0, 0)" />
+			<description>
+				Returns the heights inside [param vertex_rect] as a [constant Image.FORMAT_RF] image in metres, or the whole terrain if [param vertex_rect] is empty. Missing regions read as [code]0.0[/code].
+			</description>
+		</method>
+		<method name="get_color" qualifiers="const">
+			<return type="Color" />
+			<param index="0" name="vertex" type="Vector2i" />
+			<description>
+				Returns the colour tint at [param vertex], with wetness in the alpha channel.
+			</description>
+		</method>
+		<method name="get_color_map" qualifiers="const">
+			<return type="Image" />
+			<param index="0" name="region" type="Vector2i" />
+			<description>
+				Returns the region's colour map, a [constant Image.FORMAT_RGBA8] image with tint in RGB and wetness in alpha, or [code]null[/code] if nothing has been painted in it.
+			</description>
+		</method>
+		<method name="get_height" qualifiers="const">
+			<return type="float" />
+			<param index="0" name="vertex" type="Vector2i" />
+			<description>
+				Returns the stored height of [param vertex], or [code]NAN[/code] if no region covers it. A hole still has a stored height underneath, which is what this returns.
+			</description>
+		</method>
+		<method name="get_height_map" qualifiers="const">
+			<return type="Image" />
+			<param index="0" name="region" type="Vector2i" />
+			<description>
+				Returns the region's height map, a [constant Image.FORMAT_RF] image in metres, or [code]null[/code] if there is no such region.
+			</description>
+		</method>
+		<method name="get_height_range" qualifiers="const">
+			<return type="Vector2" />
+			<description>
+				Returns the lowest and highest heights anywhere in the terrain as [code]x[/code] and [code]y[/code].
+			</description>
+		</method>
+		<method name="get_hole_map" qualifiers="const">
+			<return type="Image" />
+			<param index="0" name="region" type="Vector2i" />
+			<description>
+				Returns the region's hole map, a [constant Image.FORMAT_R8] image where non-zero is a hole, or [code]null[/code] if the region has no holes.
+			</description>
+		</method>
+		<method name="get_layer" qualifiers="const">
+			<return type="TerrainLayer" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Returns the layer at [param index].
+			</description>
+		</method>
+		<method name="get_layer_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the number of layers.
+			</description>
+		</method>
+		<method name="get_layer_weights" qualifiers="const">
+			<return type="PackedFloat32Array" />
+			<param index="0" name="vertex" type="Vector2i" />
+			<description>
+				Returns the painted weight of every possible layer at [param vertex], [constant MAX_LAYERS] values adding up to [code]1.0[/code].
+			</description>
+		</method>
+		<method name="get_region_coords" qualifiers="const">
+			<return type="Vector2i[]" />
+			<description>
+				Returns the coordinates of every region.
+			</description>
+		</method>
+		<method name="get_region_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the number of regions.
+			</description>
+		</method>
+		<method name="get_splat_map" qualifiers="const">
+			<return type="Image" />
+			<param index="0" name="region" type="Vector2i" />
+			<param index="1" name="index" type="int" />
+			<description>
+				Returns one of the region's four splat maps: [constant Image.FORMAT_RGBA8] images holding the weights of layers [code]index * 4[/code] to [code]index * 4 + 3[/code]. Returns [code]null[/code] if none of those layers has been painted in the region.
+			</description>
+		</method>
+		<method name="get_vertex_bounds" qualifiers="const">
+			<return type="Rect2i" />
+			<description>
+				Returns the rectangle of vertices covered by all the regions.
+			</description>
+		</method>
+		<method name="has_region" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="region" type="Vector2i" />
+			<description>
+				Returns [code]true[/code] if there is a region at [param region].
+			</description>
+		</method>
+		<method name="import_height_image">
+			<return type="int" enum="Error" />
+			<param index="0" name="image" type="Image" />
+			<param index="1" name="vertex_offset" type="Vector2i" />
+			<param index="2" name="min_height" type="float" />
+			<param index="3" name="max_height" type="float" />
+			<param index="4" name="normalized" type="bool" default="true" />
+			<description>
+				Writes the red channel of [param image] into the heights, with its top left pixel at [param vertex_offset], adding regions wherever the image reaches. If [param normalized] is [code]true[/code] the values are fractions mapped from [param min_height] to [param max_height]; otherwise they are used as metres.
+				To import a 16-bit heightmap without losing precision, use the Terrain dock's Import Heightmap menu, since [method Image.load] reduces 16-bit PNG files to 8 bits.
+			</description>
+		</method>
+		<method name="is_hole" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="vertex" type="Vector2i" />
+			<description>
+				Returns [code]true[/code] if [param vertex] is a hole. Every triangle touching a hole vertex is left out of the mesh and the collision.
+			</description>
+		</method>
+		<method name="move_layer">
+			<return type="void" />
+			<param index="0" name="from" type="int" />
+			<param index="1" name="to" type="int" />
+			<description>
+				Moves a layer to a new index, carrying its painted weights with it.
+			</description>
+		</method>
+		<method name="notify_region_changed">
+			<return type="void" />
+			<param index="0" name="region" type="Vector2i" />
+			<param index="1" name="maps" type="int" />
+			<description>
+				Tells terrains using this data that some of the region's maps changed. Only needed after writing into an image returned by one of the [code]get_*_map()[/code] methods directly; every other method here notifies by itself. [param maps] is a combination of [enum MapType] flags.
+			</description>
+		</method>
+		<method name="remove_layer">
+			<return type="void" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Removes a layer. Wherever it was painted, the other layers painted there take its share; where nothing else was, layer [code]0[/code] does.
+			</description>
+		</method>
+		<method name="remove_region">
+			<return type="void" />
+			<param index="0" name="region" type="Vector2i" />
+			<description>
+				Removes a region and everything painted in it.
+			</description>
+		</method>
+		<method name="set_color">
+			<return type="void" />
+			<param index="0" name="vertex" type="Vector2i" />
+			<param index="1" name="color" type="Color" />
+			<description>
+				Sets the colour tint at [param vertex], with wetness in the alpha channel.
+			</description>
+		</method>
+		<method name="set_color_map">
+			<return type="void" />
+			<param index="0" name="region" type="Vector2i" />
+			<param index="1" name="image" type="Image" />
+			<description>
+				Replaces the region's colour map. See [method get_color_map] for the format.
+			</description>
+		</method>
+		<method name="set_height">
+			<return type="void" />
+			<param index="0" name="vertex" type="Vector2i" />
+			<param index="1" name="height" type="float" />
+			<description>
+				Sets the height of [param vertex] in metres. The vertex must be inside a region.
+			</description>
+		</method>
+		<method name="set_height_map">
+			<return type="void" />
+			<param index="0" name="region" type="Vector2i" />
+			<param index="1" name="image" type="Image" />
+			<description>
+				Replaces the region's height map, adding the region if needed. The image must be [member region_size] pixels square and [constant Image.FORMAT_RF].
+			</description>
+		</method>
+		<method name="set_hole">
+			<return type="void" />
+			<param index="0" name="vertex" type="Vector2i" />
+			<param index="1" name="hole" type="bool" />
+			<description>
+				Makes [param vertex] a hole, or fills it back in. Filling a hole restores the ground it had.
+			</description>
+		</method>
+		<method name="set_hole_map">
+			<return type="void" />
+			<param index="0" name="region" type="Vector2i" />
+			<param index="1" name="image" type="Image" />
+			<description>
+				Replaces the region's hole map. See [method get_hole_map] for the format.
+			</description>
+		</method>
+		<method name="set_layer">
+			<return type="void" />
+			<param index="0" name="index" type="int" />
+			<param index="1" name="layer" type="TerrainLayer" />
+			<description>
+				Replaces the layer at [param index], keeping what is painted with it.
+			</description>
+		</method>
+		<method name="set_layer_weights">
+			<return type="void" />
+			<param index="0" name="vertex" type="Vector2i" />
+			<param index="1" name="weights" type="PackedFloat32Array" />
+			<description>
+				Sets how much of each layer is painted at [param vertex], one value per layer. The weights are scaled to add up to [code]1.0[/code].
+			</description>
+		</method>
+		<method name="set_splat_map">
+			<return type="void" />
+			<param index="0" name="region" type="Vector2i" />
+			<param index="1" name="index" type="int" />
+			<param index="2" name="image" type="Image" />
+			<description>
+				Replaces one of the region's splat maps. See [method get_splat_map] for the format.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="layers" type="Array" setter="_set_layers" getter="_get_layers" default="[]">
+			The layers, as stored. Edit them with [method add_layer], [method remove_layer] and [method move_layer], which keep the painted weights in step with the list.
+		</member>
+		<member name="region_size" type="int" setter="set_region_size" getter="get_region_size" default="256">
+			The number of vertices along each side of a region. Each region is stored, uploaded and given collision as a unit. Can only be changed while there are no regions.
+		</member>
+		<member name="regions" type="Array" setter="_set_regions" getter="_get_regions" default="[]">
+			The regions, as stored. Use the region and map methods instead.
+		</member>
+	</members>
+	<signals>
+		<signal name="layers_changed">
+			<description>
+				Emitted when a layer is added, removed, moved or changed.
+			</description>
+		</signal>
+		<signal name="region_changed">
+			<param index="0" name="region" type="Vector2i" />
+			<param index="1" name="maps" type="int" />
+			<description>
+				Emitted when a region's maps change. [param maps] is a combination of [enum MapType] flags.
+			</description>
+		</signal>
+		<signal name="regions_changed">
+			<description>
+				Emitted when regions are added or removed.
+			</description>
+		</signal>
+	</signals>
+	<constants>
+		<constant name="MAP_HEIGHT" value="1" enum="MapType">
+			The height map.
+		</constant>
+		<constant name="MAP_SPLAT" value="2" enum="MapType">
+			The splat maps of layer weights.
+		</constant>
+		<constant name="MAP_COLOR" value="4" enum="MapType">
+			The colour and wetness map.
+		</constant>
+		<constant name="MAP_HOLES" value="8" enum="MapType">
+			The hole map.
+		</constant>
+		<constant name="MAP_ALL" value="15" enum="MapType">
+			Every map.
+		</constant>
+		<constant name="MAX_LAYERS" value="16">
+			The most layers a terrain can have.
+		</constant>
+	</constants>
+</class>

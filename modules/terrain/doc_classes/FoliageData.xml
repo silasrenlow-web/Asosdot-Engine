@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="FoliageData" inherits="Resource" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		What grows where on a terrain, for a [Foliage3D].
+	</brief_description>
+	<description>
+		Holds a list of [FoliageType]s together with, for each, the painted grass density or the placed objects. Positions are in metres relative to the terrain's origin, on the X and Z axes.
+		The types and their data are kept side by side and change together, which is why the type list is edited with [method add_type] and [method remove_type] rather than as an array: removing a type removes what was painted with it.
+		Objects can be placed from scripts, for instance to scatter props procedurally:
+		[codeblock]
+		var rng := RandomNumberGenerator.new()
+		for i in 200:
+			var at := Vector3(rng.randf_range(-100, 100), 0.0, rng.randf_range(-100, 100))
+			foliage.data.add_instance(ROCKS, at, rng.randf() * TAU, rng.randf_range(0.6, 1.4), rng.randf())
+		[/codeblock]
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="add_instance">
+			<return type="void" />
+			<param index="0" name="type" type="int" />
+			<param index="1" name="local_position" type="Vector3" />
+			<param index="2" name="yaw" type="float" default="0.0" />
+			<param index="3" name="scale" type="float" default="1.0" />
+			<param index="4" name="variation" type="float" default="0.5" />
+			<description>
+				Places an object of [param type]. [param local_position]'s X and Z are metres from the terrain's origin, and its Y is an extra height above the ground, which is added to the type's [member FoliageType.height_offset]. The object always sits on the terrain at its current height. [param yaw] is in radians. [param variation], between [code]0.0[/code] and [code]1.0[/code], picks the direction and amount of the type's [member FoliageType.random_tilt], so it stays the same each time the object is rebuilt.
+			</description>
+		</method>
+		<method name="add_type">
+			<return type="int" />
+			<param index="0" name="type" type="FoliageType" />
+			<description>
+				Adds a type with nothing painted yet and returns its index.
+			</description>
+		</method>
+		<method name="clear_density">
+			<return type="void" />
+			<param index="0" name="type" type="int" />
+			<description>
+				Removes all the grass of [param type].
+			</description>
+		</method>
+		<method name="clear_instances">
+			<return type="void" />
+			<param index="0" name="type" type="int" />
+			<description>
+				Removes every object of [param type].
+			</description>
+		</method>
+		<method name="get_density" qualifiers="const">
+			<return type="float" />
+			<param index="0" name="type" type="int" />
+			<param index="1" name="local_position" type="Vector2" />
+			<description>
+				Returns the painted density of [param type] at [param local_position], from [code]0.0[/code] for none to [code]1.0[/code] for the type's full [member FoliageType.density].
+			</description>
+		</method>
+		<method name="get_instance_count" qualifiers="const">
+			<return type="int" />
+			<param index="0" name="type" type="int" />
+			<description>
+				Returns how many objects of [param type] have been placed.
+			</description>
+		</method>
+		<method name="get_instances" qualifiers="const">
+			<return type="PackedFloat32Array" />
+			<param index="0" name="type" type="int" />
+			<description>
+				Returns the objects of [param type], [constant INSTANCE_STRIDE] values each: X, Z, height offset, yaw, scale and variation, as passed to [method add_instance].
+			</description>
+		</method>
+		<method name="get_type" qualifiers="const">
+			<return type="FoliageType" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Returns the type at [param index].
+			</description>
+		</method>
+		<method name="get_type_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the number of types.
+			</description>
+		</method>
+		<method name="remove_instances_in_radius">
+			<return type="int" />
+			<param index="0" name="type" type="int" />
+			<param index="1" name="local_center" type="Vector2" />
+			<param index="2" name="radius" type="float" />
+			<param index="3" name="probability" type="float" default="1.0" />
+			<param index="4" name="seed" type="int" default="0" />
+			<description>
+				Removes the objects of [param type] within [param radius] metres of [param local_center], each with the given [param probability], and returns how many were removed. [param seed] makes the choice repeatable.
+			</description>
+		</method>
+		<method name="remove_type">
+			<return type="void" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Removes a type and everything painted with it. The types after it move down one index.
+			</description>
+		</method>
+		<method name="set_density">
+			<return type="void" />
+			<param index="0" name="type" type="int" />
+			<param index="1" name="local_position" type="Vector2" />
+			<param index="2" name="density" type="float" />
+			<description>
+				Sets the grass density of [param type] at [param local_position], between [code]0.0[/code] and [code]1.0[/code]. Density is stored in texels of [member density_texel_size] metres.
+			</description>
+		</method>
+		<method name="set_instances">
+			<return type="void" />
+			<param index="0" name="type" type="int" />
+			<param index="1" name="instances" type="PackedFloat32Array" />
+			<description>
+				Replaces every object of [param type]. See [method get_instances] for the layout.
+			</description>
+		</method>
+		<method name="set_type">
+			<return type="void" />
+			<param index="0" name="index" type="int" />
+			<param index="1" name="type" type="FoliageType" />
+			<description>
+				Replaces the type at [param index], keeping what is painted with it.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="density_texel_size" type="float" setter="set_density_texel_size" getter="get_density_texel_size" default="1.0">
+			The size in metres of one texel of painted grass density. Smaller gives finer edges and uses more memory. Can only be changed before any grass is painted.
+		</member>
+		<member name="type_data" type="Array" setter="_set_type_data" getter="_get_type_data" default="[]">
+			What is painted with each type, as stored. Use the density and instance methods instead.
+		</member>
+		<member name="types" type="Array" setter="_set_types" getter="_get_types" default="[]">
+			The types, as stored. Edit them with [method add_type] and [method remove_type].
+		</member>
+	</members>
+	<signals>
+		<signal name="density_changed">
+			<param index="0" name="type" type="int" />
+			<param index="1" name="area" type="Rect2" />
+			<description>
+				Emitted when grass density changes within [param area], in metres relative to the terrain. An empty [param area] means anywhere.
+			</description>
+		</signal>
+		<signal name="instances_changed">
+			<param index="0" name="type" type="int" />
+			<param index="1" name="area" type="Rect2" />
+			<description>
+				Emitted when objects are added or removed within [param area], in metres relative to the terrain. An empty [param area] means the whole list was replaced.
+			</description>
+		</signal>
+		<signal name="type_changed">
+			<param index="0" name="type" type="int" />
+			<description>
+				Emitted when a setting of the [FoliageType] at index [param type] changes.
+			</description>
+		</signal>
+		<signal name="types_changed">
+			<description>
+				Emitted when a type is added, removed or replaced.
+			</description>
+		</signal>
+	</signals>
+	<constants>
+		<constant name="DENSITY_CELL" value="64">
+			Grass density is stored in square blocks of this many texels a side, only where something has been painted.
+		</constant>
+		<constant name="INSTANCE_STRIDE" value="6">
+			The number of values per object in [method get_instances].
+		</constant>
+	</constants>
+</class>

@@ -1,0 +1,16 @@
+#!/usr/bin/env python
+from misc.utility.scons_hints import *
+
+Import("env")
+Import("env_modules")
+
+env_terrain = env_modules.Clone()
+
+# Heightmap import reads 16-bit PNGs through libpng directly, since the engine's
+# own PNG loader narrows every file to 8 bits.
+if env["builtin_libpng"]:
+    env_terrain.Prepend(CPPPATH=["#thirdparty/libpng"])
+
+env_terrain.add_source_files(env.modules_sources, "*.cpp")
+if env.editor_build:
+    env_terrain.add_source_files(env.modules_sources, "editor/*.cpp")

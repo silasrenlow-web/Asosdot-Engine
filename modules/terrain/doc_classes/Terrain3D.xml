@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="Terrain3D" inherits="Node3D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		A heightmap terrain with painted layers, holes, collision and levels of detail.
+	</brief_description>
+	<description>
+		A [Terrain3D] draws the heights, layers, tint and wetness held in a [TerrainData], and gives it collision, navigation mesh geometry and occlusion. Select one in the editor to sculpt and paint it from the Terrain dock at the bottom of the screen: raise, smooth, flatten, erode, add noise, terrace, cut ramps and holes, paint layers, colour and wetness, and scatter grass and objects with a child [Foliage3D].
+		The terrain is drawn as a grid of square chunks of [member chunk_size] vertices a side. Each chunk is an ordinary rendering instance, so it is frustum and occlusion culled, casts shadows, and switches to a coarser level of detail with distance like any mesh does. [member lod_bias] moves those switches nearer or further away.
+		Heights are in metres relative to the node's position, and the node's rotation and scale are ignored: use [member vertex_spacing] to change the terrain's horizontal size.
+		For footsteps, [method get_surface_name] returns the [member TerrainLayer.surface_name] of whatever is painted most strongly underfoot:
+		[codeblock]
+		func _on_footstep():
+			match terrain.get_surface_name(global_position):
+				"grass": $Grass.play()
+				"mud": $Mud.play()
+				_: $Dirt.play()
+			if terrain.get_wetness(global_position) &gt; 0.5:
+				$Splash.play()
+		[/codeblock]
+		To have [NavigationRegion3D] bake a navigation mesh over the terrain, make the terrain a child of the region (or put it in the region's source group). Set [member NavigationMesh.filter_baking_aabb] to bake part of a large terrain; otherwise every triangle of the terrain is handed to the baker.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_dominant_layer" qualifiers="const">
+			<return type="int" />
+			<param index="0" name="global_position" type="Vector3" />
+			<description>
+				Returns the index of the layer painted most strongly at [param global_position], counting the auto slope layer of [member terrain_material] where it applies, or [code]-1[/code] if there is no terrain there or it is a hole.
+			</description>
+		</method>
+		<method name="get_height" qualifiers="const">
+			<return type="float" />
+			<param index="0" name="global_position" type="Vector3" />
+			<description>
+				Returns the global height of the surface below or above [param global_position], ignoring its Y coordinate. The height is interpolated across the same triangle the terrain is drawn with and collides with, so an object placed at it sits exactly on the surface.
+				Returns [code]NAN[/code] where there is no terrain or there is a hole. Check with [method @GlobalScope.is_nan].
+			</description>
+		</method>
+		<method name="get_layer_weights" qualifiers="const">
+			<return type="PackedFloat32Array" />
+			<param index="0" name="global_position" type="Vector3" />
+			<description>
+				Returns how much of each layer is painted at [param global_position], one value per layer between [code]0.0[/code] and [code]1.0[/code], adding up to [code]1.0[/code]. Includes the auto slope layer of [member terrain_material], so it matches what is drawn.
+			</description>
+		</method>
+		<method name="get_normal" qualifiers="const">
+			<return type="Vector3" />
+			<param index="0" name="global_position" type="Vector3" />
+			<description>
+				Returns the surface normal at [param global_position], or [code]Vector3(0, 0, 0)[/code] where there is no terrain.
+			</description>
+		</method>
+		<method name="get_physics_body" qualifiers="const">
+			<return type="RID" />
+			<description>
+				Returns the [PhysicsServer3D] body holding the terrain's collision shapes. Raycasts that hit the terrain report the [Terrain3D] as the collider.
+			</description>
+		</method>
+		<method name="get_surface_name" qualifiers="const">
+			<return type="String" />
+			<param index="0" name="global_position" type="Vector3" />
+			<description>
+				Returns the name of the layer painted most strongly at [param global_position]: its [member TerrainLayer.surface_name], or failing that its resource name or albedo texture's file name. Returns an empty string where there is no terrain. Meant for choosing footstep sounds and impact effects.
+			</description>
+		</method>
+		<method name="get_terrain_aabb" qualifiers="const">
+			<return type="AABB" />
+			<description>
+				Returns the global bounding box of the whole terrain.
+			</description>
+		</method>
+		<method name="get_wetness" qualifiers="const">
+			<return type="float" />
+			<param index="0" name="global_position" type="Vector3" />
+			<description>
+				Returns how wet the ground is at [param global_position], from [code]0.0[/code] for dry to [code]1.0[/code] for soaked, as painted with the wetness tool.
+			</description>
+		</method>
+		<method name="global_to_vertex" qualifiers="const">
+			<return type="Vector2" />
+			<param index="0" name="global_position" type="Vector3" />
+			<description>
+				Converts a global position to the terrain's vertex grid, as used by [TerrainData]. The result is fractional between vertices.
+			</description>
+		</method>
+		<method name="intersect_ray" qualifiers="const">
+			<return type="Dictionary" />
+			<param index="0" name="from" type="Vector3" />
+			<param index="1" name="direction" type="Vector3" />
+			<param index="2" name="max_distance" type="float" default="10000.0" />
+			<description>
+				Casts a ray against the terrain's heights without going through the physics engine, and returns a dictionary with [code]position[/code] and [code]normal[/code] keys at the first hit, or an empty dictionary if the ray misses. Works in the editor and on terrain that has collision disabled.
+			</description>
+		</method>
+		<method name="update_collision">
+			<return type="void" />
+			<description>
+				Rebuilds any collision shapes waiting on changed heights straight away, instead of on the next frame. Call this after changing heights from a script if something needs to collide with the new ground in the same frame.
+			</description>
+		</method>
+		<method name="vertex_to_global" qualifiers="const">
+			<return type="Vector3" />
+			<param index="0" name="vertex" type="Vector2i" />
+			<description>
+				Returns the global position of a vertex of the terrain's grid, at its height.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="cast_shadow" type="int" setter="set_cast_shadow" getter="get_cast_shadow" enum="Terrain3D.ShadowCasting" default="1">
+			Whether the terrain casts shadows.
+		</member>
+		<member name="chunk_size" type="int" setter="set_chunk_size" getter="get_chunk_size" default="64">
+			The number of vertices along each side of a chunk, the unit the terrain is culled and levelled in. Smaller chunks cull more precisely and change detail more gradually, at the cost of more draw calls. Never larger than [member TerrainData.region_size].
+		</member>
+		<member name="collision_enabled" type="bool" setter="set_collision_enabled" getter="is_collision_enabled" default="true">
+			If [code]true[/code], the terrain has collision, one [HeightMapShape3D] per region. Holes have no collision.
+		</member>
+		<member name="collision_layer" type="int" setter="set_collision_layer" getter="get_collision_layer" default="1">
+			The physics layers the terrain is in. See [member CollisionObject3D.collision_layer].
+		</member>
+		<member name="collision_mask" type="int" setter="set_collision_mask" getter="get_collision_mask" default="1">
+			The physics layers the terrain scans. See [member CollisionObject3D.collision_mask].
+		</member>
+		<member name="collision_priority" type="float" setter="set_collision_priority" getter="get_collision_priority" default="1.0">
+			See [member CollisionObject3D.collision_priority].
+		</member>
+		<member name="data" type="TerrainData" setter="set_data" getter="get_data">
+			The heights, painted layers, holes, tint and wetness this terrain draws. The editor keeps it in its own compressed file beside the scene, since it is far too large to store in the scene itself.
+		</member>
+		<member name="debug_view" type="int" setter="set_debug_view" getter="get_debug_view" enum="Terrain3D.DebugView" default="0">
+			Draws one aspect of the terrain in place of its shading, for checking what has been painted where. Not saved with the scene. Also available from the Terrain dock's View menu.
+		</member>
+		<member name="lod_bias" type="float" setter="set_lod_bias" getter="get_lod_bias" default="1.0">
+			Scales the distances at which chunks change to coarser levels of detail. Higher keeps full detail further away. See also [member GeometryInstance3D.lod_bias].
+		</member>
+		<member name="occlusion_culling" type="bool" setter="set_occlusion_culling" getter="is_occlusion_culling" default="true">
+			If [code]true[/code], the terrain acts as an occluder, so objects hidden behind hills are not drawn. The occluder always sits just below the real surface, so it never hides anything that should be seen. Only has an effect when [member ProjectSettings.rendering/occlusion_culling/use_occlusion_culling] is enabled.
+		</member>
+		<member name="render_layers" type="int" setter="set_render_layers" getter="get_render_layers" default="1">
+			The render layers the terrain is drawn in. See [member VisualInstance3D.layers].
+		</member>
+		<member name="terrain_material" type="TerrainMaterial" setter="set_terrain_material" getter="get_terrain_material">
+			How the layers are blended into a surface. Uses the defaults of a new [TerrainMaterial] if empty.
+		</member>
+		<member name="vertex_spacing" type="float" setter="set_vertex_spacing" getter="get_vertex_spacing" default="1.0">
+			The distance in metres between neighbouring vertices. Changing it resizes the whole terrain horizontally without changing its heights.
+		</member>
+	</members>
+	<signals>
+		<signal name="terrain_changed">
+			<param index="0" name="area" type="Rect2" />
+			<description>
+				Emitted once a frame after any part of the terrain changed, with the changed [param area] in metres relative to the terrain's position, on the X and Z axes. An empty [param area] means the whole terrain was rebuilt.
+			</description>
+		</signal>
+	</signals>
+	<constants>
+		<constant name="DEBUG_VIEW_DISABLED" value="0" enum="DebugView">
+			The terrain is shaded normally.
+		</constant>
+		<constant name="DEBUG_VIEW_HEIGHT" value="1" enum="DebugView">
+			Shows height as greyscale, from black at the lowest point to white at the highest.
+		</constant>
+		<constant name="DEBUG_VIEW_NORMALS" value="2" enum="DebugView">
+			Shows the surface normals as colours.
+		</constant>
+		<constant name="DEBUG_VIEW_LAYERS" value="3" enum="DebugView">
+			Shows each layer as a flat colour of its own, to see what is painted where.
+		</constant>
+		<constant name="DEBUG_VIEW_COLOR" value="4" enum="DebugView">
+			Shows only the painted colour tint.
+		</constant>
+		<constant name="DEBUG_VIEW_WETNESS" value="5" enum="DebugView">
+			Shows wetness, from sand for dry to blue for soaked.
+		</constant>
+		<constant name="DEBUG_VIEW_GRID" value="6" enum="DebugView">
+			Overlays the vertex grid and outlines the regions.
+		</constant>
+		<constant name="SHADOW_CASTING_OFF" value="0" enum="ShadowCasting">
+			The terrain casts no shadows.
+		</constant>
+		<constant name="SHADOW_CASTING_ON" value="1" enum="ShadowCasting">
+			The terrain casts shadows.
+		</constant>
+		<constant name="SHADOW_CASTING_DOUBLE_SIDED" value="2" enum="ShadowCasting">
+			The terrain casts shadows from both sides of its surface.
+		</constant>
+		<constant name="SHADOW_CASTING_SHADOWS_ONLY" value="3" enum="ShadowCasting">
+			The terrain casts shadows but is not drawn.
+		</constant>
+	</constants>
+</class>

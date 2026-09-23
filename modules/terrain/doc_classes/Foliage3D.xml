@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="Foliage3D" inherits="Node3D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Grass, trees, rocks and props growing on a [Terrain3D].
+	</brief_description>
+	<description>
+		Draws the grass and objects held in a [FoliageData] on the [Terrain3D] at [member terrain_path], normally its parent. Paint them from the Terrain dock with the terrain or the foliage selected. Use [b]Add...[/b] in the Foliage list to bring in your own meshes and scenes, choosing whether each is painted as grass or placed as objects, or drag them in from the FileSystem dock.
+		Grass is grown procedurally in square cells around the camera, within each type's [member FoliageType.visibility_range], a few cells a frame, and dropped again as the camera moves away. The painted density is all that is stored, so a field of grass costs almost nothing on disk. Blades shrink into the ground at the edge of the range instead of popping.
+		Objects are kept individually, and built into cells of [member object_cell_size] metres: a [MultiMesh] per cell with collision from [member FoliageType.collision_shape], or an instance of [member FoliageType.scene] per object. They sit at the terrain's height, so sculpting under a tree carries the tree with the ground.
+		While editing, grass grows around the camera of the 3D viewport last used.
+		Objects with collision are included when a [NavigationRegion3D] bakes over the terrain, so monsters walk around trees rather than through them.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="regenerate">
+			<return type="void" />
+			<description>
+				Throws away every grass and object cell and builds them again on the next frame. Only needed after changing a [Mesh] or [PackedScene] a type uses from outside, since other changes are picked up automatically.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="collision_enabled" type="bool" setter="set_collision_enabled" getter="is_collision_enabled" default="true">
+			If [code]true[/code], objects whose type has a [member FoliageType.collision_shape] collide. Objects placed as scenes use their own collision whatever this says.
+		</member>
+		<member name="collision_layer" type="int" setter="set_collision_layer" getter="get_collision_layer" default="1">
+			The physics layers the objects are in. See [member CollisionObject3D.collision_layer].
+		</member>
+		<member name="collision_mask" type="int" setter="set_collision_mask" getter="get_collision_mask" default="1">
+			The physics layers the objects scan. See [member CollisionObject3D.collision_mask].
+		</member>
+		<member name="data" type="FoliageData" setter="set_data" getter="get_data">
+			The types of foliage and where each grows. The editor keeps it in its own compressed file beside the scene.
+		</member>
+		<member name="generation_budget_msec" type="float" setter="set_generation_budget_msec" getter="get_generation_budget_msec" default="2.0">
+			The most time, in milliseconds, spent growing grass in one frame. At least one cell is always grown. Raise it to fill in faster after a camera cut; lower it if growing grass causes hitches.
+		</member>
+		<member name="grass_cell_size" type="float" setter="set_grass_cell_size" getter="get_grass_cell_size" default="16.0">
+			The size in metres of the square cells grass is grown and culled in.
+		</member>
+		<member name="object_cell_size" type="float" setter="set_object_cell_size" getter="get_object_cell_size" default="64.0">
+			The size in metres of the square cells objects are grouped into for drawing, culling and collision.
+		</member>
+		<member name="terrain_path" type="NodePath" setter="set_terrain_path" getter="get_terrain_path" default="NodePath(&quot;..&quot;)">
+			The [Terrain3D] the foliage grows on. Foliage positions are relative to that terrain, so moving the terrain moves its foliage with it.
+		</member>
+	</members>
+</class>

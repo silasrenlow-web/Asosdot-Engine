@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="TerrainLayer" inherits="Resource" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		One surface a [Terrain3D] can be painted with.
+	</brief_description>
+	<description>
+		A layer is a material for the ground: grass, mud, rock, gravel. Where it is painted is kept in the terrain's [TerrainData], so one layer saved as a resource can be shared by every terrain in a game.
+		The shader samples the four layers painted most strongly at each point and blends them, with [member TerrainMaterial.height_blending] using the albedo texture's alpha channel as a height map so, for instance, gravel fills the gaps between stones instead of fading over them.
+		All the layers of a terrain are drawn from one texture array, which needs every albedo texture, and every normal texture, to share a size, format and mipmap count. Import them with the same settings (VRAM Compressed, mipmaps on, the same resolution) and they are used as they are. Otherwise they are converted to uncompressed RGBA8, which works but takes four times the video memory, and the terrain shows a configuration warning.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_display_name" qualifiers="const">
+			<return type="String" />
+			<description>
+				Returns the name shown in the Terrain dock and by [method Terrain3D.get_surface_name]: [member surface_name], or failing that the resource name, or failing that the albedo texture's file name.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="albedo_color" type="Color" setter="set_albedo_color" getter="get_albedo_color" default="Color(1, 1, 1, 1)">
+			Multiplies the albedo texture, or is the layer's colour if it has no texture.
+		</member>
+		<member name="albedo_texture" type="Texture2D" setter="set_albedo_texture" getter="get_albedo_texture">
+			The layer's colour, with an optional height map in the alpha channel for [member TerrainMaterial.height_blending]. A texture without alpha blends as though it were flat.
+		</member>
+		<member name="detiling" type="float" setter="set_detiling" getter="get_detiling" default="0.0">
+			Breaks up visible repetition by shifting the texture by a different random amount in different places and cross-fading between them. It samples each texture twice, so leave it at [code]0.0[/code] for layers that do not tile noticeably.
+		</member>
+		<member name="normal_strength" type="float" setter="set_normal_strength" getter="get_normal_strength" default="1.0">
+			Scales the bumps of the normal texture.
+		</member>
+		<member name="normal_texture" type="Texture2D" setter="set_normal_texture" getter="get_normal_texture">
+			The layer's normal map, in Godot's OpenGL convention (green pointing up). Normal maps imported with the Normal Map option are supported.
+		</member>
+		<member name="roughness" type="float" setter="set_roughness" getter="get_roughness" default="0.9">
+			How rough the surface is. Painted wetness makes it smoother.
+		</member>
+		<member name="surface_name" type="String" setter="set_surface_name" getter="get_surface_name" default="&quot;&quot;">
+			What the surface is, as [method Terrain3D.get_surface_name] reports it: [code]"grass"[/code], [code]"mud"[/code], [code]"gravel"[/code]. Use it to choose footstep sounds and impact effects.
+		</member>
+		<member name="tile_size" type="float" setter="set_tile_size" getter="get_tile_size" default="4.0">
+			How many metres one repeat of the textures covers.
+		</member>
+		<member name="triplanar" type="bool" setter="set_triplanar" getter="is_triplanar" default="false">
+			If [code]true[/code], the textures are projected from three directions and blended by the slope, so they stay undistorted on cliffs instead of stretching. Costs three texture samples instead of one; use it for the layer painted on steep ground, such as [member TerrainMaterial.auto_slope_layer].
+		</member>
+	</members>
+</class>

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="TerrainMaterial" inherits="Resource" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		How a [Terrain3D]'s layers are blended into a surface.
+	</brief_description>
+	<description>
+		The shading settings for a terrain, separate from its [TerrainData] because they are a matter of taste rather than of any one terrain: save one as a resource and share it between every terrain in a game.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="auto_slope" type="bool" setter="set_auto_slope" getter="is_auto_slope" default="false">
+			If [code]true[/code], ground steeper than [member auto_slope_angle] shows [member auto_slope_layer] whatever is painted there, so cliffs look like rock without painting them. [method Terrain3D.get_surface_name] takes it into account.
+		</member>
+		<member name="auto_slope_angle" type="float" setter="set_auto_slope_angle" getter="get_auto_slope_angle" default="35.0">
+			The slope in degrees at which [member auto_slope_layer] takes over.
+		</member>
+		<member name="auto_slope_blend" type="float" setter="set_auto_slope_blend" getter="get_auto_slope_blend" default="10.0">
+			The range of slopes in degrees, centred on [member auto_slope_angle], over which [member auto_slope_layer] fades in.
+		</member>
+		<member name="auto_slope_layer" type="int" setter="set_auto_slope_layer" getter="get_auto_slope_layer" default="1">
+			The index of the layer shown on steep ground. Enabling [member TerrainLayer.triplanar] on it keeps its texture from stretching on cliffs.
+		</member>
+		<member name="height_blend_sharpness" type="float" setter="set_height_blend_sharpness" getter="get_height_blend_sharpness" default="0.25">
+			How sharply layers give way to each other when [member height_blending] is on. Lower values give crisper edges.
+		</member>
+		<member name="height_blending" type="bool" setter="set_height_blending" getter="is_height_blending" default="true">
+			If [code]true[/code], where layers overlap the one whose height (the alpha channel of its [member TerrainLayer.albedo_texture]) stands taller shows through, instead of the layers simply fading into each other.
+		</member>
+		<member name="macro_variation" type="float" setter="set_macro_variation" getter="get_macro_variation" default="0.2">
+			How strongly the ground's brightness varies over large distances, which hides the repetition of the textures from far away.
+		</member>
+		<member name="macro_variation_size" type="float" setter="set_macro_variation_size" getter="get_macro_variation_size" default="64.0">
+			The size in metres of the patches of [member macro_variation].
+		</member>
+		<member name="wetness_darkening" type="float" setter="set_wetness_darkening" getter="get_wetness_darkening" default="0.55">
+			How much darker painted wetness makes the ground, from [code]0.0[/code] for none to [code]1.0[/code] for black. Wet ground is also made glossy and smoothed over, the way water fills small bumps.
+		</member>
+	</members>
+</class>

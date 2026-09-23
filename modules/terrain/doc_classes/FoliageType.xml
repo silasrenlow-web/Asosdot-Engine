@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="FoliageType" inherits="Resource" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		One kind of grass or object that grows on a [Terrain3D], and the rules for where.
+	</brief_description>
+	<description>
+		A foliage type describes what to draw and where it may grow. It does not hold where it has been painted, which lives in [FoliageData], so one type saved as a resource can be used on every terrain in a game.
+		Grass ([constant KIND_GRASS]) is painted as a density and grown procedurally around the camera, drawing its [member mesh] with that mesh's own materials. A grass type with no mesh falls back to simple built-in blades with a wind shader, shaped and coloured by the [code]grass_*[/code] settings, which is enough to block out a level before the real grass is made.
+		Objects ([constant KIND_OBJECT]) are placed one by one and kept: trees, rocks, fences, lamp posts. Give them a [member mesh], optionally with a [member collision_shape], and they are drawn with a [MultiMesh]; or give them a [member scene] and each one is a full instance of it, with its own scripts, lights and collision.
+		Both kinds follow the same placement rules: [member slope_min] and [member slope_max] keep them off cliffs, and [member layer_mask] limits them to where certain layers are painted, so grass only grows where the grass texture is.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_render_mesh" qualifiers="const">
+			<return type="Mesh" />
+			<description>
+				Returns the mesh the type is drawn with: [member mesh], or the built-in grass for a grass type without one.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="align_to_normal" type="float" setter="set_align_to_normal" getter="get_align_to_normal" default="0.35">
+			How much each instance leans with the slope of the ground, from [code]0.0[/code] for standing straight up, as trees do, to [code]1.0[/code] for following the ground, as rocks and grass do.
+		</member>
+		<member name="cast_shadow" type="bool" setter="set_cast_shadow" getter="is_cast_shadow" default="false">
+			If [code]true[/code], the instances cast shadows. Worth leaving off for grass, which has many instances and small shadows.
+		</member>
+		<member name="collision_shape" type="Shape3D" setter="set_collision_shape" getter="get_collision_shape">
+			The collision each object gets, positioned, rotated and scaled with it. Only used by objects drawn from a [member mesh]; a [member scene] brings its own.
+		</member>
+		<member name="color_variation" type="float" setter="set_color_variation" getter="get_color_variation" default="0.15">
+			How much the brightness of grass varies from blade to blade.
+		</member>
+		<member name="density" type="float" setter="set_density" getter="get_density" default="8.0">
+			How many grass instances grow per square metre where the density is painted at full strength.
+		</member>
+		<member name="grass_base_color" type="Color" setter="set_grass_base_color" getter="get_grass_base_color" default="Color(0.14, 0.22, 0.06, 1)">
+			The colour at the roots of the built-in grass.
+		</member>
+		<member name="grass_blades" type="int" setter="set_grass_blades" getter="get_grass_blades" default="6">
+			The number of blades in each tuft of the built-in grass.
+		</member>
+		<member name="grass_height" type="float" setter="set_grass_height" getter="get_grass_height" default="0.55">
+			The height in metres of the tallest blades of the built-in grass.
+		</member>
+		<member name="grass_tip_color" type="Color" setter="set_grass_tip_color" getter="get_grass_tip_color" default="Color(0.52, 0.6, 0.25, 1)">
+			The colour at the tips of the built-in grass.
+		</member>
+		<member name="grass_width" type="float" setter="set_grass_width" getter="get_grass_width" default="0.05">
+			The width in metres of a blade of the built-in grass at its root.
+		</member>
+		<member name="height_offset" type="float" setter="set_height_offset" getter="get_height_offset" default="0.0">
+			Raises (or, negative, sinks) every instance relative to the ground. Sinking rocks a little hides the gap under them.
+		</member>
+		<member name="kind" type="int" setter="set_kind" getter="get_kind" enum="FoliageType.Kind" default="0">
+			Whether this is grass, grown from a painted density, or objects placed one by one.
+		</member>
+		<member name="layer_mask" type="int" setter="set_layer_mask" getter="get_layer_mask" default="0">
+			The terrain layers this may grow on, one bit per layer index. [code]0[/code] means anywhere.
+		</member>
+		<member name="layer_threshold" type="float" setter="set_layer_threshold" getter="get_layer_threshold" default="0.3">
+			How strongly the layers in [member layer_mask] must be painted, together, for this to grow.
+		</member>
+		<member name="material_override" type="Material" setter="set_material_override" getter="get_material_override">
+			A material to draw the instances with in place of the mesh's own.
+		</member>
+		<member name="mesh" type="Mesh" setter="set_mesh" getter="get_mesh">
+			The mesh drawn for each instance. A grass type without one draws the built-in grass.
+		</member>
+		<member name="random_rotation" type="bool" setter="set_random_rotation" getter="is_random_rotation" default="true">
+			If [code]true[/code], each instance is turned to a random direction.
+		</member>
+		<member name="random_tilt" type="float" setter="set_random_tilt" getter="get_random_tilt" default="0.0">
+			The most, in degrees, each instance leans off vertical at random, for trees that do not all stand perfectly straight.
+		</member>
+		<member name="scale_max" type="float" setter="set_scale_max" getter="get_scale_max" default="1.2">
+			The largest random scale an instance gets.
+		</member>
+		<member name="scale_min" type="float" setter="set_scale_min" getter="get_scale_min" default="0.8">
+			The smallest random scale an instance gets.
+		</member>
+		<member name="scene" type="PackedScene" setter="set_scene" getter="get_scene">
+			For objects, a scene instanced at every placement in place of [member mesh]. Use it for things that need more than a mesh: scripts, lights, sounds, several collision shapes. Heavier than a mesh, so best for dozens or hundreds of objects rather than thousands. The instances are not saved in the scene.
+		</member>
+		<member name="slope_max" type="float" setter="set_slope_max" getter="get_slope_max" default="50.0">
+			The steepest slope, in degrees, this may grow on.
+		</member>
+		<member name="slope_min" type="float" setter="set_slope_min" getter="get_slope_min" default="0.0">
+			The gentlest slope, in degrees, this may grow on. Raise it for things that only belong on hillsides.
+		</member>
+		<member name="spacing" type="float" setter="set_spacing" getter="get_spacing" default="3.0">
+			The closest, in metres, the object brush places two objects of this type to each other.
+		</member>
+		<member name="terrain_tint" type="bool" setter="set_terrain_tint" getter="is_terrain_tint" default="true">
+			If [code]true[/code], grass takes on the colour painted on the ground beneath it and darkens where the ground is wet.
+		</member>
+		<member name="visibility_range" type="float" setter="set_visibility_range" getter="get_visibility_range" default="60.0">
+			How far from the camera, in metres, instances are drawn. Grass is only grown this far out. [code]0.0[/code] draws objects at any distance, and grass to 100 metres.
+		</member>
+		<member name="wind_strength" type="float" setter="set_wind_strength" getter="get_wind_strength" default="0.3">
+			How much the built-in grass sways in the wind.
+		</member>
+	</members>
+	<constants>
+		<constant name="KIND_GRASS" value="0" enum="Kind">
+			Painted as a density and grown around the camera.
+		</constant>
+		<constant name="KIND_OBJECT" value="1" enum="Kind">
+			Placed one at a time and kept.
+		</constant>
+	</constants>
+</class>
