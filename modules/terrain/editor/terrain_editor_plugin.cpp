@@ -8,9 +8,11 @@
 
 #include "../foliage_3d.h"
 #include "../terrain_3d.h"
+#include "../voxel_terrain_3d.h"
 #include "terrain_3d_gizmo_plugin.h"
 #include "terrain_create_dialog.h"
 #include "terrain_heightmap_io.h"
+#include "voxel_terrain_3d_gizmo_plugin.h"
 
 #include "core/input/input.h"
 #include "core/io/file_access.h"
@@ -62,6 +64,7 @@ struct ToolInfo {
 
 const ToolInfo SCULPT_TOOLS[] = {
 	{ TerrainBrush::TOOL_RAISE, "TerrainRaise", TTRC("Raise ground. Hold Shift to lower it.") },
+	{ TerrainBrush::TOOL_DIG, "TerrainDig", TTRC("Dig: carves caves, tunnels and overhangs out of voxel terrain. Hold Shift to fill instead.") },
 	{ TerrainBrush::TOOL_SMOOTH, "TerrainSmooth", TTRC("Smooth: softens bumps and sharp edges.") },
 	{ TerrainBrush::TOOL_FLATTEN, "TerrainFlatten", TTRC("Flatten: levels ground to the height where the stroke starts, or to a fixed height. Ctrl+Click picks the height.") },
 	{ TerrainBrush::TOOL_ERODE, "TerrainErode", TTRC("Erode: rain runs downhill, carving gullies and leaving sediment where it slows.") },
@@ -121,6 +124,60 @@ Ref<TerrainData> TerrainEditor::_get_data() const {
 	return terrain ? terrain->get_data() : Ref<TerrainData>();
 }
 
+VoxelTerrain3D *TerrainEditor::_get_voxel() const {
+	return ObjectDB::get_instance<VoxelTerrain3D>(voxel_id);
+}
+
+Ref<VoxelTerrainData> TerrainEditor::_get_voxel_data() const {
+	const VoxelTerrain3D *voxel = _get_voxel();
+	return voxel ? voxel->get_data() : Ref<VoxelTerrainData>();
+}
+
+Node3D *TerrainEditor::_get_edited_node() const {
+	if (_is_voxel()) {
+		return _get_voxel();
+	}
+	return _get_terrain();
+}
+
+int TerrainEditor::LayerOwner::count() const {
+	if (const TerrainData *t = Object::cast_to<TerrainData>(resource)) {
+		return t->get_layer_count();
+	}
+	if (const VoxelTerrainData *v = Object::cast_to<VoxelTerrainData>(resource)) {
+		return v->get_layer_count();
+	}
+	return 0;
+}
+
+Ref<TerrainLayer> TerrainEditor::LayerOwner::get(int p_index) const {
+	if (const TerrainData *t = Object::cast_to<TerrainData>(resource)) {
+		return t->get_layer(p_index);
+	}
+	if (const VoxelTerrainData *v = Object::cast_to<VoxelTerrainData>(resource)) {
+		return v->get_layer(p_index);
+	}
+	return Ref<TerrainLayer>();
+}
+
+TerrainEditor::LayerOwner TerrainEditor::_get_layer_owner() const {
+	LayerOwner owner;
+	if (_is_voxel()) {
+		VoxelTerrain3D *voxel = _get_voxel();
+		if (voxel && voxel->get_data().is_valid()) {
+			owner.resource = voxel->get_data().ptr();
+			owner.node = voxel;
+		}
+	} else {
+		Terrain3D *terrain = _get_terrain();
+		if (terrain && terrain->get_data().is_valid()) {
+			owner.resource = terrain->get_data().ptr();
+			owner.node = terrain;
+		}
+	}
+	return owner;
+}
+
 void TerrainEditor::edit(Object *p_object) {
 	if (stroking) {
 		_end_stroke();
@@ -129,9 +186,18 @@ void TerrainEditor::edit(Object *p_object) {
 	if (previous) {
 		previous->set_brush_preview(false);
 	}
+	VoxelTerrain3D *previous_voxel = _get_voxel();
+	if (previous_voxel) {
+		previous_voxel->set_brush_preview(false);
+	}
 
 	terrain_id = ObjectID();
 	foliage_id = ObjectID();
+	voxel_id = ObjectID();
+	VoxelTerrain3D *voxel = Object::cast_to<VoxelTerrain3D>(p_object);
+	if (voxel) {
+		voxel_id = voxel->get_instance_id();
+	}
 	Terrain3D *terrain = Object::cast_to<Terrain3D>(p_object);
 	Foliage3D *foliage = Object::cast_to<Foliage3D>(p_object);
 	if (foliage) {
@@ -153,22 +219,29 @@ void TerrainEditor::edit(Object *p_object) {
 	_refresh_layers();
 	_refresh_foliage();
 	_update_info();
+	_update_menus();
 	_update_tool_ui();
 }
 
 void TerrainEditor::_watch() {
-	const Ref<TerrainData> tdata = _get_data();
-	const ObjectID data_id = tdata.is_valid() ? tdata->get_instance_id() : ObjectID();
+	const LayerOwner owner = _get_layer_owner();
+	const ObjectID data_id = owner.resource ? owner.resource->get_instance_id() : ObjectID();
 	if (data_id != watched_data) {
-		TerrainData *old = ObjectDB::get_instance<TerrainData>(watched_data);
+		const Callable changed = callable_mp(this, &TerrainEditor::_data_changed);
+		Object *old = ObjectDB::get_instance(watched_data);
 		if (old) {
-			old->disconnect(SNAME("layers_changed"), callable_mp(this, &TerrainEditor::_data_changed));
-			old->disconnect(SNAME("regions_changed"), callable_mp(this, &TerrainEditor::_data_changed));
+			for (const StringName &signal : { SNAME("layers_changed"), SNAME("regions_changed") }) {
+				if (old->has_signal(signal) && old->is_connected(signal, changed)) {
+					old->disconnect(signal, changed);
+				}
+			}
 		}
 		watched_data = data_id;
-		if (tdata.is_valid()) {
-			tdata->connect(SNAME("layers_changed"), callable_mp(this, &TerrainEditor::_data_changed));
-			tdata->connect(SNAME("regions_changed"), callable_mp(this, &TerrainEditor::_data_changed));
+		if (owner.resource) {
+			owner.resource->connect(SNAME("layers_changed"), changed);
+			if (Object::cast_to<TerrainData>(owner.resource)) {
+				owner.resource->connect(SNAME("regions_changed"), changed);
+			}
 		}
 		_data_changed();
 	}
@@ -206,6 +279,10 @@ void TerrainEditor::set_active(bool p_active) {
 		if (terrain) {
 			terrain->set_brush_preview(false);
 			terrain->set_brush_segment(false);
+		}
+		VoxelTerrain3D *voxel = _get_voxel();
+		if (voxel) {
+			voxel->set_brush_preview(false);
 		}
 		_show_transform_gizmo(true);
 	} else {
@@ -278,15 +355,49 @@ void TerrainEditor::_update_tool_ui() {
 	}
 	hint_label->set_text(hint);
 
+	// Voxel terrain gets the tools that work in three dimensions; the
+	// heightmap-only ones are hidden rather than greyed out, since they will
+	// never apply to it.
+	const bool voxel = _is_voxel();
 	const Terrain3D *terrain = _get_terrain();
 	for (int i = 1; i < TerrainBrush::TOOL_MAX; i++) {
-		if (tool_buttons[i]) {
+		if (!tool_buttons[i]) {
+			continue;
+		}
+		const bool shown = voxel ? (i == TerrainBrush::TOOL_RAISE || i == TerrainBrush::TOOL_DIG || i == TerrainBrush::TOOL_SMOOTH || i == TerrainBrush::TOOL_FLATTEN || i == TerrainBrush::TOOL_PAINT) : i != TerrainBrush::TOOL_DIG;
+		tool_buttons[i]->set_visible(shown);
+		if (voxel) {
+			tool_buttons[i]->set_disabled(!_get_voxel());
+		} else {
 			tool_buttons[i]->set_disabled(!terrain || (i != TerrainBrush::TOOL_REGIONS && _get_data().is_null()));
 		}
+		if (!shown && tool == i) {
+			tool_buttons[i]->set_pressed(false);
+		}
 	}
+	if (tool_buttons[TerrainBrush::TOOL_RAISE]) {
+		tool_buttons[TerrainBrush::TOOL_RAISE]->set_tooltip_text(voxel ? TTR("Add ground where the brush touches, in the selected layer. Hold Shift to take it away.") : TTR("Raise ground. Hold Shift to lower it."));
+	}
+	if (voxel && palette_tabs->get_current_tab() == 1) {
+		palette_tabs->set_current_tab(0);
+	}
+	// Foliage grows on heightmap terrain.
+	palette_tabs->set_tab_hidden(1, voxel);
 }
 
 void TerrainEditor::_update_info() {
+	if (_is_voxel()) {
+		const Ref<VoxelTerrainData> vdata = _get_voxel_data();
+		if (vdata.is_null()) {
+			info_label->set_text(TTR("Empty. Use Terrain > New Voxel Terrain, or just start sculpting."));
+			info_label->set_tooltip_text(String());
+			return;
+		}
+		const String where = vdata->is_built_in() ? TTR("Stored in the scene") : vdata->get_path().get_file();
+		info_label->set_text(vformat(TTR("Voxel terrain, %s m voxels\n%d edited blocks, %d layers\n%s"), String::num(vdata->get_voxel_size(), 2), vdata->get_block_count(), vdata->get_layer_count(), where));
+		info_label->set_tooltip_text(vdata->is_built_in() ? TTR("The data is inside the scene file. The first edit moves it to its own file beside the scene, or use Terrain > Move Data to File.") : vdata->get_path());
+		return;
+	}
 	const Terrain3D *terrain = _get_terrain();
 	const Ref<TerrainData> tdata = _get_data();
 	if (!terrain) {
@@ -328,6 +439,8 @@ Color TerrainEditor::_tool_color() const {
 	switch (tool) {
 		case TerrainBrush::TOOL_RAISE:
 			return invert ? Color(1.0, 0.35, 0.3) : Color(0.35, 1.0, 0.45);
+		case TerrainBrush::TOOL_DIG:
+			return invert ? Color(0.35, 1.0, 0.45) : Color(1.0, 0.45, 0.2);
 		case TerrainBrush::TOOL_SMOOTH:
 			return Color(0.4, 0.85, 1.0);
 		case TerrainBrush::TOOL_FLATTEN:
@@ -358,11 +471,16 @@ Color TerrainEditor::_tool_color() const {
 }
 
 void TerrainEditor::_update_brush_preview() {
+	const bool show = active && cursor_valid && tool != TerrainBrush::TOOL_NONE;
+	VoxelTerrain3D *voxel = _get_voxel();
+	if (voxel) {
+		voxel->set_brush_preview(show, cursor, settings.radius, settings.hardness, _tool_color());
+		return;
+	}
 	Terrain3D *terrain = _get_terrain();
 	if (!terrain) {
 		return;
 	}
-	const bool show = active && cursor_valid && tool != TerrainBrush::TOOL_NONE;
 	float radius = settings.radius;
 	float hardness = settings.hardness;
 	if (tool == TerrainBrush::TOOL_REGIONS && terrain->get_data().is_valid()) {
@@ -377,7 +495,71 @@ void TerrainEditor::_show_message(const String &p_text) {
 	message_dialog->popup_centered();
 }
 
+void TerrainEditor::_update_menus() {
+	// The two kinds of terrain have different things to do and to look at.
+	const bool voxel = _is_voxel();
+	PopupMenu *menu = terrain_menu->get_popup();
+	menu->clear();
+	if (voxel) {
+		menu->add_item(TTR("New Voxel Terrain"), MENU_NEW);
+		menu->set_item_tooltip(-1, TTR("Start over with flat ground and no edits. Its generator, in the Inspector, can add hills, caves or a heightmap to start from."));
+		menu->add_item(TTR("Rebuild"), MENU_REBUILD_COLLISION);
+		menu->set_item_tooltip(-1, TTR("Mesh every block again, and its collision."));
+		menu->add_item(TTR("Move Data to File"), MENU_MOVE_DATA);
+		menu->set_item_tooltip(-1, TTR("Store the voxel data in its own compressed file beside the scene, instead of inside it. New voxel terrains do this already."));
+	} else {
+		menu->add_item(TTR("New Terrain..."), MENU_NEW);
+		menu->add_item(TTR("Import Heightmap..."), MENU_IMPORT);
+		menu->add_item(TTR("Export Heightmap..."), MENU_EXPORT);
+		menu->add_separator();
+		menu->add_item(TTR("Add Foliage3D"), MENU_ADD_FOLIAGE);
+		menu->add_item(TTR("Rebuild Collision"), MENU_REBUILD_COLLISION);
+		menu->add_item(TTR("Move Data to File"), MENU_MOVE_DATA);
+		menu->set_item_tooltip(-1, TTR("Store the terrain and foliage data in their own compressed files beside the scene, instead of inside it. New terrains do this already."));
+		menu->add_separator();
+		menu->add_item(TTR("Convert to Voxel Terrain"), MENU_CONVERT_TO_VOXEL);
+		menu->set_item_tooltip(-1, TTR("Add a VoxelTerrain3D that starts as this heightmap, with its layers and paint, so caves, tunnels and overhangs can be dug into it."));
+	}
+
+	PopupMenu *views = view_menu->get_popup();
+	views->clear();
+	int current = 0;
+	if (voxel) {
+		const char *names[] = { TTRC("Shaded"), TTRC("Normals"), TTRC("Layers"), TTRC("Level of Detail") };
+		for (int i = 0; i < 4; i++) {
+			views->add_radio_check_item(TTRGET(names[i]), i);
+		}
+		current = _get_voxel() ? (int)_get_voxel()->get_debug_view() : 0;
+	} else {
+		const char *names[] = { TTRC("Shaded"), TTRC("Height"), TTRC("Normals"), TTRC("Layers"), TTRC("Color"), TTRC("Wetness"), TTRC("Grid and Regions") };
+		for (int i = 0; i < 7; i++) {
+			views->add_radio_check_item(TTRGET(names[i]), i);
+		}
+		current = _get_terrain() ? (int)_get_terrain()->get_debug_view() : 0;
+	}
+	for (int i = 0; i < views->get_item_count(); i++) {
+		views->set_item_checked(i, views->get_item_id(i) == current);
+	}
+}
+
 void TerrainEditor::_menu_option(int p_option) {
+	VoxelTerrain3D *voxel = _get_voxel();
+	if (voxel) {
+		switch (p_option) {
+			case MENU_NEW: {
+				_new_voxel_data();
+			} break;
+			case MENU_REBUILD_COLLISION: {
+				voxel->rebuild();
+			} break;
+			case MENU_MOVE_DATA: {
+				if (voxel->get_data().is_valid() && voxel->get_data()->is_built_in()) {
+					_ensure_external(voxel->get_data(), voxel, ".voxel.res");
+				}
+			} break;
+		}
+		return;
+	}
 	Terrain3D *terrain = _get_terrain();
 	if (!terrain) {
 		return;
@@ -413,19 +595,98 @@ void TerrainEditor::_menu_option(int p_option) {
 				_ensure_external(foliage->get_data(), foliage, ".foliage.res");
 			}
 		} break;
+		case MENU_CONVERT_TO_VOXEL: {
+			_convert_to_voxel();
+		} break;
 	}
 }
 
-void TerrainEditor::_view_option(int p_option) {
-	Terrain3D *terrain = _get_terrain();
-	if (!terrain) {
+void TerrainEditor::_new_voxel_data() {
+	VoxelTerrain3D *voxel = _get_voxel();
+	if (!voxel) {
 		return;
 	}
+	const Ref<VoxelTerrainData> old = voxel->get_data();
+	Ref<VoxelTerrainData> vdata;
+	vdata.instantiate();
+	Ref<VoxelGenerator> generator;
+	generator.instantiate();
+	vdata->set_generator(generator);
+	if (old.is_valid()) {
+		// Starting over keeps the voxel size and the layers.
+		vdata->set_voxel_size(old->get_voxel_size());
+		vdata->call(SNAME("_set_layers"), old->call(SNAME("_get_layers")));
+	}
+	_store_external(vdata, _default_data_path(voxel, ".voxel.res"));
+
+	EditorUndoRedoManager *ur = EditorUndoRedoManager::get_singleton();
+	ur->create_action(TTR("New Voxel Terrain"), UndoRedo::MERGE_DISABLE, voxel);
+	ur->add_do_method(voxel, "set_data", vdata);
+	ur->add_undo_method(voxel, "set_data", old);
+	ur->add_do_reference(vdata.ptr());
+	ur->commit_action();
+	edit(voxel);
+}
+
+void TerrainEditor::_convert_to_voxel() {
+	Terrain3D *terrain = _get_terrain();
+	const Ref<TerrainData> tdata = _get_data();
+	Node *scene_root = EditorNode::get_singleton()->get_edited_scene();
+	if (!terrain || tdata.is_null() || tdata->get_region_count() == 0 || !terrain->get_parent() || !scene_root) {
+		_show_message(TTR("There is no heightmap terrain to convert."));
+		return;
+	}
+	_ensure_external(tdata, terrain, ".terrain.res");
+
+	// The heightmap stays as it is and becomes the voxel terrain's starting
+	// shape, paint and all: the generator reads heights from it, the layers
+	// are the same resources, and the voxels line up with its vertices.
+	VoxelTerrain3D *voxel = memnew(VoxelTerrain3D);
+	voxel->set_name("VoxelTerrain3D");
+	voxel->set_transform(Transform3D(Basis(), terrain->get_transform().origin));
+	voxel->set_terrain_material(terrain->get_terrain_material());
+	Ref<VoxelGenerator> generator;
+	generator.instantiate();
+	generator->set_height_source(tdata);
+	generator->set_height_source_spacing(terrain->get_vertex_spacing());
+	// Beyond the heightmap's regions, the ground carries on at its lowest.
+	generator->set_height(tdata->get_height_range().x);
+	Ref<VoxelTerrainData> vdata;
+	vdata.instantiate();
+	vdata->set_voxel_size(terrain->get_vertex_spacing());
+	vdata->set_generator(generator);
+	vdata->call(SNAME("_set_layers"), tdata->call(SNAME("_get_layers")));
+	voxel->set_data(vdata);
+	_store_external(vdata, _default_data_path(voxel, ".voxel.res"));
+
+	// The heightmap is hidden and stops colliding, so the two do not fight
+	// where they overlap. It can be deleted once the voxel terrain is right;
+	// its data file stays in use.
+	Node *parent = terrain->get_parent();
+	EditorUndoRedoManager *ur = EditorUndoRedoManager::get_singleton();
+	ur->create_action(TTR("Convert to Voxel Terrain"), UndoRedo::MERGE_DISABLE, terrain);
+	ur->add_do_method(parent, "add_child", voxel, true);
+	ur->add_do_method(voxel, "set_owner", scene_root);
+	ur->add_do_method(terrain, "set_visible", false);
+	ur->add_do_method(terrain, "set_collision_enabled", false);
+	ur->add_do_reference(voxel);
+	ur->add_undo_method(parent, "remove_child", voxel);
+	ur->add_undo_method(terrain, "set_visible", terrain->is_visible());
+	ur->add_undo_method(terrain, "set_collision_enabled", terrain->is_collision_enabled());
+	ur->commit_action();
+	EditorInterface::get_singleton()->edit_node(voxel);
+}
+
+void TerrainEditor::_view_option(int p_option) {
 	PopupMenu *popup = view_menu->get_popup();
 	for (int i = 0; i < popup->get_item_count(); i++) {
 		popup->set_item_checked(i, popup->get_item_id(i) == p_option);
 	}
-	terrain->set_debug_view((Terrain3D::DebugView)p_option);
+	if (VoxelTerrain3D *voxel = _get_voxel()) {
+		voxel->set_debug_view((VoxelTerrain3D::DebugView)p_option);
+	} else if (Terrain3D *terrain = _get_terrain()) {
+		terrain->set_debug_view((Terrain3D::DebugView)p_option);
+	}
 }
 
 void TerrainEditor::_create_confirmed() {
@@ -531,15 +792,16 @@ void TerrainEditor::_ensure_external(const Ref<Resource> &p_res, Node *p_node, c
 
 void TerrainEditor::_refresh_layers() {
 	layer_list->clear();
-	const Ref<TerrainData> tdata = _get_data();
-	layer_empty->set_visible(tdata.is_null() || tdata->get_layer_count() == 0);
-	if (tdata.is_null()) {
+	const LayerOwner owner = _get_layer_owner();
+	const int count = owner.count();
+	layer_empty->set_visible(count == 0);
+	if (!owner.resource) {
 		layer_inspector->edit(nullptr);
 		_update_layer_buttons();
 		return;
 	}
-	for (int i = 0; i < tdata->get_layer_count(); i++) {
-		const Ref<TerrainLayer> layer = tdata->get_layer(i);
+	for (int i = 0; i < count; i++) {
+		const Ref<TerrainLayer> layer = owner.get(i);
 		if (layer.is_null()) {
 			continue;
 		}
@@ -555,8 +817,8 @@ void TerrainEditor::_refresh_layers() {
 		}
 		layer_list->set_item_tooltip(item, tip);
 	}
-	if (tdata->get_layer_count() > 0) {
-		settings.layer = CLAMP(settings.layer, 0, tdata->get_layer_count() - 1);
+	if (count > 0) {
+		settings.layer = CLAMP(settings.layer, 0, count - 1);
 		layer_list->select(settings.layer);
 	}
 	_inspect_selected_layer();
@@ -564,8 +826,7 @@ void TerrainEditor::_refresh_layers() {
 }
 
 void TerrainEditor::_update_layer_buttons() {
-	const Ref<TerrainData> tdata = _get_data();
-	const int count = tdata.is_valid() ? tdata->get_layer_count() : 0;
+	const int count = _get_layer_owner().count();
 	const bool selected = count > 0 && settings.layer >= 0 && settings.layer < count;
 	layer_duplicate_button->set_disabled(!selected || count >= TerrainData::MAX_LAYERS);
 	layer_left_button->set_disabled(!selected || settings.layer == 0);
@@ -575,10 +836,10 @@ void TerrainEditor::_update_layer_buttons() {
 }
 
 void TerrainEditor::_inspect_selected_layer() {
-	const Ref<TerrainData> tdata = _get_data();
+	const LayerOwner owner = _get_layer_owner();
 	TerrainLayer *layer = nullptr;
-	if (tdata.is_valid() && settings.layer >= 0 && settings.layer < tdata->get_layer_count()) {
-		layer = tdata->get_layer(settings.layer).ptr();
+	if (settings.layer >= 0 && settings.layer < owner.count()) {
+		layer = owner.get(settings.layer).ptr();
 	}
 	// edit() does nothing for the object already shown, so tweaking a slider,
 	// which refreshes the list, does not reset the inspector under the pointer.
@@ -596,7 +857,10 @@ void TerrainEditor::_layer_selected(int p_index) {
 }
 
 void TerrainEditor::_layer_add_option(int p_option) {
-	if (!_get_terrain() || _get_data().is_null()) {
+	if (_is_voxel() && _get_voxel() && _get_voxel_data().is_null()) {
+		_new_voxel_data();
+	}
+	if (!_get_layer_owner().resource) {
 		_show_message(TTR("Create the terrain first: Terrain > New Terrain..."));
 		return;
 	}
@@ -616,12 +880,11 @@ void TerrainEditor::_layer_add_option(int p_option) {
 }
 
 void TerrainEditor::_add_layers(const Vector<Ref<TerrainLayer>> &p_layers) {
-	Terrain3D *terrain = _get_terrain();
-	const Ref<TerrainData> tdata = _get_data();
-	if (!terrain || tdata.is_null() || p_layers.is_empty()) {
+	const LayerOwner owner = _get_layer_owner();
+	if (!owner.resource || p_layers.is_empty()) {
 		return;
 	}
-	const int base = tdata->get_layer_count();
+	const int base = owner.count();
 	const int room = TerrainData::MAX_LAYERS - base;
 	if (room <= 0) {
 		_show_message(vformat(TTR("A terrain can have at most %d layers."), TerrainData::MAX_LAYERS));
@@ -629,13 +892,13 @@ void TerrainEditor::_add_layers(const Vector<Ref<TerrainLayer>> &p_layers) {
 	}
 	const int count = MIN(room, p_layers.size());
 	EditorUndoRedoManager *ur = EditorUndoRedoManager::get_singleton();
-	ur->create_action(count == 1 ? TTR("Add Terrain Layer") : TTR("Add Terrain Layers"), UndoRedo::MERGE_DISABLE, terrain);
+	ur->create_action(count == 1 ? TTR("Add Terrain Layer") : TTR("Add Terrain Layers"), UndoRedo::MERGE_DISABLE, owner.node);
 	for (int i = 0; i < count; i++) {
-		ur->add_do_method(tdata.ptr(), "add_layer", p_layers[i]);
+		ur->add_do_method(owner.resource, "add_layer", p_layers[i]);
 		ur->add_do_reference(p_layers[i].ptr());
 	}
 	for (int i = count - 1; i >= 0; i--) {
-		ur->add_undo_method(tdata.ptr(), "remove_layer", base + i);
+		ur->add_undo_method(owner.resource, "remove_layer", base + i);
 	}
 	ur->commit_action();
 	settings.layer = base;
@@ -781,50 +1044,48 @@ void TerrainEditor::_layer_load_selected(const Vector<String> &p_paths) {
 }
 
 void TerrainEditor::_duplicate_layer() {
-	const Ref<TerrainData> tdata = _get_data();
-	if (tdata.is_null() || settings.layer < 0 || settings.layer >= tdata->get_layer_count()) {
+	const LayerOwner owner = _get_layer_owner();
+	if (settings.layer < 0 || settings.layer >= owner.count()) {
 		return;
 	}
-	const Ref<TerrainLayer> copy = tdata->get_layer(settings.layer)->duplicate();
+	const Ref<TerrainLayer> copy = owner.get(settings.layer)->duplicate();
 	_add_layers({ copy });
 }
 
 void TerrainEditor::_move_layer(int p_direction) {
-	Terrain3D *terrain = _get_terrain();
-	const Ref<TerrainData> tdata = _get_data();
-	if (!terrain || tdata.is_null()) {
+	const LayerOwner owner = _get_layer_owner();
+	if (!owner.resource) {
 		return;
 	}
 	const int from = settings.layer;
 	const int to = from + p_direction;
-	if (from < 0 || to < 0 || to >= tdata->get_layer_count()) {
+	if (from < 0 || to < 0 || to >= owner.count()) {
 		return;
 	}
 	// A move is a pure reordering, so moving back undoes it exactly, painted
 	// weights and all.
 	EditorUndoRedoManager *ur = EditorUndoRedoManager::get_singleton();
-	ur->create_action(TTR("Move Terrain Layer"), UndoRedo::MERGE_DISABLE, terrain);
-	ur->add_do_method(tdata.ptr(), "move_layer", from, to);
-	ur->add_undo_method(tdata.ptr(), "move_layer", to, from);
+	ur->create_action(TTR("Move Terrain Layer"), UndoRedo::MERGE_DISABLE, owner.node);
+	ur->add_do_method(owner.resource, "move_layer", from, to);
+	ur->add_undo_method(owner.resource, "move_layer", to, from);
 	ur->commit_action();
 	settings.layer = to;
 	_refresh_layers();
 }
 
 void TerrainEditor::_remove_layer() {
-	Terrain3D *terrain = _get_terrain();
-	const Ref<TerrainData> tdata = _get_data();
-	if (!terrain || tdata.is_null() || settings.layer < 0 || settings.layer >= tdata->get_layer_count()) {
+	const LayerOwner owner = _get_layer_owner();
+	if (!owner.resource || settings.layer < 0 || settings.layer >= owner.count()) {
 		return;
 	}
-	// Removing a layer rewrites every region's splat maps, so the undo keeps a
-	// copy of all of them, not just the layer list.
-	const Array layers_before = tdata->call(SNAME("_get_layers"));
-	const Array splat_before = tdata->call(SNAME("_get_layers_snapshot"));
+	// Removing a layer rewrites every region's splat maps, or every block's
+	// voxels, so the undo keeps a copy of all of them, not just the layers.
+	const Array layers_before = owner.resource->call(SNAME("_get_layers"));
+	const Array paint_before = owner.resource->call(SNAME("_get_layers_snapshot"));
 	EditorUndoRedoManager *ur = EditorUndoRedoManager::get_singleton();
-	ur->create_action(TTR("Remove Terrain Layer"), UndoRedo::MERGE_DISABLE, terrain);
-	ur->add_do_method(tdata.ptr(), "remove_layer", settings.layer);
-	ur->add_undo_method(tdata.ptr(), "_apply_layers_snapshot", layers_before, splat_before);
+	ur->create_action(TTR("Remove Terrain Layer"), UndoRedo::MERGE_DISABLE, owner.node);
+	ur->add_do_method(owner.resource, "remove_layer", settings.layer);
+	ur->add_undo_method(owner.resource, "_apply_layers_snapshot", layers_before, paint_before);
 	ur->commit_action();
 	_refresh_layers();
 }
@@ -838,9 +1099,9 @@ void TerrainEditor::_save_selected(bool p_foliage) {
 			saving_resource = fd->get_type(settings.foliage_type);
 		}
 	} else {
-		const Ref<TerrainData> tdata = _get_data();
-		if (tdata.is_valid() && settings.layer >= 0 && settings.layer < tdata->get_layer_count()) {
-			saving_resource = tdata->get_layer(settings.layer);
+		const LayerOwner owner = _get_layer_owner();
+		if (settings.layer >= 0 && settings.layer < owner.count()) {
+			saving_resource = owner.get(settings.layer);
 		}
 	}
 	if (saving_resource.is_null()) {
@@ -869,9 +1130,9 @@ void TerrainEditor::_resource_save_selected(const String &p_path) {
 	}
 	saving_resource->set_path(p_path, true);
 	EditorFileSystem::get_singleton()->update_file(p_path);
-	const Ref<TerrainData> tdata = _get_data();
-	if (tdata.is_valid()) {
-		tdata->set_edited(true);
+	const LayerOwner owner = _get_layer_owner();
+	if (owner.resource) {
+		owner.resource->set_edited(true);
 	}
 	const Foliage3D *foliage = _get_foliage();
 	if (foliage && foliage->get_data().is_valid()) {
@@ -884,7 +1145,7 @@ void TerrainEditor::_resource_save_selected(const String &p_path) {
 
 bool TerrainEditor::_can_drop_layer(const Point2 &p_point, const Variant &p_data) const {
 	const Dictionary d = p_data;
-	if (String(d.get("type", "")) != "files" || _get_data().is_null()) {
+	if (String(d.get("type", "")) != "files" || !_get_layer_owner().resource) {
 		return false;
 	}
 	const Vector<String> files = d["files"];
@@ -1177,12 +1438,15 @@ void TerrainEditor::_drop_foliage(const Point2 &p_point, const Variant &p_data) 
 /* -------------------------------------------------------------------------- */
 
 bool TerrainEditor::_pick(Camera3D *p_camera, const Point2 &p_point, Vector3 &r_hit) const {
+	const Vector3 from = p_camera->project_ray_origin(p_point);
+	const Vector3 dir = p_camera->project_ray_normal(p_point);
+	if (const VoxelTerrain3D *voxel = _get_voxel()) {
+		return voxel->get_data().is_valid() && voxel->intersect_ray_fast(from, dir, p_camera->get_far(), r_hit);
+	}
 	const Terrain3D *terrain = _get_terrain();
 	if (!terrain) {
 		return false;
 	}
-	const Vector3 from = p_camera->project_ray_origin(p_point);
-	const Vector3 dir = p_camera->project_ray_normal(p_point);
 	if (terrain->intersect_ray_fast(from, dir, p_camera->get_far(), r_hit)) {
 		return true;
 	}
@@ -1219,6 +1483,27 @@ void TerrainEditor::_snapshot(const Rect2i &p_rect, uint32_t p_maps) {
 }
 
 void TerrainEditor::_begin_stroke() {
+	if (_is_voxel()) {
+		VoxelTerrain3D *voxel = _get_voxel();
+		if (!voxel) {
+			return;
+		}
+		if (voxel->get_data().is_null()) {
+			_new_voxel_data();
+		}
+		_ensure_external(voxel->get_data(), voxel, ".voxel.res");
+		stroking = true;
+		voxel_stroke_before.clear();
+		stroke_seed = Math::rand();
+		dab_counter = 0;
+		if (tool == TerrainBrush::TOOL_FLATTEN && !flatten_fixed->is_pressed()) {
+			settings.flatten_height = cursor.y - voxel->get_global_position().y;
+			flatten_height->set_value_no_signal(settings.flatten_height);
+		}
+		last_dab = cursor;
+		_voxel_dab(cursor, 1.0 / 60.0);
+		return;
+	}
 	Terrain3D *terrain = _get_terrain();
 	if (!terrain || (_get_data().is_null() && tool != TerrainBrush::TOOL_REGIONS)) {
 		return;
@@ -1274,6 +1559,10 @@ void TerrainEditor::_begin_stroke() {
 }
 
 void TerrainEditor::_dab(const Vector3 &p_at, float p_delta) {
+	if (_is_voxel()) {
+		_voxel_dab(p_at, p_delta);
+		return;
+	}
 	Terrain3D *terrain = _get_terrain();
 	const Ref<TerrainData> tdata = _get_data();
 	if (!terrain || tdata.is_null()) {
@@ -1305,6 +1594,10 @@ void TerrainEditor::_end_stroke(bool p_cancel) {
 		return;
 	}
 	stroking = false;
+	if (_is_voxel()) {
+		_end_voxel_stroke(p_cancel);
+		return;
+	}
 	Terrain3D *terrain = _get_terrain();
 	const Ref<TerrainData> tdata = _get_data();
 	if (!terrain || tdata.is_null()) {
@@ -1369,12 +1662,107 @@ void TerrainEditor::_end_stroke(bool p_cancel) {
 	_update_info();
 }
 
+void TerrainEditor::_voxel_snapshot(const AABB &p_voxel_box) {
+	const Ref<VoxelTerrainData> vdata = _get_voxel_data();
+	if (vdata.is_null()) {
+		return;
+	}
+	const Vector3i b0 = VoxelTerrainData::voxel_to_block(Vector3i(p_voxel_box.position.floor()));
+	const Vector3i b1 = VoxelTerrainData::voxel_to_block(Vector3i(p_voxel_box.get_end().ceil()));
+	for (int z = b0.z; z <= b1.z; z++) {
+		for (int y = b0.y; y <= b1.y; y++) {
+			for (int x = b0.x; x <= b1.x; x++) {
+				const Vector3i block(x, y, z);
+				if (!voxel_stroke_before.has(block)) {
+					voxel_stroke_before.insert(block, vdata->call(SNAME("_get_snapshot"), block));
+				}
+			}
+		}
+	}
+}
+
+void TerrainEditor::_voxel_dab(const Vector3 &p_at, float p_delta) {
+	VoxelTerrain3D *voxel = _get_voxel();
+	const Ref<VoxelTerrainData> vdata = _get_voxel_data();
+	if (!voxel || vdata.is_null()) {
+		return;
+	}
+	const bool invert = Input::get_singleton()->is_key_pressed(Key::SHIFT);
+	const float vs = vdata->get_voxel_size();
+	const Vector3 center = voxel->global_to_voxel(p_at);
+	const float radius = MAX(settings.radius / vs, 0.75f);
+	const int layer = settings.layer < vdata->get_layer_count() ? settings.layer : -1;
+	// Adding and digging move the surface by up to this many voxels a
+	// second, faster for a bigger brush so it fills in the same time.
+	const float move = settings.strength * p_delta * MAX(radius, 2.0f) * 3.0f;
+	const float blend = MIN(settings.strength * p_delta * 10.0f, 1.0f);
+
+	VoxelTerrainData::Operation operation;
+	float amount = move;
+	int use_layer = -1;
+	float height = 0.0;
+	switch (tool) {
+		case TerrainBrush::TOOL_RAISE:
+		case TerrainBrush::TOOL_DIG: {
+			const bool adding = (tool == TerrainBrush::TOOL_RAISE) != invert;
+			operation = adding ? VoxelTerrainData::OPERATION_ADD : VoxelTerrainData::OPERATION_REMOVE;
+			use_layer = adding ? layer : -1;
+		} break;
+		case TerrainBrush::TOOL_SMOOTH: {
+			operation = VoxelTerrainData::OPERATION_SMOOTH;
+			amount = blend;
+		} break;
+		case TerrainBrush::TOOL_FLATTEN: {
+			operation = VoxelTerrainData::OPERATION_FLATTEN;
+			amount = blend;
+			height = settings.flatten_height / vs;
+		} break;
+		case TerrainBrush::TOOL_PAINT: {
+			if (layer < 0) {
+				return;
+			}
+			operation = invert ? VoxelTerrainData::OPERATION_ERASE_PAINT : VoxelTerrainData::OPERATION_PAINT;
+			amount = blend;
+			use_layer = layer;
+		} break;
+		default:
+			return;
+	}
+	_voxel_snapshot(VoxelTerrainData::get_edit_bounds(operation, center, radius));
+	(void)vdata->edit_sphere(operation, center, radius, amount, settings.hardness, use_layer, height, stroke_seed + dab_counter++ * 7919);
+}
+
+void TerrainEditor::_end_voxel_stroke(bool p_cancel) {
+	VoxelTerrain3D *voxel = _get_voxel();
+	const Ref<VoxelTerrainData> vdata = _get_voxel_data();
+	if (voxel && vdata.is_valid() && !voxel_stroke_before.is_empty()) {
+		Array before;
+		Array after;
+		for (const KeyValue<Vector3i, Dictionary> &E : voxel_stroke_before) {
+			before.push_back(E.value);
+			after.push_back(vdata->call(SNAME("_get_snapshot"), E.key));
+		}
+		if (p_cancel) {
+			vdata->call(SNAME("_apply_snapshots"), before);
+		} else {
+			EditorUndoRedoManager *ur = EditorUndoRedoManager::get_singleton();
+			ur->create_action(vformat(TTR("Voxel Terrain: %s"), TTRGET(TerrainBrush::get_tool_name(tool))), UndoRedo::MERGE_DISABLE, voxel);
+			ur->add_do_method(vdata.ptr(), "_apply_snapshots", after);
+			ur->add_undo_method(vdata.ptr(), "_apply_snapshots", before);
+			ur->commit_action(false);
+			vdata->set_edited(true);
+		}
+	}
+	voxel_stroke_before.clear();
+	_update_info();
+}
+
 /* -------------------------------------------------------------------------- */
 /*                                    Input                                   */
 /* -------------------------------------------------------------------------- */
 
 EditorPlugin::AfterGUIInput TerrainEditor::forward_input(Camera3D *p_camera, const Ref<InputEvent> &p_event) {
-	Terrain3D *terrain = _get_terrain();
+	Node3D *terrain = _get_edited_node();
 	if (!terrain || tool == TerrainBrush::TOOL_NONE || !active) {
 		return EditorPlugin::AFTER_GUI_INPUT_PASS;
 	}
@@ -1437,15 +1825,19 @@ EditorPlugin::AfterGUIInput TerrainEditor::forward_input(Camera3D *p_camera, con
 }
 
 void TerrainEditor::draw_overlay(Control *p_overlay) {
-	if (tool == TerrainBrush::TOOL_NONE || !_get_terrain()) {
+	if (tool == TerrainBrush::TOOL_NONE || !_get_edited_node()) {
 		return;
 	}
 	String text = TTRGET(TerrainBrush::get_tool_name(tool));
+	if (_is_voxel() && tool == TerrainBrush::TOOL_RAISE) {
+		text = TTR("Add");
+	}
 	if (tool != TerrainBrush::TOOL_REGIONS) {
 		text += vformat("  |  %s m  |  %d%%", String::num(settings.radius, 1), (int)Math::round(settings.strength * 100.0));
 	}
-	if (tool == TerrainBrush::TOOL_PAINT && _get_data().is_valid() && settings.layer < _get_data()->get_layer_count()) {
-		text += "  |  " + _get_data()->get_layer(settings.layer)->get_display_name();
+	const LayerOwner owner = _get_layer_owner();
+	if ((tool == TerrainBrush::TOOL_PAINT || (_is_voxel() && tool == TerrainBrush::TOOL_RAISE)) && settings.layer < owner.count()) {
+		text += "  |  " + owner.get(settings.layer)->get_display_name();
 	}
 	if (tool == TerrainBrush::TOOL_FLATTEN) {
 		text += vformat("  |  %s m", String::num(settings.flatten_height, 2));
@@ -1476,15 +1868,19 @@ void TerrainEditor::_notification(int p_what) {
 			if (!stroking || !cursor_valid || tool == TerrainBrush::TOOL_RAMP || tool == TerrainBrush::TOOL_REGIONS) {
 				break;
 			}
-			Terrain3D *terrain = _get_terrain();
-			if (!terrain) {
+			float spacing = 0.0;
+			if (const Terrain3D *terrain = _get_terrain()) {
+				spacing = terrain->get_vertex_spacing();
+			} else if (_get_voxel_data().is_valid()) {
+				spacing = _get_voxel_data()->get_voxel_size();
+			} else {
 				break;
 			}
 			// Dabs are laid down every frame while the button is held, and
 			// filled in along the path when the pointer moves faster than the
 			// brush can keep up, so a quick stroke leaves no gaps.
 			const float delta = get_process_delta_time();
-			const float step = MAX(settings.radius * 0.3f, terrain->get_vertex_spacing());
+			const float step = MAX(settings.radius * 0.3f, spacing);
 			const float dist = last_dab.distance_to(cursor);
 			if (dist > step) {
 				const int count = MIN((int)Math::ceil(dist / step), 16);
@@ -1528,26 +1924,14 @@ TerrainEditor::TerrainEditor() {
 	terrain_menu->set_text(TTR("Terrain"));
 	terrain_menu->set_flat(false);
 	terrain_menu->set_theme_type_variation("FlatMenuButton");
-	terrain_menu->get_popup()->add_item(TTR("New Terrain..."), MENU_NEW);
-	terrain_menu->get_popup()->add_item(TTR("Import Heightmap..."), MENU_IMPORT);
-	terrain_menu->get_popup()->add_item(TTR("Export Heightmap..."), MENU_EXPORT);
-	terrain_menu->get_popup()->add_separator();
-	terrain_menu->get_popup()->add_item(TTR("Add Foliage3D"), MENU_ADD_FOLIAGE);
-	terrain_menu->get_popup()->add_item(TTR("Rebuild Collision"), MENU_REBUILD_COLLISION);
-	terrain_menu->get_popup()->add_item(TTR("Move Data to File"), MENU_MOVE_DATA);
-	terrain_menu->get_popup()->set_item_tooltip(-1, TTR("Store the terrain and foliage data in their own compressed files beside the scene, instead of inside it. New terrains do this already."));
 	terrain_menu->get_popup()->connect(SceneStringName(id_pressed), callable_mp(this, &TerrainEditor::_menu_option));
 	menus->add_child(terrain_menu);
 	view_menu = memnew(MenuButton);
 	view_menu->set_text(TTR("View"));
 	view_menu->set_theme_type_variation("FlatMenuButton");
-	const char *views[] = { TTRC("Shaded"), TTRC("Height"), TTRC("Normals"), TTRC("Layers"), TTRC("Color"), TTRC("Wetness"), TTRC("Grid and Regions") };
-	for (int i = 0; i < 7; i++) {
-		view_menu->get_popup()->add_radio_check_item(TTRGET(views[i]), i);
-	}
-	view_menu->get_popup()->set_item_checked(0, true);
 	view_menu->get_popup()->connect(SceneStringName(id_pressed), callable_mp(this, &TerrainEditor::_view_option));
 	menus->add_child(view_menu);
+	_update_menus();
 	info_label = memnew(Label);
 	info_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	info_label->set_custom_minimum_size(Size2(150, 0) * EDSCALE);
@@ -1832,7 +2216,7 @@ TerrainEditor::TerrainEditor() {
 /* -------------------------------------------------------------------------- */
 
 bool TerrainEditorPlugin::handles(Object *p_object) const {
-	return Object::cast_to<Terrain3D>(p_object) || Object::cast_to<Foliage3D>(p_object);
+	return Object::cast_to<Terrain3D>(p_object) || Object::cast_to<Foliage3D>(p_object) || Object::cast_to<VoxelTerrain3D>(p_object);
 }
 
 void TerrainEditorPlugin::edit(Object *p_object) {
@@ -1890,7 +2274,9 @@ void TerrainEditorPlugin::_notification(int p_what) {
 				camera = editor->get_editor_viewport(0)->get_camera_3d();
 			}
 			if (camera && camera->is_inside_tree()) {
+				// Grass grows, and voxel terrain picks its detail, around it.
 				Foliage3D::set_editor_focus(camera->get_global_position());
+				VoxelTerrain3D::set_editor_viewer(camera->get_global_position());
 			}
 		} break;
 	}
@@ -1899,4 +2285,6 @@ void TerrainEditorPlugin::_notification(int p_what) {
 TerrainEditorPlugin::TerrainEditorPlugin() {
 	gizmo_plugin.instantiate();
 	Node3DEditor::get_singleton()->add_gizmo_plugin(gizmo_plugin);
+	voxel_gizmo_plugin.instantiate();
+	Node3DEditor::get_singleton()->add_gizmo_plugin(voxel_gizmo_plugin);
 }

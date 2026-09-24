@@ -37,6 +37,7 @@ public:
 		TOOL_GRASS,
 		TOOL_OBJECTS,
 		TOOL_REGIONS,
+		TOOL_DIG, // Voxel terrain only.
 		TOOL_MAX,
 	};
 

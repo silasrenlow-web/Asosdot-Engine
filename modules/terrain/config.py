@@ -1,4 +1,6 @@
 def can_build(env, platform):
+    # Voxel terrain takes its shapes from Noise resources.
+    env.module_add_dependencies("terrain", ["noise"])
     return not env["disable_3d"]
 
 
@@ -15,6 +17,9 @@ def get_doc_classes():
         "Foliage3D",
         "FoliageData",
         "FoliageType",
+        "VoxelGenerator",
+        "VoxelTerrain3D",
+        "VoxelTerrainData",
     ]
 
 

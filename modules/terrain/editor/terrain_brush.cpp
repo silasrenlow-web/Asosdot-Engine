@@ -131,6 +131,7 @@ const char *TerrainBrush::get_tool_name(Tool p_tool) {
 		"Paint Grass",
 		"Paint Objects",
 		"Regions",
+		"Dig",
 	};
 	return (p_tool >= 0 && p_tool < TOOL_MAX) ? names[p_tool] : "";
 }

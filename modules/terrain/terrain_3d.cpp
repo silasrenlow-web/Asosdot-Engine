@@ -220,10 +220,8 @@ void Terrain3D::_process_updates() {
 			_rebuild_layout();
 			dirty_regions.clear();
 			dirty_collision.clear();
-		} else if (_get_layer_texture_key() != layer_texture_key) {
-			// Tints, tiling and the like are material parameters; only new
-			// pixels need the arrays built again.
-			_rebuild_layer_textures();
+		} else {
+			_rebuild_layer_textures(false);
 		}
 		layers_dirty = false;
 		material_dirty = true;
@@ -306,7 +304,7 @@ void Terrain3D::_free_rendering() {
 	}
 	occluders.clear();
 
-	RID *textures[] = { &height_array, &normal_array, &color_array, &region_map_texture, &layer_albedo_array, &layer_normal_array };
+	RID *textures[] = { &height_array, &normal_array, &color_array, &region_map_texture };
 	for (RID *t : textures) {
 		if (t->is_valid()) {
 			rs->free_rid(*t);
@@ -320,6 +318,7 @@ void Terrain3D::_free_rendering() {
 		}
 	}
 	splat_array_count = 0;
+	layer_textures.clear();
 	region_slices.clear();
 	slice_regions.clear();
 	normal_maps.clear();
@@ -332,7 +331,7 @@ void Terrain3D::_rebuild_mesh() {
 	if (material.is_null()) {
 		if (shared_shader.is_null()) {
 			shared_shader = rs->shader_create();
-			rs->shader_set_code(shared_shader, TERRAIN_SHADER_CODE);
+			rs->shader_set_code(shared_shader, terrain_shader_code());
 		}
 		shared_shader_users++;
 		material = rs->material_create();
@@ -438,121 +437,18 @@ void Terrain3D::_rebuild_mesh() {
 	rs->mesh_surface_set_material(mesh, 0, material);
 }
 
-static Ref<Image> make_layer_array_image(const Ref<Texture2D> &p_texture) {
-	if (p_texture.is_null()) {
-		return Ref<Image>();
-	}
-	Ref<Image> image = p_texture->get_image();
-	if (image.is_null() || image->is_empty()) {
-		return Ref<Image>();
-	}
-	return image;
-}
-
-// A texture array needs every slice the same size, format and mip count. When
-// the layers' textures already agree they go in untouched, compression and
-// all; otherwise everything is brought to uncompressed RGBA8 at the largest
-// size, which costs video memory but always works.
-static Vector<Ref<Image>> normalize_slices(const Vector<Ref<Image>> &p_images, bool &r_converted) {
-	r_converted = false;
-	if (p_images.is_empty()) {
-		return p_images;
-	}
-	const Ref<Image> &first = p_images[0];
-	bool uniform = first->has_mipmaps();
-	int max_w = 0;
-	int max_h = 0;
-	for (const Ref<Image> &image : p_images) {
-		uniform = uniform && image->get_width() == first->get_width() && image->get_height() == first->get_height() && image->get_format() == first->get_format() && image->has_mipmaps() == first->has_mipmaps();
-		max_w = MAX(max_w, image->get_width());
-		max_h = MAX(max_h, image->get_height());
-	}
-	if (uniform) {
-		return p_images;
-	}
-	r_converted = true;
-	max_w = MIN((int)Math::next_power_of_2((uint32_t)max_w), 4096);
-	max_h = MIN((int)Math::next_power_of_2((uint32_t)max_h), 4096);
-	Vector<Ref<Image>> result;
-	for (const Ref<Image> &source : p_images) {
-		Ref<Image> image = source->duplicate();
-		if (image->is_compressed()) {
-			image->decompress();
-		}
-		image->clear_mipmaps();
-		image->convert(Image::FORMAT_RGBA8);
-		if (image->get_width() != max_w || image->get_height() != max_h) {
-			image->resize(max_w, max_h, Image::INTERPOLATE_BILINEAR);
-		}
-		image->generate_mipmaps();
-		result.push_back(image);
-	}
-	return result;
-}
-
-Vector<uint64_t> Terrain3D::_get_layer_texture_key() const {
-	Vector<uint64_t> key;
+void Terrain3D::_rebuild_layer_textures(bool p_force) {
 	if (data.is_null()) {
-		return key;
-	}
-	for (const Ref<TerrainLayer> &layer : data->get_layer_list()) {
-		if (layer.is_null()) {
-			continue;
-		}
-		key.push_back(layer->get_instance_id());
-		key.push_back(layer->get_texture_version());
-		key.push_back(layer->get_albedo_texture().is_valid() ? (uint64_t)layer->get_albedo_texture()->get_instance_id() : 0);
-		key.push_back(layer->get_normal_texture().is_valid() ? (uint64_t)layer->get_normal_texture()->get_instance_id() : 0);
-	}
-	return key;
-}
-
-void Terrain3D::_rebuild_layer_textures() {
-	RenderingServer *rs = RenderingServer::get_singleton();
-	layer_texture_key = _get_layer_texture_key();
-	if (layer_albedo_array.is_valid()) {
-		rs->free_rid(layer_albedo_array);
-		layer_albedo_array = RID();
-	}
-	if (layer_normal_array.is_valid()) {
-		rs->free_rid(layer_normal_array);
-		layer_normal_array = RID();
-	}
-	if (data.is_null()) {
+		layer_textures.clear();
 		return;
 	}
-
-	Vector<Ref<Image>> albedo;
-	Vector<Ref<Image>> normal;
-	for (const Ref<TerrainLayer> &layer : data->get_layer_list()) {
-		if (layer.is_null()) {
-			continue;
-		}
-		const Ref<Image> a = make_layer_array_image(layer->get_albedo_texture());
-		if (a.is_valid()) {
-			albedo.push_back(a);
-		}
-		const Ref<Image> n = make_layer_array_image(layer->get_normal_texture());
-		if (n.is_valid()) {
-			normal.push_back(n);
-		}
+	if (!layer_textures.update(data->get_layer_list(), p_force)) {
+		return;
 	}
-
-	bool converted_a = false;
-	bool converted_n = false;
-	albedo = normalize_slices(albedo, converted_a);
-	normal = normalize_slices(normal, converted_n);
-	const bool converted = converted_a || converted_n;
+	const bool converted = layer_textures.is_converted();
 	if (converted != (bool)get_meta(SNAME("_layer_textures_converted"), false)) {
 		set_meta(SNAME("_layer_textures_converted"), converted ? Variant(true) : Variant());
 		update_configuration_warnings();
-	}
-
-	if (!albedo.is_empty()) {
-		layer_albedo_array = rs->texture_2d_layered_create(albedo, RSE::TEXTURE_LAYERED_2D_ARRAY);
-	}
-	if (!normal.is_empty()) {
-		layer_normal_array = rs->texture_2d_layered_create(normal, RSE::TEXTURE_LAYERED_2D_ARRAY);
 	}
 	material_dirty = true;
 }
@@ -855,7 +751,7 @@ void Terrain3D::_rebuild_layout() {
 		splat_arrays[m] = rs->texture_2d_layered_create(splat, RSE::TEXTURE_LAYERED_2D_ARRAY);
 	}
 
-	_rebuild_layer_textures();
+	_rebuild_layer_textures(true);
 
 	const RID scenario = get_world_3d()->get_scenario();
 	const int per_region = rs_size / chunk_size;
@@ -910,64 +806,12 @@ void Terrain3D::_update_material_params() {
 	rs->material_set_param(material, SNAME("terrain_origin"), origin);
 	rs->material_set_param(material, SNAME("splat_map_count"), splat_array_count);
 
-	const int layer_count = data.is_valid() ? MIN(data->get_layer_count(), TerrainData::MAX_LAYERS) : 0;
-	rs->material_set_param(material, SNAME("layer_count"), layer_count);
-	rs->material_set_param(material, SNAME("layer_albedo"), layer_albedo_array);
-	rs->material_set_param(material, SNAME("layer_normal"), layer_normal_array);
-
-	PackedFloat32Array tint;
-	PackedFloat32Array params;
-	PackedFloat32Array textures;
-	tint.resize(TerrainData::MAX_LAYERS * 4);
-	params.resize(TerrainData::MAX_LAYERS * 4);
-	textures.resize(TerrainData::MAX_LAYERS * 4);
-	tint.fill(1.0);
-	params.fill(0.0);
-	textures.fill(-1.0);
-	int albedo_slice = 0;
-	int normal_slice = 0;
-	for (int i = 0; i < layer_count; i++) {
-		const Ref<TerrainLayer> layer = data->get_layer(i);
-		if (layer.is_null()) {
-			continue;
-		}
-		// Linear, because the shader multiplies the sampled albedo with it.
-		const Color c = layer->get_albedo_color().srgb_to_linear();
-		tint.set(i * 4 + 0, c.r);
-		tint.set(i * 4 + 1, c.g);
-		tint.set(i * 4 + 2, c.b);
-		tint.set(i * 4 + 3, layer->get_roughness());
-		params.set(i * 4 + 0, 1.0 / layer->get_tile_size());
-		params.set(i * 4 + 1, layer->get_normal_strength());
-		params.set(i * 4 + 2, layer->is_triplanar() ? 1.0 : 0.0);
-		params.set(i * 4 + 3, layer->get_detiling());
-		// Slices are handed out in layer order, skipping layers whose texture
-		// failed to load, exactly as _rebuild_layer_textures() packed them.
-		if (make_layer_array_image(layer->get_albedo_texture()).is_valid()) {
-			textures.set(i * 4 + 0, albedo_slice++);
-		}
-		if (make_layer_array_image(layer->get_normal_texture()).is_valid()) {
-			textures.set(i * 4 + 1, normal_slice++);
-		}
+	if (data.is_valid()) {
+		layer_textures.set_layer_params(material, data->get_layer_list());
+	} else {
+		layer_textures.set_layer_params(material, Vector<Ref<TerrainLayer>>());
 	}
-	rs->material_set_param(material, SNAME("layer_tint"), tint);
-	rs->material_set_param(material, SNAME("layer_params"), params);
-	rs->material_set_param(material, SNAME("layer_textures"), textures);
-
-	Ref<TerrainMaterial> tm = terrain_material;
-	if (tm.is_null()) {
-		tm.instantiate();
-	}
-	rs->material_set_param(material, SNAME("height_blending"), tm->is_height_blending());
-	rs->material_set_param(material, SNAME("height_blend_sharpness"), tm->get_height_blend_sharpness());
-	rs->material_set_param(material, SNAME("auto_slope"), tm->is_auto_slope());
-	rs->material_set_param(material, SNAME("auto_slope_layer"), tm->get_auto_slope_layer());
-	const float lo = Math::deg_to_rad(MAX(tm->get_auto_slope_angle() - tm->get_auto_slope_blend() * 0.5f, 0.0f));
-	const float hi = Math::deg_to_rad(MIN(tm->get_auto_slope_angle() + tm->get_auto_slope_blend() * 0.5f, 90.0f));
-	rs->material_set_param(material, SNAME("auto_slope_range"), Vector2(1.0 - Math::cos(lo), MAX(1.0 - Math::cos(hi), 1.0 - Math::cos(lo) + 0.001)));
-	rs->material_set_param(material, SNAME("macro_variation"), tm->get_macro_variation());
-	rs->material_set_param(material, SNAME("macro_variation_size"), tm->get_macro_variation_size());
-	rs->material_set_param(material, SNAME("wetness_darkening"), tm->get_wetness_darkening());
+	TerrainLayerTextures::set_material_params(material, terrain_material);
 
 	rs->material_set_param(material, SNAME("debug_view"), (int)debug_view);
 	if (debug_view == DEBUG_VIEW_HEIGHT && data.is_valid()) {

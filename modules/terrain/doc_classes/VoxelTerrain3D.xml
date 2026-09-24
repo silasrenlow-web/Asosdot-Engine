@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="VoxelTerrain3D" inherits="Node3D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Terrain made of voxels, with caves, overhangs and tunnels, that can be dug into while the game runs.
+	</brief_description>
+	<description>
+		Where [Terrain3D] stores one height for each point on a grid, a voxel terrain stores the ground itself, as a grid of voxels that are either in the ground or in the air. That lets it have caves, arches, overhangs and tunnels, and lets a game dig into it or build onto it.
+		The shape starts from the [VoxelGenerator] in [member data]: flat ground, hills, caves carved by noise, or the heights of an existing [TerrainData]. Only voxels that have been changed are stored, so the world can stretch as far as [member view_distance] without costing anything to save.
+		The surface is drawn in blocks of 32 voxels. Blocks near the viewer are drawn at full detail and each step further out uses blocks twice the size at half the detail, so distant ground stays cheap. Blocks are built on worker threads, and a block keeps its old mesh until its new one is ready, so neither camera moves nor edits ever leave gaps. [signal meshing_finished] says when everything in view is up to date.
+		Collision is built around the viewer, out to [member collision_distance], at full detail.
+		Layers work as they do on [Terrain3D]: each voxel is made of one [TerrainLayer], and the surface blends between neighbouring voxels. Every layer is projected from all three axes, so cave ceilings and cliffs are textured as well as the ground.
+		In the editor, select the node and use the Terrain dock to sculpt: Add, Dig, Smooth, Flatten and Paint, each with undo. A [Terrain3D] can be turned into a voxel terrain with Terrain > Convert to Voxel Terrain in the dock, which keeps its shape, layers and paint.
+		Digging at runtime:
+		[codeblock]
+		# Blasts a crater where a grenade lands.
+		func explode(at: Vector3):
+			$VoxelTerrain3D.dig_sphere(at, 3.0)
+		[/codeblock]
+		[b]Note:[/b] Only the node's position is used; rotation and scale are ignored. Change [member VoxelTerrainData.voxel_size] to change the size of the voxels.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="add_sphere">
+			<return type="void" />
+			<param index="0" name="global_position" type="Vector3" />
+			<param index="1" name="radius" type="float" />
+			<param index="2" name="layer" type="int" default="-1" />
+			<description>
+				Adds a ball of ground of [param radius] metres at [param global_position]. The new ground is made of [param layer], or of whatever the voxels there were before when it is [code]-1[/code].
+			</description>
+		</method>
+		<method name="bake_mesh" qualifiers="const">
+			<return type="ArrayMesh" />
+			<param index="0" name="global_box" type="AABB" />
+			<param index="1" name="lod" type="int" default="0" />
+			<description>
+				Meshes the terrain inside [param global_box] into one [ArrayMesh], at a level of detail of [param lod] (0 for full detail), relative to the terrain's position. The box is rounded out to whole blocks, and at most 4096 blocks can be baked at once.
+				The mesh has positions, normals and indices, with the layer weights in the four custom channels, four layers to each. Use it to export part of the terrain to other tools, or as a static mesh for something that should not change.
+			</description>
+		</method>
+		<method name="dig_sphere">
+			<return type="void" />
+			<param index="0" name="global_position" type="Vector3" />
+			<param index="1" name="radius" type="float" />
+			<description>
+				Removes a ball of ground of [param radius] metres at [param global_position], leaving air.
+			</description>
+		</method>
+		<method name="flatten_sphere">
+			<return type="void" />
+			<param index="0" name="global_position" type="Vector3" />
+			<param index="1" name="radius" type="float" />
+			<param index="2" name="strength" type="float" default="0.5" />
+			<description>
+				Levels the ground within [param radius] metres of [param global_position] towards a flat surface at its height, by [param strength]: [code]1.0[/code] flattens it at once, less moves part of the way.
+			</description>
+		</method>
+		<method name="get_chunk_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the number of blocks currently drawn.
+			</description>
+		</method>
+		<method name="get_distance" qualifiers="const">
+			<return type="float" />
+			<param index="0" name="global_position" type="Vector3" />
+			<description>
+				Returns how far [param global_position] is from the surface, in metres: negative in the ground, positive in the air. Distances are exact near the surface and only an estimate further out.
+			</description>
+		</method>
+		<method name="get_layer" qualifiers="const">
+			<return type="int" />
+			<param index="0" name="global_position" type="Vector3" />
+			<description>
+				Returns the layer the surface near [param global_position] is made of.
+			</description>
+		</method>
+		<method name="get_normal" qualifiers="const">
+			<return type="Vector3" />
+			<param index="0" name="global_position" type="Vector3" />
+			<description>
+				Returns the direction the surface faces near [param global_position].
+			</description>
+		</method>
+		<method name="get_surface_name" qualifiers="const">
+			<return type="String" />
+			<param index="0" name="global_position" type="Vector3" />
+			<description>
+				Returns [member TerrainLayer.surface_name] of the layer at [param global_position], for footstep sounds and the like.
+			</description>
+		</method>
+		<method name="global_to_voxel" qualifiers="const">
+			<return type="Vector3" />
+			<param index="0" name="global_position" type="Vector3" />
+			<description>
+				Converts a global position into voxels, relative to the terrain's origin.
+			</description>
+		</method>
+		<method name="intersect_ray" qualifiers="const">
+			<return type="Dictionary" />
+			<param index="0" name="from" type="Vector3" />
+			<param index="1" name="direction" type="Vector3" />
+			<param index="2" name="max_distance" type="float" default="1000.0" />
+			<description>
+				Finds where a ray from [param from] along [param direction] first meets the ground within [param max_distance] metres. Returns a [Dictionary] with [code]position[/code] and [code]normal[/code], or an empty one if it hits nothing or starts in the ground. It reads the voxels directly, so it works beyond [member collision_distance] and before any collision is built.
+			</description>
+		</method>
+		<method name="is_meshing" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] while blocks in view are still being built. A loading screen can wait for this to become [code]false[/code], or for [signal meshing_finished].
+			</description>
+		</method>
+		<method name="paint_sphere">
+			<return type="void" />
+			<param index="0" name="global_position" type="Vector3" />
+			<param index="1" name="radius" type="float" />
+			<param index="2" name="layer" type="int" />
+			<description>
+				Paints the surface within [param radius] metres of [param global_position] with [param layer].
+			</description>
+		</method>
+		<method name="rebuild">
+			<return type="void" />
+			<description>
+				Builds every block again. Changes to the data rebuild the blocks they touch on their own; this is for after changing something the terrain cannot see, such as a [Noise] resource the generator uses being edited through code.
+			</description>
+		</method>
+		<method name="smooth_sphere">
+			<return type="void" />
+			<param index="0" name="global_position" type="Vector3" />
+			<param index="1" name="radius" type="float" />
+			<param index="2" name="strength" type="float" default="0.5" />
+			<description>
+				Smooths the ground within [param radius] metres of [param global_position], by [param strength] from [code]0.0[/code] to [code]1.0[/code].
+			</description>
+		</method>
+		<method name="voxel_to_global" qualifiers="const">
+			<return type="Vector3" />
+			<param index="0" name="voxel_position" type="Vector3" />
+			<description>
+				Converts a position in voxels, relative to the terrain's origin, into a global position.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="cast_shadow" type="int" setter="set_cast_shadow" getter="get_cast_shadow" enum="VoxelTerrain3D.ShadowCasting" default="1">
+			Whether the terrain casts shadows.
+		</member>
+		<member name="collision_distance" type="float" setter="set_collision_distance" getter="get_collision_distance" default="64.0">
+			How far from the viewer, in metres, the terrain has collision. Blocks this close are always drawn at full detail, and their collision matches what is drawn. Physics further away than this finds no ground, so keep anything that needs it, such as enemies, within this distance of the viewer, or set [member viewer_path] to follow the player rather than the camera.
+		</member>
+		<member name="collision_enabled" type="bool" setter="set_collision_enabled" getter="is_collision_enabled" default="true">
+			If [code]true[/code], the terrain has collision near the viewer.
+		</member>
+		<member name="collision_layer" type="int" setter="set_collision_layer" getter="get_collision_layer" default="1">
+			The physics layers the terrain is in.
+		</member>
+		<member name="collision_mask" type="int" setter="set_collision_mask" getter="get_collision_mask" default="1">
+			The physics layers the terrain scans. Static ground rarely needs this.
+		</member>
+		<member name="collision_priority" type="float" setter="set_collision_priority" getter="get_collision_priority" default="1.0">
+			The terrain's priority in resolving collisions. See [member CollisionObject3D.collision_priority].
+		</member>
+		<member name="data" type="VoxelTerrainData" setter="set_data" getter="get_data">
+			The voxels, generator and layers. Save it as its own file to share it between scenes; the editor does this automatically the first time the terrain is edited.
+		</member>
+		<member name="debug_view" type="int" setter="set_debug_view" getter="get_debug_view" enum="VoxelTerrain3D.DebugView" default="0">
+			Shows the terrain in a diagnostic view instead of its layers. An editing aid; it is not saved with the scene.
+		</member>
+		<member name="lod_distance" type="float" setter="set_lod_distance" getter="get_lod_distance" default="64.0">
+			How far from the viewer, in metres, the terrain is drawn at full detail. Each level of detail after that reaches twice as far as the one before. Raise it for more detail in the distance at the cost of more triangles.
+		</member>
+		<member name="render_layers" type="int" setter="set_render_layers" getter="get_render_layers" default="1">
+			The render layers the terrain is drawn on.
+		</member>
+		<member name="terrain_material" type="TerrainMaterial" setter="set_terrain_material" getter="get_terrain_material">
+			How the layers are blended. The same [TerrainMaterial] can be shared with [Terrain3D] nodes; its wetness settings do not apply to voxel terrain.
+		</member>
+		<member name="view_distance" type="float" setter="set_view_distance" getter="get_view_distance" default="512.0">
+			How far from the viewer, in metres, the terrain is drawn.
+		</member>
+		<member name="viewer_path" type="NodePath" setter="set_viewer_path" getter="get_viewer_path" default="NodePath(&quot;&quot;)">
+			The node the terrain builds detail and collision around. When empty, the current camera is used, or in the editor, the editor's camera.
+		</member>
+	</members>
+	<signals>
+		<signal name="meshing_finished">
+			<description>
+				Emitted when every block in view has been built, after the view moved or the terrain changed.
+			</description>
+		</signal>
+	</signals>
+	<constants>
+		<constant name="DEBUG_VIEW_DISABLED" value="0" enum="DebugView">
+			The terrain is drawn normally.
+		</constant>
+		<constant name="DEBUG_VIEW_NORMALS" value="1" enum="DebugView">
+			Shows which way the surface faces, as colour.
+		</constant>
+		<constant name="DEBUG_VIEW_LAYERS" value="2" enum="DebugView">
+			Shows each layer as a flat colour.
+		</constant>
+		<constant name="DEBUG_VIEW_LOD" value="3" enum="DebugView">
+			Shows each level of detail as a colour.
+		</constant>
+		<constant name="SHADOW_CASTING_OFF" value="0" enum="ShadowCasting">
+			The terrain casts no shadows.
+		</constant>
+		<constant name="SHADOW_CASTING_ON" value="1" enum="ShadowCasting">
+			The terrain casts shadows.
+		</constant>
+		<constant name="SHADOW_CASTING_DOUBLE_SIDED" value="2" enum="ShadowCasting">
+			The terrain casts shadows from both sides of its surface.
+		</constant>
+		<constant name="SHADOW_CASTING_SHADOWS_ONLY" value="3" enum="ShadowCasting">
+			The terrain only casts shadows and is not drawn itself.
+		</constant>
+	</constants>
+</class>

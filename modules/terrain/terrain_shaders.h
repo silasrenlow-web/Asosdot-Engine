@@ -6,11 +6,13 @@
 
 #pragma once
 
+#include "core/string/ustring.h"
+
 // Written in Godot's shading language rather than as an RD effect, so the
 // terrain draws on Forward+, Mobile and Compatibility alike and every renderer
 // feature (shadows, SDFGI, fog, decals) treats it as ordinary geometry.
 
-inline constexpr const char *TERRAIN_SHADER_CODE = R"GLSL(
+inline constexpr const char *TERRAIN_SHADER_HEAD = R"GLSL(
 shader_type spatial;
 render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_schlick_ggx;
 
@@ -166,6 +168,11 @@ void vertex() {
 	}
 }
 
+)GLSL";
+
+// Noise, detiling and normal mapping, shared by the heightmap and voxel
+// shaders.
+inline constexpr const char *TERRAIN_SHADER_HELPERS = R"GLSL(
 float hash12(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
 	p3 += dot(p3, p3.yzx + 33.33);
@@ -220,6 +227,9 @@ vec3 apply_normal(vec3 n, vec3 t_axis, vec3 b_axis, vec3 nt) {
 	return normalize(t * nt.x + b * nt.y + n * nt.z);
 }
 
+)GLSL";
+
+inline constexpr const char *TERRAIN_SHADER_TAIL = R"GLSL(
 void sample_layer(int i, vec3 world, vec3 n, vec3 dpx, vec3 dpy, out vec4 albedo, out vec3 normal_ws) {
 	vec4 p = layer_params[i];
 	vec4 slices = layer_textures[i];
@@ -520,3 +530,227 @@ void fragment() {
 	BACKLIGHT = c * 0.3;
 }
 )GLSL";
+
+inline constexpr const char *VOXEL_SHADER_HEAD = R"GLSL(
+shader_type spatial;
+render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_schlick_ggx;
+
+// Layers, laid out as for the heightmap terrain.
+uniform int layer_count = 0;
+uniform sampler2DArray layer_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2DArray layer_normal : filter_linear_mipmap_anisotropic, repeat_enable;
+uniform vec4 layer_tint[16]; // RGB tint, A roughness.
+uniform vec4 layer_params[16]; // X 1 / tile size, Y normal strength, Z triplanar, W detiling.
+uniform vec4 layer_textures[16]; // X albedo slice, Y normal slice, -1 for none.
+
+// Shading.
+uniform bool height_blending = true;
+uniform float height_blend_sharpness = 0.25;
+uniform bool auto_slope = false;
+uniform int auto_slope_layer = 1;
+uniform vec2 auto_slope_range = vec2(0.13, 0.25);
+uniform float macro_variation = 0.2;
+uniform float macro_variation_size = 64.0;
+
+// Editor.
+uniform int debug_view = 0;
+uniform bool brush_enabled = false;
+uniform vec3 brush_position = vec3(0.0);
+uniform float brush_radius = 1.0;
+uniform float brush_hardness = 0.5;
+uniform vec4 brush_color : source_color = vec4(1.0);
+
+instance uniform float lod_level = 0.0;
+
+// The mesher gives every vertex a weight for each of the sixteen layers, four
+// to a custom channel; interpolated across a triangle they blend one voxel's
+// layer into the next.
+varying vec4 weights0;
+varying vec4 weights1;
+varying vec4 weights2;
+varying vec4 weights3;
+varying vec3 world_position;
+varying vec3 world_normal;
+
+void vertex() {
+	weights0 = CUSTOM0;
+	weights1 = CUSTOM1;
+	weights2 = CUSTOM2;
+	weights3 = CUSTOM3;
+	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	world_normal = normalize(mat3(MODEL_MATRIX) * NORMAL);
+}
+)GLSL";
+
+inline constexpr const char *VOXEL_SHADER_TAIL = R"GLSL(
+// Voxel ground faces every way, from floors to cave ceilings, so every layer
+// is projected along all three axes and blended by the normal. A projection
+// that hardly shows is skipped.
+void sample_layer(int i, vec3 world, vec3 n, vec3 dpx, vec3 dpy, out vec4 albedo, out vec3 normal_ws) {
+	vec4 p = layer_params[i];
+	vec4 slices = layer_textures[i];
+	int ai = int(slices.x);
+	int ni = int(slices.y);
+	float s = p.x;
+	vec3 w = pow(abs(n), vec3(4.0));
+	w /= w.x + w.y + w.z;
+
+	albedo = vec4(0.0);
+	vec3 nsum = vec3(0.0);
+	float kept = 0.0;
+	if (w.x > 0.02) {
+		albedo += (ai >= 0 ? sample_slice(layer_albedo, world.zy * s, ai, dpx.zy * s, dpy.zy * s, p.w) : vec4(1.0)) * w.x;
+		nsum += (ni >= 0 ? apply_normal(n, vec3(0.0, 0.0, 1.0), vec3(0.0, -1.0, 0.0), unpack_normal(sample_slice(layer_normal, world.zy * s, ni, dpx.zy * s, dpy.zy * s, p.w), p.y)) : n) * w.x;
+		kept += w.x;
+	}
+	if (w.y > 0.02) {
+		albedo += (ai >= 0 ? sample_slice(layer_albedo, world.xz * s, ai, dpx.xz * s, dpy.xz * s, p.w) : vec4(1.0)) * w.y;
+		nsum += (ni >= 0 ? apply_normal(n, vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, -1.0), unpack_normal(sample_slice(layer_normal, world.xz * s, ni, dpx.xz * s, dpy.xz * s, p.w), p.y)) : n) * w.y;
+		kept += w.y;
+	}
+	if (w.z > 0.02) {
+		albedo += (ai >= 0 ? sample_slice(layer_albedo, world.xy * s, ai, dpx.xy * s, dpy.xy * s, p.w) : vec4(1.0)) * w.z;
+		nsum += (ni >= 0 ? apply_normal(n, vec3(1.0, 0.0, 0.0), vec3(0.0, -1.0, 0.0), unpack_normal(sample_slice(layer_normal, world.xy * s, ni, dpx.xy * s, dpy.xy * s, p.w), p.y)) : n) * w.z;
+		kept += w.z;
+	}
+	albedo /= max(kept, 1e-5);
+	normal_ws = normalize(nsum);
+	albedo.rgb *= layer_tint[i].rgb;
+}
+
+void fragment() {
+	vec3 world = world_position;
+	// Derivatives are taken here, in uniform control flow, because the layer
+	// sampling below happens inside branches that differ pixel to pixel.
+	vec3 dpx = dFdx(world);
+	vec3 dpy = dFdy(world);
+	vec3 geo_n = normalize(world_normal);
+
+	float w[16];
+	w[0] = weights0.x;
+	w[1] = weights0.y;
+	w[2] = weights0.z;
+	w[3] = weights0.w;
+	w[4] = weights1.x;
+	w[5] = weights1.y;
+	w[6] = weights1.z;
+	w[7] = weights1.w;
+	w[8] = weights2.x;
+	w[9] = weights2.y;
+	w[10] = weights2.z;
+	w[11] = weights2.w;
+	w[12] = weights3.x;
+	w[13] = weights3.y;
+	w[14] = weights3.z;
+	w[15] = weights3.w;
+
+	if (auto_slope && auto_slope_layer < layer_count) {
+		float a = smoothstep(auto_slope_range.x, auto_slope_range.y, 1.0 - geo_n.y);
+		for (int i = 0; i < 16; i++) {
+			w[i] *= 1.0 - a;
+		}
+		w[auto_slope_layer] += a;
+	}
+
+	// Only the four strongest layers are sampled.
+	int ids[4] = int[4](0, 0, 0, 0);
+	float ws[4] = float[4](0.0, 0.0, 0.0, 0.0);
+	for (int i = 0; i < 16; i++) {
+		if (i >= layer_count) {
+			break;
+		}
+		float wi = w[i];
+		if (wi > ws[3]) {
+			int j = 3;
+			while (j > 0 && wi > ws[j - 1]) {
+				ws[j] = ws[j - 1];
+				ids[j] = ids[j - 1];
+				j--;
+			}
+			ws[j] = wi;
+			ids[j] = i;
+		}
+	}
+
+	vec3 albedo = vec3(0.42, 0.41, 0.38);
+	float roughness = 0.9;
+	vec3 n_ws = geo_n;
+	vec4 blend = vec4(0.0);
+
+	if (layer_count > 0) {
+		vec4 alb[4];
+		vec3 nrm[4];
+		for (int j = 0; j < 4; j++) {
+			alb[j] = vec4(0.0);
+			nrm[j] = geo_n;
+			if (ws[j] > 0.002) {
+				sample_layer(ids[j], world, geo_n, dpx, dpy, alb[j], nrm[j]);
+			}
+		}
+
+		blend = vec4(ws[0], ws[1], ws[2], ws[3]);
+		if (height_blending) {
+			vec4 hw = vec4(alb[0].a, alb[1].a, alb[2].a, alb[3].a) + blend;
+			hw = mix(vec4(-1.0), hw, step(vec4(0.002), blend));
+			float top = max(max(hw.x, hw.y), max(hw.z, hw.w)) - height_blend_sharpness;
+			blend = max(hw - vec4(top), vec4(0.0));
+		}
+		blend /= max(blend.x + blend.y + blend.z + blend.w, 1e-5);
+
+		albedo = alb[0].rgb * blend.x + alb[1].rgb * blend.y + alb[2].rgb * blend.z + alb[3].rgb * blend.w;
+		roughness = layer_tint[ids[0]].a * blend.x + layer_tint[ids[1]].a * blend.y + layer_tint[ids[2]].a * blend.z + layer_tint[ids[3]].a * blend.w;
+		n_ws = normalize(nrm[0] * blend.x + nrm[1] * blend.y + nrm[2] * blend.z + nrm[3] * blend.w);
+	}
+
+	float mv = value_noise(world.xz / macro_variation_size + world.y * 0.013) * 0.65 + value_noise(world.xz / (macro_variation_size * 0.27)) * 0.35;
+	albedo *= mix(1.0, mix(0.8, 1.16, mv), macro_variation);
+
+	vec3 emission = vec3(0.0);
+	float specular = 0.5;
+	if (debug_view > 0) {
+		// Diagnostic views are flat colour.
+		roughness = 1.0;
+		specular = 0.0;
+		n_ws = geo_n;
+	}
+	if (debug_view == 1) {
+		albedo = geo_n * 0.5 + 0.5;
+		n_ws = vec3(0.0, 1.0, 0.0);
+	} else if (debug_view == 2) {
+		albedo = hue_color(float(ids[0]) * 0.618) * blend.x + hue_color(float(ids[1]) * 0.618) * blend.y + hue_color(float(ids[2]) * 0.618) * blend.z + hue_color(float(ids[3]) * 0.618) * blend.w;
+		if (layer_count == 0) {
+			albedo = hue_color(0.0);
+		}
+	} else if (debug_view == 3) {
+		albedo = hue_color(lod_level * 0.17 + 0.55);
+	}
+
+	if (brush_enabled) {
+		// Where the brush's sphere meets the ground, drawn as a ring, with a
+		// fainter one at the edge of full strength.
+		float d = distance(world, brush_position);
+		float px = max(fwidth(d), 1e-4);
+		float ring = 1.0 - smoothstep(px * 0.5, px * 2.0, abs(d - brush_radius));
+		float inner_radius = brush_radius * brush_hardness;
+		float inner = brush_hardness < 0.98 ? (1.0 - smoothstep(px * 0.5, px * 2.0, abs(d - inner_radius))) * 0.5 : 0.0;
+		float fill = (1.0 - smoothstep(inner_radius, brush_radius, d)) * step(d, brush_radius) * 0.08;
+		// Emissive, so the brush stays visible in a scene lit for a horror game.
+		emission += brush_color.rgb * (ring + inner + fill);
+		albedo = mix(albedo, brush_color.rgb, ring * 0.6);
+	}
+
+	ALBEDO = albedo;
+	ROUGHNESS = roughness;
+	SPECULAR = specular;
+	NORMAL = normalize((VIEW_MATRIX * vec4(n_ws, 0.0)).xyz);
+	EMISSION = emission;
+}
+)GLSL";
+
+inline String terrain_shader_code() {
+	return String(TERRAIN_SHADER_HEAD) + TERRAIN_SHADER_HELPERS + TERRAIN_SHADER_TAIL;
+}
+
+inline String voxel_shader_code() {
+	return String(VOXEL_SHADER_HEAD) + TERRAIN_SHADER_HELPERS + VOXEL_SHADER_TAIL;
+}

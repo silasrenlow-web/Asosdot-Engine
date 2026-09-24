@@ -7,6 +7,7 @@
 #pragma once
 
 #include "terrain_data.h"
+#include "terrain_layer_textures.h"
 #include "terrain_material.h"
 
 #include "core/templates/hash_set.h"
@@ -99,10 +100,7 @@ private:
 	// Normals are derived, so they live here rather than in the data.
 	HashMap<Vector2i, Ref<Image>> normal_maps;
 
-	RID layer_albedo_array;
-	// Which layers and texture versions the arrays were built from.
-	Vector<uint64_t> layer_texture_key;
-	RID layer_normal_array;
+	TerrainLayerTextures layer_textures;
 
 	// Collision and occlusion, one per region.
 	RID static_body;
@@ -142,8 +140,7 @@ private:
 	void _free_collision();
 	void _rebuild_mesh();
 	void _rebuild_layout();
-	void _rebuild_layer_textures();
-	Vector<uint64_t> _get_layer_texture_key() const;
+	void _rebuild_layer_textures(bool p_force);
 	void _update_material_params();
 	void _update_region_textures(const Vector2i &p_region, uint32_t p_maps);
 	void _update_normals(const Rect2i &p_vertex_rect);

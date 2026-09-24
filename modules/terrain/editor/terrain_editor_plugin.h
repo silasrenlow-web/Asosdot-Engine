@@ -30,12 +30,16 @@ class MenuButton;
 class SpinBox;
 class Terrain3D;
 class Terrain3DGizmoPlugin;
+class VoxelTerrain3D;
+class VoxelTerrain3DGizmoPlugin;
+class VoxelTerrainData;
 class TerrainCreateDialog;
 class VBoxContainer;
 
 // The Terrain dock: tools, brush settings and the layer and foliage palettes.
-// It edits whichever Terrain3D or Foliage3D is selected; selecting a Foliage3D
-// paints its terrain and selecting a Terrain3D paints its first Foliage3D.
+// It edits whichever Terrain3D, Foliage3D or VoxelTerrain3D is selected;
+// selecting a Foliage3D paints its terrain and selecting a Terrain3D paints
+// its first Foliage3D. Voxel terrain gets the tools that make sense in 3D.
 class TerrainEditor : public EditorDock {
 	GDCLASS(TerrainEditor, EditorDock);
 
@@ -48,6 +52,7 @@ class TerrainEditor : public EditorDock {
 		MENU_REBUILD_COLLISION,
 		MENU_ADD_FOLIAGE,
 		MENU_MOVE_DATA,
+		MENU_CONVERT_TO_VOXEL,
 	};
 
 	enum LayerAddOption {
@@ -58,6 +63,17 @@ class TerrainEditor : public EditorDock {
 
 	ObjectID terrain_id;
 	ObjectID foliage_id;
+	ObjectID voxel_id;
+
+	// Layers belong to a TerrainData or a VoxelTerrainData, whichever is
+	// being edited. Both have the same layer methods, so the palette and its
+	// undo work on either through this.
+	struct LayerOwner {
+		Resource *resource = nullptr;
+		Node *node = nullptr; // Where undo history for the layers goes.
+		int count() const;
+		Ref<TerrainLayer> get(int p_index) const;
+	};
 
 	TerrainBrush::Tool tool = TerrainBrush::TOOL_NONE;
 	TerrainBrush::Settings settings;
@@ -118,6 +134,7 @@ class TerrainEditor : public EditorDock {
 	uint32_t stroke_seed = 0;
 	uint32_t dab_counter = 0;
 	HashMap<Vector2i, Dictionary> stroke_before;
+	HashMap<Vector3i, Dictionary> voxel_stroke_before;
 	uint32_t stroke_maps = 0;
 	Dictionary foliage_before;
 	int foliage_before_type = -1;
@@ -134,6 +151,12 @@ class TerrainEditor : public EditorDock {
 	Terrain3D *_get_terrain() const;
 	Foliage3D *_get_foliage() const;
 	Ref<TerrainData> _get_data() const;
+	VoxelTerrain3D *_get_voxel() const;
+	Ref<VoxelTerrainData> _get_voxel_data() const;
+	bool _is_voxel() const { return voxel_id.is_valid(); }
+	// The terrain node being edited, heightmap or voxel.
+	Node3D *_get_edited_node() const;
+	LayerOwner _get_layer_owner() const;
 
 	void _tool_toggled(bool p_pressed, int p_tool);
 	void _update_tool_ui();
@@ -142,7 +165,10 @@ class TerrainEditor : public EditorDock {
 	void _settings_changed(double p_value = 0.0);
 	void _color_changed(const Color &p_color);
 	void _flatten_fixed_toggled(bool p_pressed);
+	void _update_menus();
 	void _menu_option(int p_option);
+	void _new_voxel_data();
+	void _convert_to_voxel();
 	void _view_option(int p_option);
 	void _create_confirmed();
 	void _export_selected(const String &p_path);
@@ -193,6 +219,9 @@ class TerrainEditor : public EditorDock {
 	void _begin_stroke();
 	void _dab(const Vector3 &p_at, float p_delta);
 	void _end_stroke(bool p_cancel = false);
+	void _voxel_snapshot(const AABB &p_voxel_box);
+	void _voxel_dab(const Vector3 &p_at, float p_delta);
+	void _end_voxel_stroke(bool p_cancel);
 	Color _tool_color() const;
 
 protected:
@@ -212,6 +241,7 @@ class TerrainEditorPlugin : public EditorPlugin {
 
 	TerrainEditor *terrain_editor = nullptr;
 	Ref<Terrain3DGizmoPlugin> gizmo_plugin;
+	Ref<VoxelTerrain3DGizmoPlugin> voxel_gizmo_plugin;
 
 protected:
 	void _notification(int p_what);

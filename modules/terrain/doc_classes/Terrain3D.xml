@@ -18,6 +18,7 @@
 				$Splash.play()
 		[/codeblock]
 		To have [NavigationRegion3D] bake a navigation mesh over the terrain, make the terrain a child of the region (or put it in the region's source group). Set [member NavigationMesh.filter_baking_aabb] to bake part of a large terrain; otherwise every triangle of the terrain is handed to the baker.
+		A heightmap has one height at each point, so it cannot have caves, overhangs or tunnels. For those, use [VoxelTerrain3D]; Terrain > Convert to Voxel Terrain in the Terrain dock turns a heightmap terrain into one, keeping its shape, layers and paint.
 	</description>
 	<tutorials>
 	</tutorials>

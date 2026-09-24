@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="VoxelGenerator" inherits="Resource" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		The ground a [VoxelTerrain3D] starts with, before anyone digs into it.
+	</brief_description>
+	<description>
+		Describes the ground everywhere a voxel terrain has not been edited, so the world can be as large as the view distance without storing it.
+		The ground has a surface height, made of a flat [member height], [member height_noise] for hills, and [member height_source] to start from an existing heightmap terrain. Under the surface, [member cave_noise] carves caves.
+		All distances here are in metres. Changing a setting rebuilds the terrain; voxels that have already been edited keep their values.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_surface_height" qualifiers="const">
+			<return type="float" />
+			<param index="0" name="x" type="float" />
+			<param index="1" name="z" type="float" />
+			<description>
+				Returns the height of the generated ground at [param x], [param z], in metres relative to the terrain's origin.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="cave_max_depth" type="float" setter="set_cave_max_depth" getter="get_cave_max_depth" default="64.0">
+			The deepest below the surface caves go, in metres. Everything deeper is solid rock, which is also what lets the terrain skip building blocks far underground.
+		</member>
+		<member name="cave_min_depth" type="float" setter="set_cave_min_depth" getter="get_cave_min_depth" default="6.0">
+			How far below the surface caves start, in metres. At [code]0.0[/code] caves can open onto the surface.
+		</member>
+		<member name="cave_noise" type="Noise" setter="set_cave_noise" getter="get_cave_noise">
+			Carves caves where its value is above [member cave_threshold]. A [FastNoiseLite] with a frequency around [code]0.02[/code] to [code]0.05[/code] gives winding caves a few metres wide. Leave empty for solid ground.
+		</member>
+		<member name="cave_threshold" type="float" setter="set_cave_threshold" getter="get_cave_threshold" default="0.3">
+			How much of the noise becomes cave: lower values carve bigger, more connected caves.
+		</member>
+		<member name="deep_layer" type="int" setter="set_deep_layer" getter="get_deep_layer" default="0">
+			The layer of the ground more than [member deep_layer_depth] below the surface, and of cave walls.
+		</member>
+		<member name="deep_layer_depth" type="float" setter="set_deep_layer_depth" getter="get_deep_layer_depth" default="3.0">
+			How deep, in metres, the surface layer goes before the deep layer starts. Digging a pit shows the change.
+		</member>
+		<member name="height" type="float" setter="set_height" getter="get_height" default="0.0">
+			The height of the ground, in metres, where nothing else sets it.
+		</member>
+		<member name="height_amplitude" type="float" setter="set_height_amplitude" getter="get_height_amplitude" default="24.0">
+			How far, in metres, [member height_noise] raises and lowers the ground.
+		</member>
+		<member name="height_noise" type="Noise" setter="set_height_noise" getter="get_height_noise">
+			Adds hills and valleys, [member height_amplitude] metres up and down. Leave empty for flat ground.
+		</member>
+		<member name="height_source" type="TerrainData" setter="set_height_source" getter="get_height_source">
+			Takes the ground's height, and the layers painted on it, from a heightmap terrain's data, so a landscape made with [Terrain3D] becomes the base for caves and overhangs. Outside its regions, [member height] applies. Its layer indices are used as they are, so give the voxel terrain the same layers; the Terrain dock's Convert to Voxel Terrain does all of this.
+		</member>
+		<member name="height_source_offset" type="Vector3" setter="set_height_source_offset" getter="get_height_source_offset" default="Vector3(0, 0, 0)">
+			Where the heightmap terrain sits relative to the voxel terrain, in metres.
+		</member>
+		<member name="height_source_spacing" type="float" setter="set_height_source_spacing" getter="get_height_source_spacing" default="1.0">
+			The heightmap terrain's [member Terrain3D.vertex_spacing].
+		</member>
+		<member name="surface_layer" type="int" setter="set_surface_layer" getter="get_surface_layer" default="0">
+			The layer of the ground near the surface, where [member height_source] does not say otherwise.
+		</member>
+	</members>
+</class>

@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="VoxelTerrainData" inherits="Resource" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		The voxels, generator and layers of a [VoxelTerrain3D].
+	</brief_description>
+	<description>
+		Everything that makes one voxel terrain different from another. Each voxel holds how far it is from the surface, negative in the ground and positive in the air, and the layer it is made of.
+		Only voxels that have been edited are stored, in blocks of [constant BLOCK_SIZE] a side. Everywhere else is worked out from the [member generator] when it is needed, so digging a tunnel through a mountain stores the voxels around the tunnel and nothing else. Blocks are compressed when saved.
+		Positions here are in voxels: voxel [code](x, y, z)[/code] sits at [code]Vector3(x, y, z) * voxel_size[/code] from the terrain's origin. [method VoxelTerrain3D.global_to_voxel] converts from global positions.
+		Changes made through this class are picked up by every [VoxelTerrain3D] using it on the next frame. It is safe to edit while the terrain is being built on other threads.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="add_layer">
+			<return type="int" />
+			<param index="0" name="layer" type="TerrainLayer" />
+			<description>
+				Appends [param layer] to the layers and returns its index, or [code]-1[/code] if there are already [constant MAX_LAYERS].
+			</description>
+		</method>
+		<method name="clear">
+			<return type="void" />
+			<description>
+				Removes every edit, handing the whole terrain back to the generator. The layers are kept.
+			</description>
+		</method>
+		<method name="edit_sphere">
+			<return type="AABB" />
+			<param index="0" name="operation" type="int" enum="VoxelTerrainData.Operation" />
+			<param index="1" name="center" type="Vector3" />
+			<param index="2" name="radius" type="float" />
+			<param index="3" name="amount" type="float" />
+			<param index="4" name="hardness" type="float" default="1.0" />
+			<param index="5" name="layer" type="int" default="-1" />
+			<param index="6" name="height" type="float" default="0.0" />
+			<param index="7" name="seed" type="int" default="0" />
+			<description>
+				Applies one brush dab of [param operation] to a ball of [param radius] voxels at [param center], and returns the box of voxels that changed.
+				For [constant OPERATION_ADD] and [constant OPERATION_REMOVE], [param amount] is how many voxels the surface may move, up to the edge of the ball: a large amount stamps the whole ball at once, a small one grows or shrinks the ground a little per call. For the other operations it is how much of the way to go, from [code]0.0[/code] to [code]1.0[/code].
+				[param hardness] is the part of the radius at full strength; beyond it the effect fades out. Ground created by adding or flattening is made of [param layer], or of what the voxels were before when it is [code]-1[/code]; painting uses it as the layer to paint. [param height] is the height of the flattening plane in voxels, and [param seed] varies which voxels a soft paint brush picks.
+			</description>
+		</method>
+		<method name="get_block_coords" qualifiers="const">
+			<return type="Vector3i[]" />
+			<description>
+				Returns the coordinates of every edited block.
+			</description>
+		</method>
+		<method name="get_block_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns how many blocks have been edited and are stored.
+			</description>
+		</method>
+		<method name="get_edited_bounds" qualifiers="const">
+			<return type="AABB" />
+			<description>
+				Returns the box of voxels covered by edited blocks, or an empty box when there are none.
+			</description>
+		</method>
+		<method name="get_layer" qualifiers="const">
+			<return type="TerrainLayer" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Returns the layer at [param index].
+			</description>
+		</method>
+		<method name="get_layer_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the number of layers.
+			</description>
+		</method>
+		<method name="get_material" qualifiers="const">
+			<return type="int" />
+			<param index="0" name="voxel" type="Vector3i" />
+			<description>
+				Returns the layer index of the voxel at [param voxel], edited or generated.
+			</description>
+		</method>
+		<method name="get_sdf" qualifiers="const">
+			<return type="float" />
+			<param index="0" name="voxel" type="Vector3i" />
+			<description>
+				Returns the distance of the voxel at [param voxel] from the surface, in voxels: negative in the ground.
+			</description>
+		</method>
+		<method name="has_block" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="block" type="Vector3i" />
+			<description>
+				Returns [code]true[/code] if the block at [param block] has been edited.
+			</description>
+		</method>
+		<method name="move_layer">
+			<return type="void" />
+			<param index="0" name="from" type="int" />
+			<param index="1" name="to" type="int" />
+			<description>
+				Moves the layer at [param from] to [param to]. Painted voxels move with it, so the terrain looks the same.
+			</description>
+		</method>
+		<method name="remove_block">
+			<return type="void" />
+			<param index="0" name="block" type="Vector3i" />
+			<description>
+				Removes the edits in the block at [param block], handing it back to the generator.
+			</description>
+		</method>
+		<method name="remove_layer">
+			<return type="void" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Removes the layer at [param index]. Voxels made of it become the first layer.
+			</description>
+		</method>
+		<method name="sample_normal" qualifiers="const">
+			<return type="Vector3" />
+			<param index="0" name="voxel_position" type="Vector3" />
+			<description>
+				Returns the direction the surface faces at a position in voxels.
+			</description>
+		</method>
+		<method name="sample_sdf" qualifiers="const">
+			<return type="float" />
+			<param index="0" name="voxel_position" type="Vector3" />
+			<description>
+				Returns the distance from the surface at a position in voxels, blended between the eight voxels around it.
+			</description>
+		</method>
+		<method name="set_layer">
+			<return type="void" />
+			<param index="0" name="index" type="int" />
+			<param index="1" name="layer" type="TerrainLayer" />
+			<description>
+				Replaces the layer at [param index].
+			</description>
+		</method>
+		<method name="set_voxel">
+			<return type="void" />
+			<param index="0" name="voxel" type="Vector3i" />
+			<param index="1" name="sdf" type="float" />
+			<param index="2" name="material" type="int" default="-1" />
+			<description>
+				Sets the distance of one voxel from the surface, in voxels, and its layer unless [param material] is [code]-1[/code]. For shaping the ground voxel by voxel from a script; [method edit_sphere] is faster for anything larger.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="blocks" type="Array" setter="_set_blocks" getter="_get_blocks" default="[]">
+			The edited blocks, as stored. Use the voxel and editing methods instead.
+		</member>
+		<member name="generator" type="VoxelGenerator" setter="set_generator" getter="get_generator">
+			Where the ground comes from before it is edited. Without one, the terrain is empty air and only what is added exists. Voxels that have been edited keep their values when the generator changes, so pick the generator before sculpting.
+		</member>
+		<member name="layers" type="Array" setter="_set_layers" getter="_get_layers" default="[]">
+			The layers, as stored. Edit them with [method add_layer], [method remove_layer] and [method move_layer], which keep the painted voxels in step with the list.
+		</member>
+		<member name="voxel_size" type="float" setter="set_voxel_size" getter="get_voxel_size" default="1.0">
+			The size of a voxel, in metres. The smallest feature the terrain can have is about one voxel across. Edited voxels do not move when this changes, so set it before editing.
+		</member>
+	</members>
+	<signals>
+		<signal name="changed_area">
+			<param index="0" name="voxel_box" type="AABB" />
+			<description>
+				Emitted when voxels change, with the box of voxels that did.
+			</description>
+		</signal>
+		<signal name="generator_changed">
+			<description>
+				Emitted when the generator or [member voxel_size] changes, or the generator's settings do, which changes every voxel that has not been edited.
+			</description>
+		</signal>
+		<signal name="layers_changed">
+			<description>
+				Emitted when a layer is added, removed, moved or changed.
+			</description>
+		</signal>
+	</signals>
+	<constants>
+		<constant name="BLOCK_SIZE" value="32">
+			The number of voxels along each edge of a stored block.
+		</constant>
+		<constant name="MAX_LAYERS" value="16">
+			The most layers a terrain can have.
+		</constant>
+		<constant name="OPERATION_ADD" value="0" enum="Operation">
+			Adds ground, growing the surface outward.
+		</constant>
+		<constant name="OPERATION_REMOVE" value="1" enum="Operation">
+			Removes ground, digging the surface inward.
+		</constant>
+		<constant name="OPERATION_SMOOTH" value="2" enum="Operation">
+			Smooths the surface.
+		</constant>
+		<constant name="OPERATION_FLATTEN" value="3" enum="Operation">
+			Levels the ground towards a flat plane, filling below it and cutting above it.
+		</constant>
+		<constant name="OPERATION_PAINT" value="4" enum="Operation">
+			Paints the surface with a layer.
+		</constant>
+		<constant name="OPERATION_ERASE_PAINT" value="5" enum="Operation">
+			Removes paint, returning the surface to the layer the generator gave it.
+		</constant>
+	</constants>
+</class>
