@@ -410,6 +410,25 @@ bool VoxelTerrainData::has_edits_in(const AABB &p_voxel_box) const {
 	return false;
 }
 
+bool VoxelTerrainData::get_edited_span(const Rect2i &p_columns, int &r_lo, int &r_hi) const {
+	RWLockRead guard(lock);
+	const Vector2i b0(floor_div(p_columns.position.x, BS), floor_div(p_columns.position.y, BS));
+	const Vector2i b1(floor_div(p_columns.get_end().x - 1, BS), floor_div(p_columns.get_end().y - 1, BS));
+	bool any = false;
+	for (const KeyValue<Vector3i, Block> &E : blocks) {
+		const Vector3i &c = E.key;
+		if (c.x < b0.x || c.x > b1.x || c.z < b0.y || c.z > b1.y) {
+			continue;
+		}
+		const int lo = c.y * BS;
+		const int hi = lo + BS - 1;
+		r_lo = any ? MIN(r_lo, lo) : lo;
+		r_hi = any ? MAX(r_hi, hi) : hi;
+		any = true;
+	}
+	return any;
+}
+
 VoxelTerrainData::Block &VoxelTerrainData::_ensure_block(const Vector3i &p_block) {
 	Block *existing = blocks.getptr(p_block);
 	if (existing) {
@@ -567,6 +586,111 @@ Vector3 VoxelTerrainData::sample_normal(const Vector3 &p_voxel_position) const {
 			sample_sdf(p_voxel_position + Vector3(0, e, 0)) - sample_sdf(p_voxel_position - Vector3(0, e, 0)),
 			sample_sdf(p_voxel_position + Vector3(0, 0, e)) - sample_sdf(p_voxel_position - Vector3(0, 0, e)));
 	return g.length_squared() > 1e-12f ? g.normalized() : Vector3(0, 1, 0);
+}
+
+void VoxelTerrainData::find_top_surface(const Vector2i &p_origin, const Vector2i &p_size, int p_top, int p_bottom, float *r_heights, uint8_t *r_layers) const {
+	const int columns = p_size.x * p_size.y;
+	for (int i = 0; i < columns; i++) {
+		r_heights[i] = Math::NaN;
+		r_layers[i] = 0;
+	}
+	if (columns == 0 || p_top <= p_bottom) {
+		return;
+	}
+	// Down in slabs, most columns finding their ground in the first. Slabs
+	// share their edge sample, so a surface between two is never missed.
+	constexpr int SLAB = 32;
+	LocalVector<uint8_t> state; // 0 looking, 1 found, 2 ground at the very top.
+	state.resize(columns);
+	memset(state.ptr(), 0, columns);
+	int remaining = columns;
+	LocalVector<float> sdf;
+	LocalVector<uint8_t> material;
+	for (int y_hi = p_top; y_hi > p_bottom && remaining > 0; y_hi -= SLAB) {
+		const int y_lo = MAX(y_hi - SLAB, p_bottom);
+		const int ny = y_hi - y_lo + 1;
+		sdf.resize(columns * ny);
+		material.resize(columns * ny);
+		read(Vector3i(p_origin.x, y_lo, p_origin.y), 1, Vector3i(p_size.x, ny, p_size.y), sdf.ptr(), material.ptr());
+		for (int z = 0; z < p_size.y; z++) {
+			for (int x = 0; x < p_size.x; x++) {
+				const int c = z * p_size.x + x;
+				if (state[c]) {
+					continue;
+				}
+				const auto at = [&](int p_y) {
+					return (z * ny + p_y) * p_size.x + x;
+				};
+				if (y_hi == p_top && sdf[at(ny - 1)] < 0.0f) {
+					// Ground all the way up: the search did not start in the air.
+					state[c] = 2;
+					remaining--;
+					continue;
+				}
+				for (int k = ny - 1; k > 0; k--) {
+					const float above = sdf[at(k)];
+					const float below = sdf[at(k - 1)];
+					if (above >= 0.0f && below < 0.0f) {
+						r_heights[c] = float(y_lo + k - 1) + (-below) / (above - below);
+						r_layers[c] = material[at(k - 1)];
+						state[c] = 1;
+						remaining--;
+						break;
+					}
+				}
+			}
+		}
+	}
+}
+
+bool VoxelTerrainData::find_ground(const Vector3 &p_position, float p_range, float &r_height, int &r_layer) const {
+	const float fx = p_position.x - Math::floor(p_position.x);
+	const float fz = p_position.z - Math::floor(p_position.z);
+	const int y0 = (int)Math::floor(p_position.y - p_range);
+	const int y1 = (int)Math::ceil(p_position.y + p_range);
+	const int ny = y1 - y0 + 1;
+	LocalVector<float> sdf;
+	LocalVector<uint8_t> material;
+	sdf.resize(4 * ny);
+	material.resize(4 * ny);
+	read(Vector3i((int)Math::floor(p_position.x), y0, (int)Math::floor(p_position.z)), 1, Vector3i(2, ny, 2), sdf.ptr(), material.ptr());
+	// Blended between the four columns around the point, as the mesh is.
+	const auto value = [&](int p_y) {
+		const float s00 = sdf[(0 * ny + p_y) * 2 + 0];
+		const float s10 = sdf[(0 * ny + p_y) * 2 + 1];
+		const float s01 = sdf[(1 * ny + p_y) * 2 + 0];
+		const float s11 = sdf[(1 * ny + p_y) * 2 + 1];
+		return Math::lerp(Math::lerp(s00, s10, fx), Math::lerp(s01, s11, fx), fz);
+	};
+	bool found = false;
+	float best = 0.0;
+	int best_k = 0;
+	float below = value(0);
+	for (int k = 1; k < ny; k++) {
+		const float above = value(k);
+		if (below < 0.0f && above >= 0.0f) {
+			const float h = float(y0 + k - 1) + (-below) / (above - below);
+			if (!found || Math::abs(h - p_position.y) < Math::abs(best - p_position.y)) {
+				best = h;
+				best_k = k - 1;
+				found = true;
+			}
+		}
+		below = above;
+	}
+	if (!found) {
+		return false;
+	}
+	r_height = best;
+	// The layer of whichever of the four voxels under the surface is deepest.
+	int deepest = 0;
+	for (int i = 1; i < 4; i++) {
+		if (sdf[((i >> 1) * ny + best_k) * 2 + (i & 1)] < sdf[((deepest >> 1) * ny + best_k) * 2 + (deepest & 1)]) {
+			deepest = i;
+		}
+	}
+	r_layer = material[((deepest >> 1) * ny + best_k) * 2 + (deepest & 1)];
+	return true;
 }
 
 /* -------------------------------------------------------------------------- */

@@ -206,6 +206,7 @@ void VoxelTerrain3D::set_data(const Ref<VoxelTerrainData> &p_data) {
 	lod_dirty = true;
 	layers_dirty = true;
 	update_configuration_warnings();
+	emit_signal(SNAME("terrain_changed"), Rect2());
 }
 
 void VoxelTerrain3D::set_terrain_material(const Ref<TerrainMaterial> &p_material) {
@@ -232,11 +233,16 @@ void VoxelTerrain3D::_data_changed_area(const AABB &p_voxel_box) {
 	}
 	// An edit can make ground where there was none to mesh.
 	lod_dirty = true;
+	// Foliage listens for this, in metres like everything it stores.
+	const float vs = _get_voxel_size();
+	emit_signal(SNAME("terrain_changed"), Rect2(p_voxel_box.position.x * vs, p_voxel_box.position.z * vs, p_voxel_box.size.x * vs, p_voxel_box.size.z * vs).grow(vs));
 }
 
 void VoxelTerrain3D::_data_generator_changed() {
 	_mark_all_dirty();
 	update_configuration_warnings();
+	// Everywhere may have changed.
+	emit_signal(SNAME("terrain_changed"), Rect2());
 }
 
 void VoxelTerrain3D::_data_layers_changed() {
@@ -806,6 +812,98 @@ bool VoxelTerrain3D::intersect_ray_fast(const Vector3 &p_from, const Vector3 &p_
 	return false;
 }
 
+bool VoxelTerrain3D::TopSurface::sample(const Vector2 &p_local, float &r_height, Vector3 &r_normal, int &r_layer) const {
+	const Vector2 g = (p_local - origin) / spacing;
+	const int x = (int)Math::floor(g.x);
+	const int z = (int)Math::floor(g.y);
+	if (x < 0 || z < 0 || x + 1 >= width || z + 1 >= depth) {
+		return false;
+	}
+	const float fx = g.x - x;
+	const float fz = g.y - z;
+	const int i = z * width + x;
+	const float h00 = heights[i];
+	const float h10 = heights[i + 1];
+	const float h01 = heights[i + width];
+	const float h11 = heights[i + width + 1];
+	if (Math::is_nan(h00) || Math::is_nan(h10) || Math::is_nan(h01) || Math::is_nan(h11)) {
+		return false;
+	}
+	r_height = Math::lerp(Math::lerp(h00, h10, fx), Math::lerp(h01, h11, fx), fz);
+	const float dx = Math::lerp(h10 - h00, h11 - h01, fz) / spacing;
+	const float dz = Math::lerp(h01 - h00, h11 - h10, fx) / spacing;
+	r_normal = Vector3(-dx, 1.0, -dz).normalized();
+	r_layer = layers[(fz < 0.5f ? z : z + 1) * width + (fx < 0.5f ? x : x + 1)];
+	return true;
+}
+
+void VoxelTerrain3D::get_top_surface(const Rect2 &p_local_area, TopSurface &r_surface) const {
+	r_surface.width = 0;
+	r_surface.depth = 0;
+	r_surface.heights.clear();
+	r_surface.layers.clear();
+	if (data.is_null()) {
+		return;
+	}
+	const float vs = _get_voxel_size();
+	// A column of margin all round, so every point in the area has four.
+	const Vector2i c0 = Vector2i((p_local_area.position / vs).floor()) - Vector2i(1, 1);
+	const Vector2i c1 = Vector2i((p_local_area.get_end() / vs).ceil()) + Vector2i(1, 1);
+	const Vector2i size = c1 - c0 + Vector2i(1, 1);
+	r_surface.origin = Vector2(c0) * vs;
+	r_surface.spacing = vs;
+	r_surface.width = size.x;
+	r_surface.depth = size.y;
+	r_surface.heights.resize(size.x * size.y);
+	r_surface.layers.resize(size.x * size.y);
+
+	// Search from above the highest the ground can be to below the lowest:
+	// the generator's range, widened by any edits over these columns.
+	bool any = false;
+	int top = 0;
+	int bottom = 0;
+	const Ref<VoxelGenerator> generator = data->get_generator();
+	if (generator.is_valid()) {
+		float lo;
+		float hi;
+		generator->get_surface_bounds(lo, hi);
+		top = (int)Math::ceil(hi / vs) + 2;
+		bottom = (int)Math::floor(lo / vs) - 2;
+		any = true;
+	}
+	int edit_lo;
+	int edit_hi;
+	if (data->get_edited_span(Rect2i(c0, size), edit_lo, edit_hi)) {
+		top = any ? MAX(top, edit_hi + 2) : edit_hi + 2;
+		bottom = any ? MIN(bottom, edit_lo - 2) : edit_lo - 2;
+		any = true;
+	}
+	if (!any) {
+		for (float &h : r_surface.heights) {
+			h = Math::NaN;
+		}
+		return;
+	}
+	data->find_top_surface(c0, size, top, bottom, r_surface.heights.ptr(), r_surface.layers.ptr());
+	for (float &h : r_surface.heights) {
+		h *= vs;
+	}
+}
+
+bool VoxelTerrain3D::find_ground(const Vector3 &p_local, float p_range, float &r_height, Vector3 &r_normal, int &r_layer) const {
+	if (data.is_null()) {
+		return false;
+	}
+	const float vs = _get_voxel_size();
+	float height;
+	if (!data->find_ground(p_local / vs, MAX(p_range / vs, 1.0f), height, r_layer)) {
+		return false;
+	}
+	r_height = height * vs;
+	r_normal = data->sample_normal(Vector3(p_local.x / vs, height, p_local.z / vs));
+	return true;
+}
+
 Dictionary VoxelTerrain3D::intersect_ray(const Vector3 &p_from, const Vector3 &p_direction, float p_max_distance) const {
 	Dictionary result;
 	Vector3 hit;
@@ -1183,6 +1281,7 @@ void VoxelTerrain3D::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "collision_distance", PROPERTY_HINT_RANGE, "0,1024,1,or_greater,suffix:m"), "set_collision_distance", "get_collision_distance");
 
 	ADD_SIGNAL(MethodInfo("meshing_finished"));
+	ADD_SIGNAL(MethodInfo("terrain_changed", PropertyInfo(Variant::RECT2, "area")));
 
 	BIND_ENUM_CONSTANT(DEBUG_VIEW_DISABLED);
 	BIND_ENUM_CONSTANT(DEBUG_VIEW_NORMALS);

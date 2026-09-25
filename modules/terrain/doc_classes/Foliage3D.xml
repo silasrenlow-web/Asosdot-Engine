@@ -4,15 +4,23 @@
 		Grass, trees, rocks and props growing on a [Terrain3D].
 	</brief_description>
 	<description>
-		Draws the grass and objects held in a [FoliageData] on the [Terrain3D] at [member terrain_path], normally its parent. Paint them from the Terrain dock with the terrain or the foliage selected. Use [b]Add...[/b] in the Foliage list to bring in your own meshes and scenes, choosing whether each is painted as grass or placed as objects, or drag them in from the FileSystem dock.
+		Draws the grass and objects held in a [FoliageData] on the [Terrain3D] or [VoxelTerrain3D] at [member terrain_path], normally its parent. Paint them from the Terrain dock with the terrain or the foliage selected. Use [b]Add...[/b] in the Foliage list to bring in your own meshes and scenes, choosing whether each is painted as grass or placed as objects, or drag them in from the FileSystem dock.
 		Grass is grown procedurally in square cells around the camera, within each type's [member FoliageType.visibility_range], a few cells a frame, and dropped again as the camera moves away. The painted density is all that is stored, so a field of grass costs almost nothing on disk. Blades shrink into the ground at the edge of the range instead of popping.
 		Objects are kept individually, and built into cells of [member object_cell_size] metres: a [MultiMesh] per cell with collision from [member FoliageType.collision_shape], or an instance of [member FoliageType.scene] per object. They sit at the terrain's height, so sculpting under a tree carries the tree with the ground.
+		On a [VoxelTerrain3D], where one spot can have ground on several levels, grass grows on the ground open to the sky, since its painted density has one value for each spot. An object remembers the height of the ground it was placed on and stands on whichever ground is nearest that height, so objects can go on cave floors, ledges and under arches, and still follow edits to the ground beneath them. If that ground is dug away or buried by more than a few metres, the object stays where it was.
 		While editing, grass grows around the camera of the 3D viewport last used.
 		Objects with collision are included when a [NavigationRegion3D] bakes over the terrain, so monsters walk around trees rather than through them.
 	</description>
 	<tutorials>
 	</tutorials>
 	<methods>
+		<method name="get_object_transforms" qualifiers="const">
+			<return type="Transform3D[]" />
+			<param index="0" name="type" type="int" />
+			<description>
+				Returns the global transform of every object of [param type], as drawn. Use it to put something at each tree or rock, such as fireflies, sounds or spawn points.
+			</description>
+		</method>
 		<method name="regenerate">
 			<return type="void" />
 			<description>
@@ -43,7 +51,7 @@
 			The size in metres of the square cells objects are grouped into for drawing, culling and collision.
 		</member>
 		<member name="terrain_path" type="NodePath" setter="set_terrain_path" getter="get_terrain_path" default="NodePath(&quot;..&quot;)">
-			The [Terrain3D] the foliage grows on. Foliage positions are relative to that terrain, so moving the terrain moves its foliage with it.
+			The [Terrain3D] or [VoxelTerrain3D] the foliage grows on. Foliage positions are relative to that terrain, so moving the terrain moves its foliage with it.
 		</member>
 	</members>
 </class>

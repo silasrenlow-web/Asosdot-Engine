@@ -117,6 +117,9 @@ public:
 	// The voxels covered by edited blocks, or an empty box when none are.
 	AABB get_edited_bounds() const;
 	bool has_edits_in(const AABB &p_voxel_box) const;
+	// The lowest and highest voxel edited in the columns of a rectangle (x
+	// and z). False when none of them has been edited.
+	bool get_edited_span(const Rect2i &p_columns, int &r_lo, int &r_hi) const;
 
 	// Voxels, edited or generated.
 	float get_sdf(const Vector3i &p_voxel) const;
@@ -130,6 +133,18 @@ public:
 	// p_origin, x fastest: edited voxels where there are some, the generator
 	// elsewhere. Safe to call from any thread.
 	void read(const Vector3i &p_origin, int p_step, const Vector3i &p_size, float *r_sdf, uint8_t *r_material) const;
+
+	// Where ground meets the air above it, for foliage. Both are in voxels.
+	//
+	// find_top_surface() looks down each column of a rectangle, x fastest,
+	// from p_top to p_bottom, for the highest ground open to the sky. Heights
+	// are NaN where a column has none, and r_layers gets the layer just under
+	// the surface.
+	void find_top_surface(const Vector2i &p_origin, const Vector2i &p_size, int p_top, int p_bottom, float *r_heights, uint8_t *r_layers) const;
+	// find_ground() finds the upward-facing ground in the column through
+	// p_position nearest to its height, within p_range. Floors count, cave
+	// ceilings do not.
+	bool find_ground(const Vector3 &p_position, float p_range, float &r_height, int &r_layer) const;
 
 	// One brush dab, in voxels. p_amount is how far the surface may move, in
 	// voxels, or for smoothing, flattening and painting how much of the way

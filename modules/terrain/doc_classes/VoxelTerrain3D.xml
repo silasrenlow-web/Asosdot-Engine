@@ -9,7 +9,8 @@
 		The surface is drawn in blocks of 32 voxels. Blocks near the viewer are drawn at full detail and each step further out uses blocks twice the size at half the detail, so distant ground stays cheap. Blocks are built on worker threads, and a block keeps its old mesh until its new one is ready, so neither camera moves nor edits ever leave gaps. [signal meshing_finished] says when everything in view is up to date.
 		Collision is built around the viewer, out to [member collision_distance], at full detail.
 		Layers work as they do on [Terrain3D]: each voxel is made of one [TerrainLayer], and the surface blends between neighbouring voxels. Every layer is projected from all three axes, so cave ceilings and cliffs are textured as well as the ground.
-		In the editor, select the node and use the Terrain dock to sculpt: Add, Dig, Smooth, Flatten and Paint, each with undo. A [Terrain3D] can be turned into a voxel terrain with Terrain > Convert to Voxel Terrain in the dock, which keeps its shape, layers and paint.
+		In the editor, select the node and use the Terrain dock to sculpt: Add, Dig, Smooth, Flatten and Paint, each with undo. A [Terrain3D] can be turned into a voxel terrain with Terrain &gt; Convert to Voxel Terrain in the dock, which keeps its shape, layers and paint, and moves its [Foliage3D] across.
+		A [Foliage3D] child grows grass and places objects on voxel terrain as it does on a heightmap; see there for how it chooses between ground at several heights.
 		Digging at runtime:
 		[codeblock]
 		# Blasts a crater where a grenade lands.
@@ -189,6 +190,12 @@
 		<signal name="meshing_finished">
 			<description>
 				Emitted when every block in view has been built, after the view moved or the terrain changed.
+			</description>
+		</signal>
+		<signal name="terrain_changed">
+			<param index="0" name="area" type="Rect2" />
+			<description>
+				Emitted when the ground changes, with the area on the X and Z axes, in metres relative to the terrain's origin. The area is empty when everything may have changed, as when the generator or data is replaced. [Foliage3D] uses this to regrow what stands there.
 			</description>
 		</signal>
 	</signals>

@@ -66,6 +66,9 @@ public:
 
 	// One dab of a tool, applied over p_delta seconds.
 	static void apply(Terrain3D *p_terrain, Foliage3D *p_foliage, Tool p_tool, const Vector2 &p_local, const Settings &p_settings, float p_delta, uint32_t p_seed);
+	// Grass and object painting, which work the same on heightmap and voxel
+	// terrain. p_local is the brush's centre relative to the terrain's origin.
+	static void apply_foliage(Foliage3D *p_foliage, Tool p_tool, const Vector3 &p_local, const Settings &p_settings, float p_delta, uint32_t p_seed);
 	// The ramp tool works on a whole segment at once, on release.
 	static void apply_ramp(Terrain3D *p_terrain, const Vector3 &p_from, const Vector3 &p_to, const Settings &p_settings);
 	static Rect2i get_ramp_rect(const Terrain3D *p_terrain, const Vector3 &p_from, const Vector3 &p_to, const Settings &p_settings);

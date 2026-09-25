@@ -98,6 +98,9 @@ public:
 	void generate(const Vector3i &p_origin, int p_step, const Vector3i &p_size, float p_voxel_size, float *r_sdf, uint8_t *r_material) const;
 	float get_sdf(const Vector3 &p_voxel, float p_voxel_size) const;
 
+	// The lowest and highest the surface can be, in metres, caves aside.
+	void get_surface_bounds(float &r_lo, float &r_hi) const;
+
 	// Whether the ground's surface can pass through a box of voxels. When it
 	// cannot, r_solid says whether the box is all ground or all air.
 	bool may_contain_surface(const AABB &p_voxel_box, float p_voxel_size, bool &r_solid) const;

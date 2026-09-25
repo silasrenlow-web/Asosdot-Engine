@@ -7,6 +7,7 @@
 #include "foliage_3d.h"
 
 #include "terrain_3d.h"
+#include "voxel_terrain_3d.h"
 
 #include "core/config/engine.h"
 #include "core/math/random_pcg.h"
@@ -95,7 +96,37 @@ float slope_degrees(const Vector3 &p_normal) {
 	return Math::rad_to_deg(Math::acos(CLAMP(p_normal.y, -1.0f, 1.0f)));
 }
 
+// How far from its stored height an object on voxel terrain looks for ground
+// when it is rebuilt, so it follows edits to the ground under it without
+// jumping to a cave floor or a ledge above.
+constexpr float VOXEL_GROUND_SEARCH = 8.0;
+
+void fill_voxel_sample(float p_height, const Vector3 &p_normal, int p_layer, Terrain3D::SurfaceSample &r_sample) {
+	r_sample.height = p_height;
+	r_sample.normal = p_normal;
+	for (int i = 0; i < TerrainData::MAX_LAYERS; i++) {
+		r_sample.weights[i] = i == p_layer ? 1.0f : 0.0f;
+	}
+	// Voxel terrain has no tint or wetness to pass on.
+	r_sample.color = Color(1, 1, 1, 0);
+}
+
 } // namespace
+
+struct Foliage3D::Ground {
+	const Terrain3D *terrain = nullptr;
+	const VoxelTerrain3D *voxel = nullptr;
+
+	bool is_valid() const {
+		return (terrain && terrain->get_data().is_valid()) || (voxel && voxel->get_data().is_valid());
+	}
+	Vector3 get_origin() const {
+		return terrain ? terrain->get_global_position() : voxel->get_global_position();
+	}
+	int get_layer_count() const {
+		return terrain ? terrain->get_data()->get_layer_count() : voxel->get_data()->get_layer_count();
+	}
+};
 
 /* -------------------------------------------------------------------------- */
 /*                                  Lifecycle                                 */
@@ -127,7 +158,7 @@ void Foliage3D::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_EXIT_TREE: {
-			Terrain3D *terrain = _peek_terrain();
+			Node3D *terrain = _peek_terrain();
 			if (terrain && terrain->is_connected(SNAME("terrain_changed"), callable_mp(this, &Foliage3D::_terrain_changed))) {
 				terrain->disconnect(SNAME("terrain_changed"), callable_mp(this, &Foliage3D::_terrain_changed));
 			}
@@ -159,17 +190,39 @@ void Foliage3D::_notification(int p_what) {
 	}
 }
 
-Terrain3D *Foliage3D::_peek_terrain() const {
-	return ObjectDB::get_instance<Terrain3D>(terrain_id);
+Node3D *Foliage3D::_peek_terrain() const {
+	Node3D *cached = ObjectDB::get_instance<Node3D>(terrain_id);
+	if (cached || !is_inside_tree()) {
+		return cached;
+	}
+	// Not looked up yet, as before the first frame: queries still work.
+	Node *node = get_node_or_null(terrain_path);
+	return (Object::cast_to<Terrain3D>(node) || Object::cast_to<VoxelTerrain3D>(node)) ? Object::cast_to<Node3D>(node) : nullptr;
 }
 
-Terrain3D *Foliage3D::_get_terrain() {
-	Terrain3D *found = is_inside_tree() ? Object::cast_to<Terrain3D>(get_node_or_null(terrain_path)) : nullptr;
+Terrain3D *Foliage3D::get_terrain() const {
+	return Object::cast_to<Terrain3D>(_peek_terrain());
+}
+
+VoxelTerrain3D *Foliage3D::get_voxel_terrain() const {
+	return Object::cast_to<VoxelTerrain3D>(_peek_terrain());
+}
+
+Foliage3D::Ground Foliage3D::_get_ground() const {
+	Ground ground;
+	ground.terrain = get_terrain();
+	ground.voxel = get_voxel_terrain();
+	return ground;
+}
+
+Node3D *Foliage3D::_get_terrain() {
+	Node *node = is_inside_tree() ? get_node_or_null(terrain_path) : nullptr;
+	Node3D *found = (Object::cast_to<Terrain3D>(node) || Object::cast_to<VoxelTerrain3D>(node)) ? Object::cast_to<Node3D>(node) : nullptr;
 	const ObjectID found_id = found ? found->get_instance_id() : ObjectID();
 	if (found_id == terrain_id) {
 		return found;
 	}
-	Terrain3D *previous = _peek_terrain();
+	Node3D *previous = _peek_terrain();
 	if (previous && previous->is_connected(SNAME("terrain_changed"), callable_mp(this, &Foliage3D::_terrain_changed))) {
 		previous->disconnect(SNAME("terrain_changed"), callable_mp(this, &Foliage3D::_terrain_changed));
 	}
@@ -183,7 +236,7 @@ Terrain3D *Foliage3D::_get_terrain() {
 }
 
 bool Foliage3D::_get_focus(Vector3 &r_local) const {
-	const Terrain3D *terrain = _peek_terrain();
+	const Node3D *terrain = _peek_terrain();
 	if (!terrain) {
 		return false;
 	}
@@ -367,8 +420,9 @@ void Foliage3D::_process_updates() {
 	if (!is_inside_world()) {
 		return;
 	}
-	Terrain3D *terrain = _get_terrain();
-	if (!terrain || data.is_null() || terrain->get_data().is_null()) {
+	_get_terrain();
+	const Ground ground = _get_ground();
+	if (!ground.is_valid() || data.is_null()) {
 		if (!grass_cells.is_empty() || !object_cells.is_empty()) {
 			_free_all();
 		}
@@ -390,7 +444,7 @@ void Foliage3D::_process_updates() {
 		}
 		dirty_object_types.clear();
 		for (const int t : types) {
-			_rebuild_object_type(terrain, t);
+			_rebuild_object_type(ground, t);
 		}
 	}
 	if (!dirty_objects.is_empty()) {
@@ -400,14 +454,14 @@ void Foliage3D::_process_updates() {
 		}
 		dirty_objects.clear();
 		for (const Vector3i &key : cells) {
-			_rebuild_object_cell(terrain, key);
+			_rebuild_object_cell(ground, key);
 		}
 	}
 
-	_update_grass(terrain);
+	_update_grass(ground);
 }
 
-void Foliage3D::_update_grass(Terrain3D *p_terrain) {
+void Foliage3D::_update_grass(const Ground &p_ground) {
 	Vector3 focus3;
 	if (!_get_focus(focus3)) {
 		return;
@@ -483,7 +537,7 @@ void Foliage3D::_update_grass(Terrain3D *p_terrain) {
 	const uint64_t start = OS::get_singleton()->get_ticks_usec();
 	const uint64_t budget = (uint64_t)(generation_budget_msec * 1000.0f);
 	for (uint32_t i = 0; i < work.size(); i++) {
-		_generate_grass_cell(p_terrain, work[i].second);
+		_generate_grass_cell(p_ground, work[i].second);
 		dirty_grass.erase(work[i].second);
 		if (OS::get_singleton()->get_ticks_usec() - start > budget) {
 			break;
@@ -491,7 +545,7 @@ void Foliage3D::_update_grass(Terrain3D *p_terrain) {
 	}
 }
 
-void Foliage3D::_generate_grass_cell(Terrain3D *p_terrain, const Vector3i &p_key) {
+void Foliage3D::_generate_grass_cell(const Ground &p_ground, const Vector3i &p_key) {
 	Cell *existing = grass_cells.getptr(p_key);
 	if (existing) {
 		_free_cell(*existing);
@@ -534,13 +588,20 @@ void Foliage3D::_generate_grass_cell(Terrain3D *p_terrain, const Vector3i &p_key
 	const int max_count = MIN((int)(type->get_density() * s * s), MAX_GRASS_PER_CELL);
 	const int n = MAX(1, (int)Math::ceil(Math::sqrt((float)max_count)));
 	const float step = s / n;
-	const int layer_count = p_terrain->get_data()->get_layer_count();
+	const int layer_count = p_ground.get_layer_count();
 	const float scale_min = type->get_scale_min();
 	const float scale_max = type->get_scale_max();
 	const float variation = type->get_color_variation();
 	const bool tint = type->is_terrain_tint();
 	const float offset = type->get_height_offset();
 	const FoliageType *type_ptr = type.ptr();
+
+	// Voxel ground is read once for the whole cell: the heights of the ground
+	// open to the sky, one per voxel, which the blades then sit on.
+	VoxelTerrain3D::TopSurface top;
+	if (p_ground.voxel) {
+		p_ground.voxel->get_top_surface(Rect2(origin, Vector2(s, s)), top);
+	}
 
 	LocalVector<float> buffer;
 	buffer.reserve(n * n * GRASS_FLOATS);
@@ -562,7 +623,15 @@ void Foliage3D::_generate_grass_cell(Terrain3D *p_terrain, const Vector3i &p_key
 			if (accept >= density) {
 				continue;
 			}
-			if (!p_terrain->sample_surface(local, sample)) {
+			if (p_ground.voxel) {
+				float h;
+				Vector3 normal;
+				int layer;
+				if (!top.sample(local, h, normal, layer)) {
+					continue;
+				}
+				fill_voxel_sample(h, normal, layer, sample);
+			} else if (!p_ground.terrain->sample_surface(local, sample)) {
 				continue;
 			}
 			if (!type_ptr->accepts(slope_degrees(sample.normal), sample.weights, layer_count)) {
@@ -612,7 +681,7 @@ void Foliage3D::_generate_grass_cell(Terrain3D *p_terrain, const Vector3i &p_key
 	rs->multimesh_allocate_data(cell.multimesh, count, RSE::MULTIMESH_TRANSFORM_3D, true, true);
 	rs->multimesh_set_buffer(cell.multimesh, packed);
 	cell.count = count;
-	cell.origin = p_terrain->get_global_position();
+	cell.origin = p_ground.get_origin();
 
 	cell.instance = rs->instance_create2(cell.multimesh, get_world_3d()->get_scenario());
 	rs->instance_set_transform(cell.instance, Transform3D(Basis(), cell.origin));
@@ -630,9 +699,9 @@ void Foliage3D::_generate_grass_cell(Terrain3D *p_terrain, const Vector3i &p_key
 	}
 }
 
-bool Foliage3D::compute_placement(int p_type, const Vector2 &p_local, float p_yaw, float p_scale, float p_variation, float p_height_offset, Transform3D &r_local_transform, bool p_check_rules) const {
-	const Terrain3D *terrain = _peek_terrain();
-	if (!terrain || data.is_null() || terrain->get_data().is_null()) {
+bool Foliage3D::compute_placement(int p_type, const Vector2 &p_local, float p_yaw, float p_scale, float p_variation, float p_height, Transform3D &r_local_transform, bool p_check_rules, float p_search_range) const {
+	const Ground ground = _get_ground();
+	if (!ground.is_valid() || data.is_null()) {
 		return false;
 	}
 	const Ref<FoliageType> type = data->get_type(p_type);
@@ -640,18 +709,38 @@ bool Foliage3D::compute_placement(int p_type, const Vector2 &p_local, float p_ya
 		return false;
 	}
 	Terrain3D::SurfaceSample sample;
-	if (!terrain->sample_surface(p_local, sample)) {
+	float extra = p_height;
+	if (ground.voxel) {
+		// The stored height is the ground the object stood on when it was
+		// placed. The nearest ground to it is where it stands now, so an
+		// object in a cave stays in the cave and follows edits to its floor.
+		float h;
+		Vector3 normal;
+		int layer;
+		const float range = p_search_range > 0.0f ? p_search_range : VOXEL_GROUND_SEARCH;
+		if (ground.voxel->find_ground(Vector3(p_local.x, p_height, p_local.y), range, h, normal, layer)) {
+			fill_voxel_sample(h, normal, layer, sample);
+		} else if (!p_check_rules) {
+			// The ground under a placed object was dug away or buried too
+			// deep to find. It stays where it was, where it can be seen and
+			// dealt with, rather than silently vanishing.
+			fill_voxel_sample(p_height, Vector3(0, 1, 0), -1, sample);
+		} else {
+			return false;
+		}
+		extra = 0.0;
+	} else if (!ground.terrain->sample_surface(p_local, sample)) {
 		return false;
 	}
-	if (p_check_rules && !type->accepts(slope_degrees(sample.normal), sample.weights, terrain->get_data()->get_layer_count())) {
+	if (p_check_rules && !type->accepts(slope_degrees(sample.normal), sample.weights, ground.get_layer_count())) {
 		return false;
 	}
 	const Basis basis = placement_basis(type.ptr(), sample.normal, p_yaw, p_scale, p_variation);
-	r_local_transform = Transform3D(basis, Vector3(p_local.x, sample.height + p_height_offset + type->get_height_offset(), p_local.y));
+	r_local_transform = Transform3D(basis, Vector3(p_local.x, sample.height + extra + type->get_height_offset(), p_local.y));
 	return true;
 }
 
-void Foliage3D::_rebuild_object_type(Terrain3D *p_terrain, int p_type) {
+void Foliage3D::_rebuild_object_type(const Ground &p_ground, int p_type) {
 	LocalVector<Vector3i> doomed;
 	for (const KeyValue<Vector3i, Cell> &E : object_cells) {
 		if (E.key.z == p_type) {
@@ -684,11 +773,11 @@ void Foliage3D::_rebuild_object_type(Terrain3D *p_terrain, int p_type) {
 		list->push_back(i);
 	}
 	for (const KeyValue<Vector2i, LocalVector<int>> &E : buckets) {
-		_build_object_cell(p_terrain, Vector3i(E.key.x, E.key.y, p_type), E.value);
+		_build_object_cell(p_ground, Vector3i(E.key.x, E.key.y, p_type), E.value);
 	}
 }
 
-void Foliage3D::_rebuild_object_cell(Terrain3D *p_terrain, const Vector3i &p_key) {
+void Foliage3D::_rebuild_object_cell(const Ground &p_ground, const Vector3i &p_key) {
 	Cell *existing = object_cells.getptr(p_key);
 	if (existing) {
 		_free_cell(*existing);
@@ -708,11 +797,11 @@ void Foliage3D::_rebuild_object_cell(Terrain3D *p_terrain, const Vector3i &p_key
 		}
 	}
 	if (!indices.is_empty()) {
-		_build_object_cell(p_terrain, p_key, indices);
+		_build_object_cell(p_ground, p_key, indices);
 	}
 }
 
-void Foliage3D::_build_object_cell(Terrain3D *p_terrain, const Vector3i &p_key, const LocalVector<int> &p_instances) {
+void Foliage3D::_build_object_cell(const Ground &p_ground, const Vector3i &p_key, const LocalVector<int> &p_instances) {
 	const Ref<FoliageType> type = data->get_type(p_key.z);
 	if (type.is_null() || type->get_kind() != FoliageType::KIND_OBJECT) {
 		return;
@@ -721,7 +810,7 @@ void Foliage3D::_build_object_cell(Terrain3D *p_terrain, const Vector3i &p_key, 
 	const float *src = td->instances.ptr();
 
 	Cell cell;
-	cell.origin = p_terrain->get_global_position();
+	cell.origin = p_ground.get_origin();
 	LocalVector<Transform3D> transforms;
 	for (const int i : p_instances) {
 		const float *inst = src + i * FoliageData::INSTANCE_STRIDE;
@@ -809,7 +898,7 @@ void Foliage3D::_build_object_cell(Terrain3D *p_terrain, const Vector3i &p_key, 
 }
 
 void Foliage3D::_update_transforms() {
-	const Terrain3D *terrain = _peek_terrain();
+	const Node3D *terrain = _peek_terrain();
 	if (!terrain) {
 		return;
 	}
@@ -846,7 +935,7 @@ void Foliage3D::_update_transforms() {
 
 Vector<Transform3D> Foliage3D::compute_object_transforms(int p_type) const {
 	Vector<Transform3D> result;
-	const Terrain3D *terrain = _peek_terrain();
+	const Node3D *terrain = _peek_terrain();
 	if (!terrain || data.is_null() || p_type < 0 || p_type >= data->get_type_count()) {
 		return result;
 	}
@@ -861,6 +950,14 @@ Vector<Transform3D> Foliage3D::compute_object_transforms(int p_type) const {
 			xform.origin += origin;
 			result.push_back(xform);
 		}
+	}
+	return result;
+}
+
+TypedArray<Transform3D> Foliage3D::_get_object_transforms_bind(int p_type) const {
+	TypedArray<Transform3D> result;
+	for (const Transform3D &xform : compute_object_transforms(p_type)) {
+		result.push_back(xform);
 	}
 	return result;
 }
@@ -919,8 +1016,11 @@ void Foliage3D::set_collision_mask(uint32_t p_mask) {
 
 PackedStringArray Foliage3D::get_configuration_warnings() const {
 	PackedStringArray warnings = Node3D::get_configuration_warnings();
-	if (is_inside_tree() && !Object::cast_to<Terrain3D>(get_node_or_null(terrain_path))) {
-		warnings.push_back(RTR("Foliage3D needs a Terrain3D to grow on. Make it a child of one, or point terrain_path at one."));
+	if (is_inside_tree()) {
+		const Node *node = get_node_or_null(terrain_path);
+		if (!Object::cast_to<Terrain3D>(node) && !Object::cast_to<VoxelTerrain3D>(node)) {
+			warnings.push_back(RTR("Foliage3D needs a Terrain3D or VoxelTerrain3D to grow on. Make it a child of one, or point terrain_path at one."));
+		}
 	}
 	if (data.is_null()) {
 		warnings.push_back(RTR("This foliage has no data. Add a grass or object type in the Terrain dock's foliage list, or assign a FoliageData."));
@@ -1058,8 +1158,9 @@ void Foliage3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_collision_mask", "mask"), &Foliage3D::set_collision_mask);
 	ClassDB::bind_method(D_METHOD("get_collision_mask"), &Foliage3D::get_collision_mask);
 	ClassDB::bind_method(D_METHOD("regenerate"), &Foliage3D::regenerate);
+	ClassDB::bind_method(D_METHOD("get_object_transforms", "type"), &Foliage3D::_get_object_transforms_bind);
 
-	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "terrain_path", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Terrain3D"), "set_terrain_path", "get_terrain_path");
+	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "terrain_path", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Terrain3D,VoxelTerrain3D"), "set_terrain_path", "get_terrain_path");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "data", PROPERTY_HINT_RESOURCE_TYPE, "FoliageData"), "set_data", "get_data");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "grass_cell_size", PROPERTY_HINT_RANGE, "2,256,0.1,suffix:m"), "set_grass_cell_size", "get_grass_cell_size");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "object_cell_size", PROPERTY_HINT_RANGE, "4,1024,0.1,suffix:m"), "set_object_cell_size", "get_object_cell_size");

@@ -216,6 +216,14 @@ void FoliageData::add_instance(int p_type, const Vector3 &p_local_position, floa
 }
 
 int FoliageData::remove_instances_in_radius(int p_type, const Vector2 &p_local_center, float p_radius, float p_probability, uint32_t p_seed) {
+	return _remove_instances(p_type, Vector3(p_local_center.x, 0.0, p_local_center.y), p_radius, false, p_probability, p_seed);
+}
+
+int FoliageData::remove_instances_in_sphere(int p_type, const Vector3 &p_local_center, float p_radius, float p_probability, uint32_t p_seed) {
+	return _remove_instances(p_type, p_local_center, p_radius, true, p_probability, p_seed);
+}
+
+int FoliageData::_remove_instances(int p_type, const Vector3 &p_local_center, float p_radius, bool p_use_height, float p_probability, uint32_t p_seed) {
 	ERR_FAIL_INDEX_V(p_type, type_data.size(), 0);
 	PackedFloat32Array &list = type_data.write[p_type].instances;
 	const int count = list.size() / INSTANCE_STRIDE;
@@ -232,7 +240,8 @@ int FoliageData::remove_instances_in_radius(int p_type, const Vector2 &p_local_c
 	int removed = 0;
 	for (int i = 0; i < count; i++) {
 		const float *inst = src + i * INSTANCE_STRIDE;
-		const bool inside = Vector2(inst[0], inst[1]).distance_squared_to(p_local_center) <= r2;
+		const float dy = p_use_height ? inst[2] - p_local_center.y : 0.0f;
+		const bool inside = Vector2(inst[0], inst[1]).distance_squared_to(Vector2(p_local_center.x, p_local_center.z)) + dy * dy <= r2;
 		if (inside && (p_probability >= 1.0f || rng.randf() < p_probability)) {
 			removed++;
 			continue;
@@ -246,7 +255,7 @@ int FoliageData::remove_instances_in_radius(int p_type, const Vector2 &p_local_c
 	kept.resize(written * INSTANCE_STRIDE);
 	list = kept;
 	_mark_edited();
-	emit_signal(SNAME("instances_changed"), p_type, Rect2(p_local_center - Vector2(p_radius, p_radius), Vector2(p_radius, p_radius) * 2.0));
+	emit_signal(SNAME("instances_changed"), p_type, Rect2(Vector2(p_local_center.x, p_local_center.z) - Vector2(p_radius, p_radius), Vector2(p_radius, p_radius) * 2.0));
 	return removed;
 }
 
@@ -255,6 +264,24 @@ void FoliageData::clear_instances(int p_type) {
 	type_data.write[p_type].instances.clear();
 	_mark_edited();
 	emit_signal(SNAME("instances_changed"), p_type, Rect2());
+}
+
+bool FoliageData::has_instance_near_3d(int p_type, const Vector3 &p_local, float p_distance) const {
+	ERR_FAIL_INDEX_V(p_type, type_data.size(), false);
+	const PackedFloat32Array &list = type_data[p_type].instances;
+	const float *src = list.ptr();
+	const int count = list.size() / INSTANCE_STRIDE;
+	const float d2 = p_distance * p_distance;
+	for (int i = 0; i < count; i++) {
+		const float *inst = src + i * INSTANCE_STRIDE;
+		const float dx = inst[0] - p_local.x;
+		const float dz = inst[1] - p_local.z;
+		const float dy = inst[2] - p_local.y;
+		if (dx * dx + dy * dy + dz * dz < d2) {
+			return true;
+		}
+	}
+	return false;
 }
 
 bool FoliageData::has_instance_near(int p_type, const Vector2 &p_local, float p_distance) const {

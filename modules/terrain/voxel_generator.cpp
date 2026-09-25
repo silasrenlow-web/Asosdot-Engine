@@ -217,7 +217,7 @@ float VoxelGenerator::get_sdf(const Vector3 &p_voxel, float p_voxel_size) const 
 	return CLAMP(sdf, -SDF_LIMIT, SDF_LIMIT);
 }
 
-bool VoxelGenerator::may_contain_surface(const AABB &p_voxel_box, float p_voxel_size, bool &r_solid) const {
+void VoxelGenerator::get_surface_bounds(float &r_lo, float &r_hi) const {
 	float lo = height;
 	float hi = height;
 	if (height_source.is_valid() && height_source->get_region_count() > 0) {
@@ -236,6 +236,14 @@ bool VoxelGenerator::may_contain_surface(const AABB &p_voxel_box, float p_voxel_
 		lo -= height_amplitude * 1.25f;
 		hi += height_amplitude * 1.25f;
 	}
+	r_lo = lo;
+	r_hi = hi;
+}
+
+bool VoxelGenerator::may_contain_surface(const AABB &p_voxel_box, float p_voxel_size, bool &r_solid) const {
+	float lo;
+	float hi;
+	get_surface_bounds(lo, hi);
 	// A cell's worth of margin, since the surface is placed between samples.
 	const float margin = p_voxel_size * 2.0f;
 	const float y0 = p_voxel_box.position.y * p_voxel_size;

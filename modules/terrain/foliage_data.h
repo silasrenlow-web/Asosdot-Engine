@@ -38,6 +38,7 @@ private:
 	Vector<TypeData> type_data;
 
 	void _mark_edited();
+	int _remove_instances(int p_type, const Vector3 &p_local_center, float p_radius, bool p_use_height, float p_probability, uint32_t p_seed);
 	void _type_changed(int p_index);
 	void _connect_type(int p_index);
 	void _disconnect_type(int p_index);
@@ -85,4 +86,9 @@ public:
 	int remove_instances_in_radius(int p_type, const Vector2 &p_local_center, float p_radius, float p_probability = 1.0, uint32_t p_seed = 0);
 	void clear_instances(int p_type);
 	bool has_instance_near(int p_type, const Vector2 &p_local, float p_distance) const;
+	// The same, by distance in 3D, for voxel terrain, where the height stored
+	// with an object is the ground it stands on and a cave can run under a
+	// hillside. For the editor's brushes.
+	bool has_instance_near_3d(int p_type, const Vector3 &p_local, float p_distance) const;
+	int remove_instances_in_sphere(int p_type, const Vector3 &p_local_center, float p_radius, float p_probability = 1.0, uint32_t p_seed = 0);
 };

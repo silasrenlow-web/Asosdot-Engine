@@ -204,6 +204,24 @@ public:
 	Dictionary intersect_ray(const Vector3 &p_from, const Vector3 &p_direction, float p_max_distance = 1000.0) const;
 	bool intersect_ray_fast(const Vector3 &p_from, const Vector3 &p_direction, float p_max_distance, Vector3 &r_position) const;
 
+	// The ground open to the sky over an area, on a grid one voxel apart, in
+	// metres relative to the terrain's origin. Foliage grows on this.
+	struct TopSurface {
+		Vector2 origin;
+		float spacing = 1.0;
+		int width = 0;
+		int depth = 0;
+		LocalVector<float> heights; // NaN where there is no ground.
+		LocalVector<uint8_t> layers;
+		// Blended between the four columns around a point. False where any
+		// of them has no ground.
+		bool sample(const Vector2 &p_local, float &r_height, Vector3 &r_normal, int &r_layer) const;
+	};
+	void get_top_surface(const Rect2 &p_local_area, TopSurface &r_surface) const;
+	// The upward-facing ground at p_local's x and z nearest its height, in
+	// metres relative to the terrain's origin, within p_range metres.
+	bool find_ground(const Vector3 &p_local, float p_range, float &r_height, Vector3 &r_normal, int &r_layer) const;
+
 	// Editing while the game runs, in global space.
 	// A layer of -1 keeps whatever the voxels were made of.
 	void add_sphere(const Vector3 &p_global_position, float p_radius, int p_layer = -1);

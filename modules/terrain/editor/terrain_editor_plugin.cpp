@@ -202,10 +202,16 @@ void TerrainEditor::edit(Object *p_object) {
 	Foliage3D *foliage = Object::cast_to<Foliage3D>(p_object);
 	if (foliage) {
 		foliage_id = foliage->get_instance_id();
-		terrain = Object::cast_to<Terrain3D>(foliage->get_node_or_null(foliage->get_terrain_path()));
-	} else if (terrain) {
-		for (int i = 0; i < terrain->get_child_count(); i++) {
-			foliage = Object::cast_to<Foliage3D>(terrain->get_child(i));
+		Node *ground = foliage->get_node_or_null(foliage->get_terrain_path());
+		terrain = Object::cast_to<Terrain3D>(ground);
+		voxel = Object::cast_to<VoxelTerrain3D>(ground);
+		if (voxel) {
+			voxel_id = voxel->get_instance_id();
+		}
+	} else if (terrain || voxel) {
+		Node *ground = terrain ? static_cast<Node *>(terrain) : static_cast<Node *>(voxel);
+		for (int i = 0; i < ground->get_child_count(); i++) {
+			foliage = Object::cast_to<Foliage3D>(ground->get_child(i));
 			if (foliage) {
 				foliage_id = foliage->get_instance_id();
 				break;
@@ -364,7 +370,7 @@ void TerrainEditor::_update_tool_ui() {
 		if (!tool_buttons[i]) {
 			continue;
 		}
-		const bool shown = voxel ? (i == TerrainBrush::TOOL_RAISE || i == TerrainBrush::TOOL_DIG || i == TerrainBrush::TOOL_SMOOTH || i == TerrainBrush::TOOL_FLATTEN || i == TerrainBrush::TOOL_PAINT) : i != TerrainBrush::TOOL_DIG;
+		const bool shown = voxel ? (i == TerrainBrush::TOOL_RAISE || i == TerrainBrush::TOOL_DIG || i == TerrainBrush::TOOL_SMOOTH || i == TerrainBrush::TOOL_FLATTEN || i == TerrainBrush::TOOL_PAINT || TerrainBrush::is_foliage((TerrainBrush::Tool)i)) : i != TerrainBrush::TOOL_DIG;
 		tool_buttons[i]->set_visible(shown);
 		if (voxel) {
 			tool_buttons[i]->set_disabled(!_get_voxel());
@@ -378,11 +384,6 @@ void TerrainEditor::_update_tool_ui() {
 	if (tool_buttons[TerrainBrush::TOOL_RAISE]) {
 		tool_buttons[TerrainBrush::TOOL_RAISE]->set_tooltip_text(voxel ? TTR("Add ground where the brush touches, in the selected layer. Hold Shift to take it away.") : TTR("Raise ground. Hold Shift to lower it."));
 	}
-	if (voxel && palette_tabs->get_current_tab() == 1) {
-		palette_tabs->set_current_tab(0);
-	}
-	// Foliage grows on heightmap terrain.
-	palette_tabs->set_tab_hidden(1, voxel);
 }
 
 void TerrainEditor::_update_info() {
@@ -503,6 +504,8 @@ void TerrainEditor::_update_menus() {
 	if (voxel) {
 		menu->add_item(TTR("New Voxel Terrain"), MENU_NEW);
 		menu->set_item_tooltip(-1, TTR("Start over with flat ground and no edits. Its generator, in the Inspector, can add hills, caves or a heightmap to start from."));
+		menu->add_separator();
+		menu->add_item(TTR("Add Foliage3D"), MENU_ADD_FOLIAGE);
 		menu->add_item(TTR("Rebuild"), MENU_REBUILD_COLLISION);
 		menu->set_item_tooltip(-1, TTR("Mesh every block again, and its collision."));
 		menu->add_item(TTR("Move Data to File"), MENU_MOVE_DATA);
@@ -552,9 +555,19 @@ void TerrainEditor::_menu_option(int p_option) {
 			case MENU_REBUILD_COLLISION: {
 				voxel->rebuild();
 			} break;
+			case MENU_ADD_FOLIAGE: {
+				if (_check_ground()) {
+					_ensure_foliage();
+					_refresh_foliage();
+				}
+			} break;
 			case MENU_MOVE_DATA: {
 				if (voxel->get_data().is_valid() && voxel->get_data()->is_built_in()) {
 					_ensure_external(voxel->get_data(), voxel, ".voxel.res");
+				}
+				Foliage3D *foliage = _get_foliage();
+				if (foliage && foliage->get_data().is_valid() && foliage->get_data()->is_built_in()) {
+					_ensure_external(foliage->get_data(), foliage, ".foliage.res");
 				}
 			} break;
 		}
@@ -670,6 +683,36 @@ void TerrainEditor::_convert_to_voxel() {
 	ur->add_do_method(terrain, "set_visible", false);
 	ur->add_do_method(terrain, "set_collision_enabled", false);
 	ur->add_do_reference(voxel);
+
+	// Its foliage moves across too. Grass is painted from above and needs no
+	// change; an object's stored height, an offset above the heightmap,
+	// becomes the height of the ground it stood on, which is what voxel
+	// terrain keeps.
+	for (int i = 0; i < terrain->get_child_count(); i++) {
+		Foliage3D *foliage = Object::cast_to<Foliage3D>(terrain->get_child(i));
+		if (!foliage || foliage->get_owner() != scene_root) {
+			continue;
+		}
+		ur->add_do_method(foliage, "reparent", voxel, true);
+		ur->add_undo_method(foliage, "reparent", terrain, true);
+		const Ref<FoliageData> fd = foliage->get_data();
+		for (int t = 0; fd.is_valid() && t < fd->get_type_count(); t++) {
+			const PackedFloat32Array before = fd->get_instances(t);
+			if (before.is_empty()) {
+				continue;
+			}
+			PackedFloat32Array after = before;
+			float *w = after.ptrw();
+			for (int k = 0; k + FoliageData::INSTANCE_STRIDE <= after.size(); k += FoliageData::INSTANCE_STRIDE) {
+				float h;
+				if (tdata->get_height_interpolated(Vector2(w[k], w[k + 1]) / terrain->get_vertex_spacing(), h)) {
+					w[k + 2] += h;
+				}
+			}
+			ur->add_do_method(fd.ptr(), "set_instances", t, after);
+			ur->add_undo_method(fd.ptr(), "set_instances", t, before);
+		}
+	}
 	ur->add_undo_method(parent, "remove_child", voxel);
 	ur->add_undo_method(terrain, "set_visible", terrain->is_visible());
 	ur->add_undo_method(terrain, "set_collision_enabled", terrain->is_collision_enabled());
@@ -1167,9 +1210,23 @@ void TerrainEditor::_drop_layer(const Point2 &p_point, const Variant &p_data) {
 /*                                   Foliage                                  */
 /* -------------------------------------------------------------------------- */
 
+bool TerrainEditor::_check_ground() {
+	if (_is_voxel()) {
+		if (_get_voxel() && _get_voxel_data().is_null()) {
+			_new_voxel_data();
+		}
+		return _get_voxel_data().is_valid();
+	}
+	if (!_get_terrain() || _get_data().is_null()) {
+		_show_message(TTR("Create the terrain first: Terrain > New Terrain..."));
+		return false;
+	}
+	return true;
+}
+
 Foliage3D *TerrainEditor::_ensure_foliage() {
 	Foliage3D *foliage = _get_foliage();
-	Terrain3D *terrain = _get_terrain();
+	Node3D *terrain = _get_edited_node();
 	if (foliage || !terrain) {
 		if (foliage && foliage->get_data().is_null()) {
 			Ref<FoliageData> fd;
@@ -1283,8 +1340,7 @@ void TerrainEditor::_foliage_selected(int p_index) {
 }
 
 void TerrainEditor::_add_foliage_type(const Ref<FoliageType> &p_type) {
-	if (!_get_terrain() || _get_data().is_null()) {
-		_show_message(TTR("Create the terrain first: Terrain > New Terrain..."));
+	if (!_check_ground()) {
 		return;
 	}
 	Foliage3D *foliage = _ensure_foliage();
@@ -1357,8 +1413,7 @@ Ref<FoliageType> TerrainEditor::_make_foliage_type(const Ref<Resource> &p_resour
 }
 
 void TerrainEditor::_add_foliage_pressed() {
-	if (!_get_terrain() || _get_data().is_null()) {
-		_show_message(TTR("Create the terrain first: Terrain > New Terrain..."));
+	if (!_check_ground()) {
 		return;
 	}
 	foliage_add_dialog->popup_file_dialog();
@@ -1403,7 +1458,7 @@ void TerrainEditor::_remove_foliage_type() {
 
 bool TerrainEditor::_can_drop_foliage(const Point2 &p_point, const Variant &p_data) const {
 	const Dictionary d = p_data;
-	if (String(d.get("type", "")) != "files" || _get_data().is_null()) {
+	if (String(d.get("type", "")) != "files" || !_get_edited_node()) {
 		return false;
 	}
 	const Vector<String> files = d["files"];
@@ -1492,8 +1547,13 @@ void TerrainEditor::_begin_stroke() {
 			_new_voxel_data();
 		}
 		_ensure_external(voxel->get_data(), voxel, ".voxel.res");
+		if (TerrainBrush::is_foliage(tool) && _get_foliage()) {
+			_ensure_external(_get_foliage()->get_data(), _get_foliage(), ".foliage.res");
+		}
 		stroking = true;
 		voxel_stroke_before.clear();
+		foliage_before = Dictionary();
+		foliage_before_type = -1;
 		stroke_seed = Math::rand();
 		dab_counter = 0;
 		if (tool == TerrainBrush::TOOL_FLATTEN && !flatten_fixed->is_pressed()) {
@@ -1637,25 +1697,7 @@ void TerrainEditor::_end_stroke(bool p_cancel) {
 		}
 	}
 	stroke_before.clear();
-
-	Foliage3D *foliage = _get_foliage();
-	if (foliage_before_type >= 0 && foliage && foliage->get_data().is_valid()) {
-		const Ref<FoliageData> fd = foliage->get_data();
-		const Dictionary after = fd->call(SNAME("_get_type_snapshot"), foliage_before_type);
-		if (p_cancel) {
-			fd->call(SNAME("_apply_type_snapshot"), foliage_before_type, foliage_before);
-		} else {
-			ur->create_action(vformat(TTR("Terrain: %s"), TTRGET(TerrainBrush::get_tool_name(tool))), UndoRedo::MERGE_DISABLE, foliage);
-			ur->add_do_method(fd.ptr(), "_apply_type_snapshot", foliage_before_type, after);
-			ur->add_undo_method(fd.ptr(), "_apply_type_snapshot", foliage_before_type, foliage_before);
-			ur->commit_action(false);
-#ifdef TOOLS_ENABLED
-			fd->set_edited(true);
-#endif
-		}
-	}
-	foliage_before = Dictionary();
-	foliage_before_type = -1;
+	_end_foliage_stroke(p_cancel);
 
 	// Collision was held back during the stroke; let it catch up now.
 	terrain->set_collision_update_immediate(true);
@@ -1696,6 +1738,21 @@ void TerrainEditor::_voxel_dab(const Vector3 &p_at, float p_delta) {
 	// second, faster for a bigger brush so it fills in the same time.
 	const float move = settings.strength * p_delta * MAX(radius, 2.0f) * 3.0f;
 	const float blend = MIN(settings.strength * p_delta * 10.0f, 1.0f);
+
+	if (TerrainBrush::is_foliage(tool)) {
+		Foliage3D *foliage = _get_foliage();
+		const Ref<FoliageData> fd = foliage ? foliage->get_data() : Ref<FoliageData>();
+		if (fd.is_null() || settings.foliage_type < 0 || settings.foliage_type >= fd->get_type_count()) {
+			return;
+		}
+		if (foliage_before_type < 0) {
+			foliage_before_type = settings.foliage_type;
+			foliage_before = fd->call(SNAME("_get_type_snapshot"), foliage_before_type);
+		}
+		settings.invert = invert;
+		TerrainBrush::apply_foliage(foliage, tool, p_at - voxel->get_global_position(), settings, p_delta, stroke_seed + dab_counter++ * 7919);
+		return;
+	}
 
 	VoxelTerrainData::Operation operation;
 	float amount = move;
@@ -1754,7 +1811,28 @@ void TerrainEditor::_end_voxel_stroke(bool p_cancel) {
 		}
 	}
 	voxel_stroke_before.clear();
+	_end_foliage_stroke(p_cancel);
 	_update_info();
+}
+
+void TerrainEditor::_end_foliage_stroke(bool p_cancel) {
+	Foliage3D *foliage = _get_foliage();
+	if (foliage_before_type >= 0 && foliage && foliage->get_data().is_valid()) {
+		const Ref<FoliageData> fd = foliage->get_data();
+		const Dictionary after = fd->call(SNAME("_get_type_snapshot"), foliage_before_type);
+		if (p_cancel) {
+			fd->call(SNAME("_apply_type_snapshot"), foliage_before_type, foliage_before);
+		} else {
+			EditorUndoRedoManager *ur = EditorUndoRedoManager::get_singleton();
+			ur->create_action(vformat(TTR("Terrain: %s"), TTRGET(TerrainBrush::get_tool_name(tool))), UndoRedo::MERGE_DISABLE, foliage);
+			ur->add_do_method(fd.ptr(), "_apply_type_snapshot", foliage_before_type, after);
+			ur->add_undo_method(fd.ptr(), "_apply_type_snapshot", foliage_before_type, foliage_before);
+			ur->commit_action(false);
+			fd->set_edited(true);
+		}
+	}
+	foliage_before = Dictionary();
+	foliage_before_type = -1;
 }
 
 /* -------------------------------------------------------------------------- */

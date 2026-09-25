@@ -136,6 +136,104 @@ const char *TerrainBrush::get_tool_name(Tool p_tool) {
 	return (p_tool >= 0 && p_tool < TOOL_MAX) ? names[p_tool] : "";
 }
 
+void TerrainBrush::apply_foliage(Foliage3D *p_foliage, Tool p_tool, const Vector3 &p_local, const Settings &p_settings, float p_delta, uint32_t p_seed) {
+	if (!p_foliage || p_foliage->get_data().is_null()) {
+		return;
+	}
+	const Ref<FoliageData> fd = p_foliage->get_data();
+	const int type = p_settings.foliage_type;
+	if (type < 0 || type >= fd->get_type_count()) {
+		return;
+	}
+	const Vector2 local2(p_local.x, p_local.z);
+	const float sign = p_settings.invert ? -1.0f : 1.0f;
+
+	if (p_tool == TOOL_GRASS) {
+		// Density is painted from above, the same on either kind of ground.
+		const float ts = fd->get_density_texel_size();
+		const Vector2i t0 = fd->local_to_texel(local2 - Vector2(p_settings.radius, p_settings.radius));
+		const Vector2i t1 = fd->local_to_texel(local2 + Vector2(p_settings.radius, p_settings.radius));
+		const float rate = MIN(1.0f, p_settings.strength * p_delta * 3.0f);
+		bool changed = false;
+		for (int tz = t0.y; tz <= t1.y; tz++) {
+			for (int tx = t0.x; tx <= t1.x; tx++) {
+				const Vector2 at = (Vector2(tx, tz) + Vector2(0.5, 0.5)) * ts;
+				const float f = falloff(at.distance_to(local2), p_settings.radius, p_settings.hardness);
+				if (f <= 0.0f) {
+					continue;
+				}
+				uint8_t *px = fd->density_texel(type, Vector2i(tx, tz), !p_settings.invert);
+				if (!px) {
+					continue;
+				}
+				const int v = CLAMP((int)Math::round((*px / 255.0f + sign * rate * f) * 255.0f), 0, 255);
+				changed = changed || v != *px;
+				*px = (uint8_t)v;
+			}
+		}
+		if (changed) {
+			fd->notify_density_changed(type, Rect2(local2 - Vector2(p_settings.radius, p_settings.radius), Vector2(p_settings.radius, p_settings.radius) * 2.0f).grow(ts * 2.0f));
+		}
+		return;
+	}
+
+	if (p_tool != TOOL_OBJECTS) {
+		return;
+	}
+	const Ref<FoliageType> ft = fd->get_type(type);
+	if (ft.is_null() || ft->get_kind() != FoliageType::KIND_OBJECT) {
+		return;
+	}
+	// On voxel ground an object is placed on the ground nearest the brush,
+	// which is a sphere there: a cave floor, a ledge, under an arch.
+	const bool voxel = p_foliage->is_on_voxel_terrain();
+	RandomPCG rng(p_seed);
+	if (p_settings.invert) {
+		const float probability = CLAMP(p_settings.strength * p_delta * 6.0f, 0.02f, 1.0f);
+		if (voxel) {
+			fd->remove_instances_in_sphere(type, p_local, p_settings.radius, probability, p_seed);
+		} else {
+			fd->remove_instances_in_radius(type, local2, p_settings.radius, probability, p_seed);
+		}
+		return;
+	}
+	const float spacing = ft->get_spacing();
+	const float expected = Math::PI * p_settings.radius * p_settings.radius / (spacing * spacing) * p_settings.strength * p_delta * 1.5f;
+	int wanted = (int)Math::floor(expected);
+	if (rng.randf() < expected - wanted) {
+		wanted++;
+	}
+	wanted = MIN(wanted, 64);
+	LocalVector<Vector3> placed;
+	for (int attempt = 0; attempt < wanted * 4 && (int)placed.size() < wanted; attempt++) {
+		const float angle = rng.randf() * Math::TAU;
+		const float dist = Math::sqrt(rng.randf()) * p_settings.radius;
+		const Vector2 at = local2 + Vector2(Math::cos(angle), Math::sin(angle)) * dist;
+		if (rng.randf() > falloff(dist, p_settings.radius, p_settings.hardness)) {
+			continue;
+		}
+		const float yaw = rng.randf() * Math::TAU;
+		const float scale = Math::lerp(ft->get_scale_min(), ft->get_scale_max(), rng.randf());
+		const float variation = rng.randf();
+		Transform3D xform;
+		if (!p_foliage->compute_placement(type, at, yaw, scale, variation, voxel ? p_local.y : 0.0f, xform, true, voxel ? p_settings.radius + 2.0f : 0.0f)) {
+			continue;
+		}
+		// A heightmap object stores an extra height above the ground (none
+		// from the brush); a voxel one the height of the ground it stands on.
+		const Vector3 position(at.x, voxel ? xform.origin.y - ft->get_height_offset() : 0.0f, at.y);
+		bool crowded = voxel ? fd->has_instance_near_3d(type, position, spacing) : fd->has_instance_near(type, at, spacing);
+		for (uint32_t i = 0; i < placed.size() && !crowded; i++) {
+			crowded = voxel ? placed[i].distance_to(position) < spacing : Vector2(placed[i].x, placed[i].z).distance_to(at) < spacing;
+		}
+		if (crowded) {
+			continue;
+		}
+		fd->add_instance(type, position, yaw, scale, variation);
+		placed.push_back(position);
+	}
+}
+
 Rect2i TerrainBrush::get_dab_rect(const Terrain3D *p_terrain, Tool p_tool, const Vector2 &p_local, const Settings &p_settings) {
 	const float sp = p_terrain->get_vertex_spacing();
 	const Vector2 c = p_local / sp;
@@ -481,91 +579,9 @@ void TerrainBrush::apply(Terrain3D *p_terrain, Foliage3D *p_foliage, Tool p_tool
 			data->write_colors(rect, c);
 		} break;
 
-		case TOOL_GRASS: {
-			if (!p_foliage || p_foliage->get_data().is_null()) {
-				return;
-			}
-			const Ref<FoliageData> fd = p_foliage->get_data();
-			const int type = p_settings.foliage_type;
-			if (type < 0 || type >= fd->get_type_count()) {
-				return;
-			}
-			const float ts = fd->get_density_texel_size();
-			const Vector2i t0 = fd->local_to_texel(p_local - Vector2(p_settings.radius, p_settings.radius));
-			const Vector2i t1 = fd->local_to_texel(p_local + Vector2(p_settings.radius, p_settings.radius));
-			const float rate = MIN(1.0f, p_settings.strength * p_delta * 3.0f);
-			bool changed = false;
-			for (int tz = t0.y; tz <= t1.y; tz++) {
-				for (int tx = t0.x; tx <= t1.x; tx++) {
-					const Vector2 at = (Vector2(tx, tz) + Vector2(0.5, 0.5)) * ts;
-					const float f = falloff(at.distance_to(p_local), p_settings.radius, p_settings.hardness);
-					if (f <= 0.0f) {
-						continue;
-					}
-					uint8_t *px = fd->density_texel(type, Vector2i(tx, tz), !p_settings.invert);
-					if (!px) {
-						continue;
-					}
-					const int v = CLAMP((int)Math::round((*px / 255.0f + sign * rate * f) * 255.0f), 0, 255);
-					changed = changed || v != *px;
-					*px = (uint8_t)v;
-				}
-			}
-			if (changed) {
-				fd->notify_density_changed(type, Rect2(p_local - Vector2(p_settings.radius, p_settings.radius), Vector2(p_settings.radius, p_settings.radius) * 2.0f).grow(ts * 2.0f));
-			}
-		} break;
-
+		case TOOL_GRASS:
 		case TOOL_OBJECTS: {
-			if (!p_foliage || p_foliage->get_data().is_null()) {
-				return;
-			}
-			const Ref<FoliageData> fd = p_foliage->get_data();
-			const int type = p_settings.foliage_type;
-			if (type < 0 || type >= fd->get_type_count()) {
-				return;
-			}
-			const Ref<FoliageType> ft = fd->get_type(type);
-			if (ft.is_null() || ft->get_kind() != FoliageType::KIND_OBJECT) {
-				return;
-			}
-			RandomPCG rng(p_seed);
-			if (p_settings.invert) {
-				fd->remove_instances_in_radius(type, p_local, p_settings.radius, CLAMP(p_settings.strength * p_delta * 6.0f, 0.02f, 1.0f), p_seed);
-				return;
-			}
-			const float spacing = ft->get_spacing();
-			const float expected = Math::PI * p_settings.radius * p_settings.radius / (spacing * spacing) * p_settings.strength * p_delta * 1.5f;
-			int wanted = (int)Math::floor(expected);
-			if (rng.randf() < expected - wanted) {
-				wanted++;
-			}
-			wanted = MIN(wanted, 64);
-			LocalVector<Vector2> placed;
-			for (int attempt = 0; attempt < wanted * 4 && (int)placed.size() < wanted; attempt++) {
-				const float angle = rng.randf() * Math::TAU;
-				const float dist = Math::sqrt(rng.randf()) * p_settings.radius;
-				const Vector2 at = p_local + Vector2(Math::cos(angle), Math::sin(angle)) * dist;
-				if (rng.randf() > falloff(dist, p_settings.radius, p_settings.hardness)) {
-					continue;
-				}
-				bool crowded = fd->has_instance_near(type, at, spacing);
-				for (uint32_t i = 0; i < placed.size() && !crowded; i++) {
-					crowded = placed[i].distance_to(at) < spacing;
-				}
-				if (crowded) {
-					continue;
-				}
-				const float yaw = rng.randf() * Math::TAU;
-				const float scale = Math::lerp(ft->get_scale_min(), ft->get_scale_max(), rng.randf());
-				const float variation = rng.randf();
-				Transform3D xform;
-				if (!p_foliage->compute_placement(type, at, yaw, scale, variation, 0.0, xform, true)) {
-					continue;
-				}
-				fd->add_instance(type, Vector3(at.x, 0.0, at.y), yaw, scale, variation);
-				placed.push_back(at);
-			}
+			apply_foliage(p_foliage, p_tool, Vector3(p_local.x, 0.0, p_local.y), p_settings, p_delta, p_seed);
 		} break;
 
 		case TOOL_REGIONS: {

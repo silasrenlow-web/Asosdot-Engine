@@ -25,7 +25,7 @@
 			<param index="3" name="scale" type="float" default="1.0" />
 			<param index="4" name="variation" type="float" default="0.5" />
 			<description>
-				Places an object of [param type]. [param local_position]'s X and Z are metres from the terrain's origin, and its Y is an extra height above the ground, which is added to the type's [member FoliageType.height_offset]. The object always sits on the terrain at its current height. [param yaw] is in radians. [param variation], between [code]0.0[/code] and [code]1.0[/code], picks the direction and amount of the type's [member FoliageType.random_tilt], so it stays the same each time the object is rebuilt.
+				Places an object of [param type]. [param local_position]'s X and Z are metres from the terrain's origin. On a [Terrain3D], its Y is an extra height above the ground, added to the type's [member FoliageType.height_offset], and the object always sits on the terrain at its current height. On a [VoxelTerrain3D], its Y is the height of the ground the object stands on, and it stands on whichever ground is nearest that height, which is how objects go in caves and under arches. [param yaw] is in radians. [param variation], between [code]0.0[/code] and [code]1.0[/code], picks the direction and amount of the type's [member FoliageType.random_tilt], so it stays the same each time the object is rebuilt.
 			</description>
 		</method>
 		<method name="add_type">
@@ -68,7 +68,7 @@
 			<return type="PackedFloat32Array" />
 			<param index="0" name="type" type="int" />
 			<description>
-				Returns the objects of [param type], [constant INSTANCE_STRIDE] values each: X, Z, height offset, yaw, scale and variation, as passed to [method add_instance].
+				Returns the objects of [param type], [constant INSTANCE_STRIDE] values each: X, Z, height, yaw, scale and variation, as passed to [method add_instance]. See there for what the height means on each kind of terrain.
 			</description>
 		</method>
 		<method name="get_type" qualifiers="const">

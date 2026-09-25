@@ -199,6 +199,9 @@ class TerrainEditor : public EditorDock {
 	void _inspect_selected_foliage();
 	void _foliage_preview_ready(const String &p_path, const Ref<Texture2D> &p_preview, const Ref<Texture2D> &p_small, int p_index);
 	Foliage3D *_ensure_foliage();
+	// Whether there is terrain to grow foliage on, telling the user how to
+	// make some when there is not.
+	bool _check_ground();
 
 	bool _can_drop_layer(const Point2 &p_point, const Variant &p_data) const;
 	void _drop_layer(const Point2 &p_point, const Variant &p_data);
@@ -222,6 +225,7 @@ class TerrainEditor : public EditorDock {
 	void _voxel_snapshot(const AABB &p_voxel_box);
 	void _voxel_dab(const Vector3 &p_at, float p_delta);
 	void _end_voxel_stroke(bool p_cancel);
+	void _end_foliage_stroke(bool p_cancel);
 	Color _tool_color() const;
 
 protected:
