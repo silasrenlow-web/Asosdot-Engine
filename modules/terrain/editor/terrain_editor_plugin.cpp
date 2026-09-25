@@ -2298,12 +2298,17 @@ bool TerrainEditorPlugin::handles(Object *p_object) const {
 }
 
 void TerrainEditorPlugin::edit(Object *p_object) {
-	ERR_FAIL_NULL(terrain_editor);
+	// The editor still tidies its plugins up after the dock has gone.
+	if (!terrain_editor) {
+		return;
+	}
 	terrain_editor->edit(p_object);
 }
 
 void TerrainEditorPlugin::make_visible(bool p_visible) {
-	ERR_FAIL_NULL(terrain_editor);
+	if (!terrain_editor) {
+		return;
+	}
 	if (p_visible) {
 		terrain_editor->make_visible();
 	} else {
