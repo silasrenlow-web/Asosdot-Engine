@@ -10323,8 +10323,16 @@ void Node3DEditor::_load_default_preview_settings() {
 	sun_environ_updating = false;
 }
 
+void Node3DEditor::set_preview_suspended(bool p_suspended) {
+	if (preview_suspended == p_suspended) {
+		return;
+	}
+	preview_suspended = p_suspended;
+	_update_preview_environment();
+}
+
 void Node3DEditor::_update_preview_environment() {
-	bool disable_light = directional_light_count > 0 || !sun_button->is_pressed();
+	bool disable_light = directional_light_count > 0 || !sun_button->is_pressed() || preview_suspended;
 
 	sun_button->set_disabled(directional_light_count > 0);
 
@@ -10354,7 +10362,7 @@ void Node3DEditor::_update_preview_environment() {
 	sun_angle_altitude->set_value_no_signal(-Math::rad_to_deg(sun_rotation.x));
 	sun_angle_azimuth->set_value_no_signal(180.0 - Math::rad_to_deg(sun_rotation.y));
 
-	bool disable_env = world_env_count > 0 || !environ_button->is_pressed();
+	bool disable_env = world_env_count > 0 || !environ_button->is_pressed() || preview_suspended;
 
 	environ_button->set_disabled(world_env_count > 0);
 

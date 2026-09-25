@@ -908,6 +908,9 @@ private:
 	bool preview_sun_dangling = false;
 	WorldEnvironment *preview_environment = nullptr;
 	bool preview_env_dangling = false;
+	// While another workspace lights the scene its own way, as the Render tab
+	// does, the preview sun and environment stand aside.
+	bool preview_suspended = false;
 	Ref<Environment> environment;
 	Ref<CameraAttributesPractical> camera_attributes;
 	Ref<ProceduralSkyMaterial> sky_material;
@@ -954,6 +957,9 @@ public:
 	static Node3DEditor *get_singleton() { return singleton; }
 
 	static Size2i get_camera_viewport_size(Camera3D *p_camera);
+
+	void set_preview_suspended(bool p_suspended);
+	bool is_preview_suspended() const { return preview_suspended; }
 
 	Vector3 snap_point(Vector3 p_target, Vector3 p_start = Vector3(0, 0, 0)) const;
 

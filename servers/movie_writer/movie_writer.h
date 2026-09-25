@@ -92,4 +92,10 @@ public:
 	static void set_extensions_hint();
 
 	void end();
+
+	// Writes frames rendered elsewhere, such as offscreen by the editor's
+	// Render tab, rather than the window's. The audio track is silence.
+	Error begin_frames(const Size2i &p_movie_size, uint32_t p_fps, const String &p_path);
+	Error write_frame_image(const Ref<Image> &p_image);
+	void end_frames();
 };

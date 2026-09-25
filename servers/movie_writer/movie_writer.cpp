@@ -249,6 +249,39 @@ void MovieWriter::add_frame() {
 	encoding_time_usec += encoding_end_usec - encoding_start_usec;
 }
 
+Error MovieWriter::begin_frames(const Size2i &p_movie_size, uint32_t p_fps, const String &p_path) {
+	ERR_FAIL_COND_V(p_fps == 0, ERR_INVALID_PARAMETER);
+	movie_size = p_movie_size;
+	fps = p_fps;
+	mix_rate = get_audio_mix_rate();
+	switch (get_audio_speaker_mode()) {
+		case AudioServer::SPEAKER_SURROUND_31:
+			audio_channels = 4;
+			break;
+		case AudioServer::SPEAKER_SURROUND_51:
+			audio_channels = 6;
+			break;
+		case AudioServer::SPEAKER_SURROUND_71:
+			audio_channels = 8;
+			break;
+		default:
+			audio_channels = 2;
+			break;
+	}
+	audio_mix_buffer.resize(mix_rate * audio_channels / fps);
+	return write_begin(p_movie_size, p_fps, p_path);
+}
+
+Error MovieWriter::write_frame_image(const Ref<Image> &p_image) {
+	ERR_FAIL_COND_V(p_image.is_null(), ERR_INVALID_PARAMETER);
+	memset(audio_mix_buffer.ptr(), 0, audio_mix_buffer.size() * sizeof(int32_t));
+	return write_frame(p_image, audio_mix_buffer.ptr());
+}
+
+void MovieWriter::end_frames() {
+	write_end();
+}
+
 void MovieWriter::end() {
 	uint64_t encoding_start_usec = Time::get_singleton()->get_ticks_usec();
 	write_end();
