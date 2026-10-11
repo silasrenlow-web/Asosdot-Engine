@@ -235,7 +235,14 @@ private:
 	float adjustment_saturation = 1.0;
 	bool use_1d_color_correction = true;
 	Ref<Texture> adjustment_color_correction;
+
+	// Post effects, applied to the image after tonemapping.
+	float post_vignette_intensity = 0.0;
+	float post_vignette_softness = 0.5;
+	float post_film_grain = 0.0;
+	float post_chromatic_aberration = 0.0;
 	void _update_adjustment();
+	void _update_post_effects();
 
 protected:
 	static void _bind_methods();
@@ -488,6 +495,15 @@ public:
 	float get_adjustment_saturation() const;
 	void set_adjustment_color_correction(Ref<Texture> p_color_correction);
 	Ref<Texture> get_adjustment_color_correction() const;
+
+	void set_post_vignette_intensity(float p_intensity);
+	float get_post_vignette_intensity() const;
+	void set_post_vignette_softness(float p_softness);
+	float get_post_vignette_softness() const;
+	void set_post_film_grain(float p_grain);
+	float get_post_film_grain() const;
+	void set_post_chromatic_aberration(float p_aberration);
+	float get_post_chromatic_aberration() const;
 
 	Environment();
 	~Environment();

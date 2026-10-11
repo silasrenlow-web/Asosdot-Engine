@@ -128,6 +128,12 @@ void ToneMapper::tonemapper(RID p_source_color, RID p_dst_framebuffer, const Ton
 	tonemap.push_constant.bcs[1] = p_settings.contrast;
 	tonemap.push_constant.bcs[2] = p_settings.saturation;
 
+	// The grain's seed sits above the flag bits, which take only the low byte.
+	tonemap.push_constant.flags |= (p_settings.frame_seed & 0xFFFFFFu) << 8;
+	for (int i = 0; i < 4; i++) {
+		tonemap.push_constant.post_effects[i] = p_settings.post_effects[i];
+	}
+
 	tonemap.push_constant.flags |= p_settings.use_glow ? TONEMAP_FLAG_USE_GLOW : 0;
 	tonemap.push_constant.glow_intensity = p_settings.glow_intensity;
 	tonemap.push_constant.glow_map_strength = p_settings.glow_map_strength;

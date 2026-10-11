@@ -727,6 +727,14 @@ RSE::EnvironmentSDFGIYScale RendererSceneRender::environment_get_sdfgi_y_scale(R
 
 // Adjustments
 
+void RendererSceneRender::environment_set_post_effects(RID p_env, float p_vignette_intensity, float p_vignette_softness, float p_film_grain, float p_chromatic_aberration) {
+	environment_storage.environment_set_post_effects(p_env, p_vignette_intensity, p_vignette_softness, p_film_grain, p_chromatic_aberration);
+}
+
+Vector4 RendererSceneRender::environment_get_post_effects(RID p_env) const {
+	return environment_storage.environment_get_post_effects(p_env);
+}
+
 void RendererSceneRender::environment_set_adjustment(RID p_env, bool p_enable, float p_brightness, float p_contrast, float p_saturation, bool p_use_1d_color_correction, RID p_color_correction) {
 	environment_storage.environment_set_adjustment(p_env, p_enable, p_brightness, p_contrast, p_saturation, p_use_1d_color_correction, p_color_correction);
 }

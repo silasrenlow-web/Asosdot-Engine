@@ -200,6 +200,18 @@
 			The strength that is used when blurring across the screen to generate the glow effect. This affects the distance and intensity of the blur. When using the Mobile rendering method, this should be increased to compensate for the lower dynamic range.
 			[b]Note:[/b] [member glow_strength] has no effect when using the Compatibility rendering method, due to this rendering method using a simpler glow implementation optimized for low-end devices.
 		</member>
+		<member name="post_chromatic_aberration" type="float" setter="set_post_chromatic_aberration" getter="get_post_chromatic_aberration" default="0.0">
+			Splits the red and blue channels apart toward the edges of the image, as lens fringing does. Applied after tonemapping. Only the Forward+ renderer applies the [code]post_*[/code] properties.
+		</member>
+		<member name="post_film_grain" type="float" setter="set_post_film_grain" getter="get_post_film_grain" default="0.0">
+			Adds animated film grain to the rendered image after tonemapping. The grain changes every frame. Only the Forward+ renderer applies the [code]post_*[/code] properties.
+		</member>
+		<member name="post_vignette_intensity" type="float" setter="set_post_vignette_intensity" getter="get_post_vignette_intensity" default="0.0">
+			Darkens the edges of the rendered image toward the corners, after tonemapping. [code]0.0[/code] turns the vignette off. Only the Forward+ renderer applies the [code]post_*[/code] properties.
+		</member>
+		<member name="post_vignette_softness" type="float" setter="set_post_vignette_softness" getter="get_post_vignette_softness" default="0.5">
+			How far the [member post_vignette_intensity] falloff reaches in from the corners. [code]0.0[/code] darkens only the corners, and [code]1.0[/code] darkens from the centre outward. Only the Forward+ renderer applies the [code]post_*[/code] properties.
+		</member>
 		<member name="reflected_light_source" type="int" setter="set_reflection_source" getter="get_reflection_source" enum="Environment.ReflectionSource" default="0">
 			The reflected (specular) light source.
 		</member>

@@ -669,6 +669,9 @@ public:
 	virtual void environment_set_tonemap_agx_contrast(RID p_env, float p_agx_contrast) = 0;
 	virtual void environment_set_adjustment(RID p_env, bool p_enable, float p_brightness, float p_contrast, float p_saturation, bool p_use_1d_color_correction, RID p_color_correction) = 0;
 
+	// Vignette, film grain and chromatic aberration, applied to the image after tonemapping.
+	virtual void environment_set_post_effects(RID p_env, float p_vignette_intensity, float p_vignette_softness, float p_film_grain, float p_chromatic_aberration) = 0;
+
 	virtual void environment_set_ssr(RID p_env, bool p_enable, int p_max_steps, float p_fade_in, float p_fade_out, float p_depth_tolerance) = 0;
 
 	virtual void environment_set_ssr_half_size(bool p_half_size) = 0;

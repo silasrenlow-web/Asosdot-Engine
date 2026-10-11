@@ -1387,6 +1387,10 @@ public:
 	PASS1RC(float, environment_get_adjustments_contrast, RID)
 	PASS1RC(float, environment_get_adjustments_saturation, RID)
 	PASS1RC(bool, environment_get_use_1d_color_correction, RID)
+
+	// Post effects
+	PASS5(environment_set_post_effects, RID, float, float, float, float)
+	PASS1RC(Vector4, environment_get_post_effects, RID)
 	PASS1RC(RID, environment_get_color_correction, RID)
 
 	PASS3R(Ref<Image>, environment_bake_panorama, RID, bool, const Size2i &)

@@ -84,10 +84,28 @@ layout(push_constant, std430) uniform Params {
 	float luminance_multiplier;
 
 	vec4 tonemapper_params;
+
+	// x vignette intensity, y vignette softness, z film grain, w chromatic aberration.
+	vec4 post_effects;
 }
 params;
 
 layout(location = 0) out vec4 frag_color;
+
+vec4 sample_source(vec2 uv) {
+#ifdef USE_MULTIVIEW
+	return textureLod(source_color, vec3(uv, ViewIndex), 0.0f);
+#else
+	return textureLod(source_color, uv, 0.0f);
+#endif
+}
+
+// A hash of a pixel and seed, in [0, 1), for film grain.
+float hash_12(vec2 p) {
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
+}
 
 // Based on Reinhard's extended formula, see equation 4 in https://doi.org/cjbgrt
 vec3 tonemap_reinhard(vec3 color) {
@@ -857,6 +875,13 @@ void main() {
 #else
 	vec4 color = textureLod(source_color, uv_interp, 0.0f);
 #endif
+	if (params.post_effects.w > 0.0) {
+		// Red and blue spread apart toward the edges, as lens fringing does.
+		vec2 shift = (uv_interp - 0.5) * params.post_effects.w * 0.02;
+		color.r = sample_source(uv_interp + shift).r;
+		color.b = sample_source(uv_interp - shift).b;
+	}
+
 	color.rgb *= params.luminance_multiplier;
 
 	// Exposure
@@ -941,6 +966,20 @@ void main() {
 		}
 	} else if (bool(params.flags & FLAG_CONVERT_TO_SRGB)) {
 		color.rgb = linear_to_srgb(color.rgb);
+	}
+
+	// Vignette: the edges darken toward the corners. Softness sets how far the falloff reaches in.
+	if (params.post_effects.x > 0.0) {
+		vec2 centred = uv_interp * 2.0 - 1.0;
+		float radius = length(centred) * 0.70710678; // 0 at the centre, 1 in the corners.
+		float falloff = smoothstep(1.0 - max(params.post_effects.y, 0.001), 1.0, radius);
+		color.rgb *= 1.0 - falloff * params.post_effects.x;
+	}
+
+	// Film grain. The seed changes every frame, so the grain moves.
+	if (params.post_effects.z > 0.0) {
+		float seed = float(params.flags >> 8);
+		color.rgb += (hash_12(gl_FragCoord.xy + seed * vec2(17.31, 37.11)) - 0.5) * params.post_effects.z * 0.1;
 	}
 
 	// Debanding should be done at the end of tonemapping, but before writing to the LDR buffer.

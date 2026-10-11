@@ -1407,6 +1407,17 @@
 				Configures glow for the specified environment RID. See [code]glow_*[/code] properties in [Environment] for more information.
 			</description>
 		</method>
+		<method name="environment_set_post_effects">
+			<return type="void" />
+			<param index="0" name="env" type="RID" />
+			<param index="1" name="vignette_intensity" type="float" />
+			<param index="2" name="vignette_softness" type="float" />
+			<param index="3" name="film_grain" type="float" />
+			<param index="4" name="chromatic_aberration" type="float" />
+			<description>
+				Sets the values used by the "post effects" (vignette, film grain and chromatic aberration) applied to the image after tonemapping. See [Environment] for more details.
+			</description>
+		</method>
 		<method name="environment_set_sdfgi">
 			<return type="void" />
 			<param index="0" name="env" type="RID" />

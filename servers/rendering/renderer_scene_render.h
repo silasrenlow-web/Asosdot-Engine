@@ -295,6 +295,9 @@ public:
 	float environment_get_adjustments_brightness(RID p_env) const;
 	float environment_get_adjustments_contrast(RID p_env) const;
 	float environment_get_adjustments_saturation(RID p_env) const;
+
+	void environment_set_post_effects(RID p_env, float p_vignette_intensity, float p_vignette_softness, float p_film_grain, float p_chromatic_aberration);
+	Vector4 environment_get_post_effects(RID p_env) const;
 	bool environment_get_use_1d_color_correction(RID p_env) const;
 	RID environment_get_color_correction(RID p_env) const;
 

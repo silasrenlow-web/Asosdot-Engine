@@ -875,6 +875,7 @@ public:
 	FUNC2(environment_set_tonemap_agx_contrast, RID, float)
 
 	FUNC7(environment_set_adjustment, RID, bool, float, float, float, bool, RID)
+	FUNC5(environment_set_post_effects, RID, float, float, float, float)
 
 	FUNC11(environment_set_fog, RID, bool, const Color &, float, float, float, float, float, float, float, RSE::EnvironmentFogMode)
 

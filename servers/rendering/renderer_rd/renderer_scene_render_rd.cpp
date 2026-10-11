@@ -30,6 +30,7 @@
 
 #include "renderer_scene_render_rd.h"
 
+#include "core/config/engine.h"
 #include "core/config/project_settings.h"
 #include "core/io/image.h"
 #include "servers/rendering/renderer_rd/environment/fog.h"
@@ -1022,6 +1023,8 @@ void RendererSceneRenderRD::_render_buffers_post_process_and_tonemap(const Rende
 
 		tonemap.luminance_multiplier = rb->get_luminance_multiplier();
 		tonemap.view_count = rb->get_view_count();
+		tonemap.frame_seed = uint32_t(Engine::get_singleton()->get_frames_drawn());
+		tonemap.post_effects = can_use_effects && p_render_data->environment.is_valid() ? environment_get_post_effects(p_render_data->environment) : Vector4();
 
 		RID dest_fb;
 		RD::DataFormat dest_fb_format;

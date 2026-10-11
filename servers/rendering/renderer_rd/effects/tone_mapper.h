@@ -122,6 +122,8 @@ private:
 		float luminance_multiplier; //  4 - 96
 
 		float tonemapper_params[4]; //  16 - 112
+
+		float post_effects[4]; //  16 - 128
 	};
 
 	struct TonemapPushConstantMobile {
@@ -189,6 +191,11 @@ public:
 		float brightness = 1.0;
 		float contrast = 1.0;
 		float saturation = 1.0;
+
+		// Vignette, film grain and chromatic aberration, after tonemapping. The seed
+		// changes every frame, so the grain moves.
+		Vector4 post_effects;
+		uint32_t frame_seed = 0;
 
 		bool use_color_correction = false;
 		bool use_1d_color_correction = false;

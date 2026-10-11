@@ -927,6 +927,21 @@ RSE::EnvironmentSDFGIYScale RendererEnvironmentStorage::environment_get_sdfgi_y_
 	return env->sdfgi_y_scale;
 }
 
+// Post effects
+
+void RendererEnvironmentStorage::environment_set_post_effects(RID p_env, float p_vignette_intensity, float p_vignette_softness, float p_film_grain, float p_chromatic_aberration) {
+	Environment *env = environment_owner.get_or_null(p_env);
+	ERR_FAIL_NULL(env);
+
+	env->post_effects = Vector4(CLAMP(p_vignette_intensity, 0.0f, 1.0f), CLAMP(p_vignette_softness, 0.0f, 1.0f), CLAMP(p_film_grain, 0.0f, 1.0f), CLAMP(p_chromatic_aberration, 0.0f, 1.0f));
+}
+
+Vector4 RendererEnvironmentStorage::environment_get_post_effects(RID p_env) const {
+	Environment *env = environment_owner.get_or_null(p_env);
+	ERR_FAIL_NULL_V(env, Vector4());
+	return env->post_effects;
+}
+
 // Adjustments
 
 void RendererEnvironmentStorage::environment_set_adjustment(RID p_env, bool p_enable, float p_brightness, float p_contrast, float p_saturation, bool p_use_1d_color_correction, RID p_color_correction) {
