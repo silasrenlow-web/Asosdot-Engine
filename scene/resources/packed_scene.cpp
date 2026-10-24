@@ -312,6 +312,11 @@ Node *SceneState::instantiate(GenEditState p_edit_state) const {
 					WARN_PRINT(String("Node '" + String(ret_nodes[0]->get_path_to(parent)) + "/" + String(snames[n.name]) + "' was modified from inside an instance, but it has vanished.").ascii().get_data());
 				}
 #endif
+				if (node && p_edit_state != GEN_EDIT_STATE_INSTANCE && node->get_owner() && node->get_owner() != ret_nodes[0]) {
+					// This scene changes this node of an instance. If the instance's scene stops exposing
+					// it, the node stays editable, so saving or packing the scene keeps the changes.
+					node->set_instance_changes_kept(true);
+				}
 			}
 		} else {
 			// Node belongs to this scene and must be created.
@@ -796,7 +801,17 @@ Error SceneState::_parse_node(Node *p_owner, Node *p_node, int p_parent_idx, Has
 	// document it. if you fail to understand something, please ask!
 
 	//discard nodes that do not belong to be processed
-	if (p_node != p_owner && p_node->get_owner() != p_owner && !p_owner->is_editable_instance(p_node->get_owner())) {
+	if (p_node != p_owner && !p_owner->is_node_editable(p_node)) {
+		if (p_node->get_owner() != p_owner) {
+			// A part of an instance this scene can't edit. The instance's scene may expose a node
+			// further down, so look through it.
+			for (int i = 0; i < p_node->get_child_count(); i++) {
+				Error err = _parse_node(p_owner, p_node->get_child(i), NO_PARENT_SAVED, name_map, variant_map, node_map, nodepath_map, ids_saved);
+				if (err) {
+					return err;
+				}
+			}
+		}
 		return OK;
 	}
 
@@ -810,6 +825,9 @@ Error SceneState::_parse_node(Node *p_owner, Node *p_node, int p_parent_idx, Has
 		is_editable_instance = true;
 	} else if (p_node->get_owner() && p_owner->is_ancestor_of(p_node->get_owner()) && p_owner->is_editable_instance(p_node->get_owner())) {
 		// Node is part of an editable instance.
+		is_editable_instance = true;
+	} else if (p_node->get_owner() && p_node->get_owner() != p_owner) {
+		// Node is part of an instance whose scene exposes it.
 		is_editable_instance = true;
 	}
 
@@ -1138,8 +1156,15 @@ Error SceneState::_parse_node(Node *p_owner, Node *p_node, int p_parent_idx, Has
 }
 
 Error SceneState::_parse_connections(Node *p_owner, Node *p_node, HashMap<StringName, int> &name_map, HashMap<Variant, int> &variant_map, HashMap<Node *, int> &node_map, HashMap<Node *, int> &nodepath_map) {
-	// Ignore nodes that are within a scene instance.
-	if (p_node != p_owner && p_node->get_owner() && p_node->get_owner() != p_owner && !p_owner->is_editable_instance(p_node->get_owner())) {
+	// Ignore nodes that are within a scene instance, unless this scene can edit them. Nodes the
+	// instance's scene exposes may be further down, so look through the others.
+	if (p_node != p_owner && p_node->get_owner() && p_node->get_owner() != p_owner && !p_owner->is_node_editable(p_node)) {
+		for (int i = 0; i < p_node->get_child_count(); i++) {
+			Error err = _parse_connections(p_owner, p_node->get_child(i), name_map, variant_map, node_map, nodepath_map);
+			if (err) {
+				return err;
+			}
+		}
 		return OK;
 	}
 

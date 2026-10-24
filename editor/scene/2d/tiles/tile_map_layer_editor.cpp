@@ -3649,7 +3649,11 @@ void TileMapLayerEditor::_find_tile_map_layers_in_scene(Node *p_current, const N
 		if (!p_current->get_owner()) {
 			return;
 		}
-		if (p_current->get_owner() != p_owner && !p_owner->is_editable_instance(p_current->get_owner())) {
+		if (!p_owner->is_node_editable(p_current)) {
+			// Layers the instance's scene exposes may be further down.
+			for (int i = 0; i < p_current->get_child_count(); i++) {
+				_find_tile_map_layers_in_scene(p_current->get_child(i), p_owner, r_list);
+			}
 			return;
 		}
 	}

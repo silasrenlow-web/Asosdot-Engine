@@ -94,6 +94,7 @@ private:
 
 	void _set_playing(bool p_enable);
 	bool _is_active() const;
+	void _stop_stream();
 	StringName _get_actual_bus();
 #ifndef PHYSICS_3D_DISABLED
 	Area3D *_get_overriding_area();
@@ -214,6 +215,13 @@ public:
 
 	AudioServer::PlaybackType get_playback_type() const;
 	void set_playback_type(AudioServer::PlaybackType p_playback_type);
+
+	int64_t play_layered(const Ref<AudioStream> &p_stream, float p_from_pos = 0.0, float p_volume_db = 0.0, float p_pitch_scale = 1.0);
+	void stop_layered(int64_t p_id);
+	bool is_layered_playing(int64_t p_id) const;
+	void set_layered_volume_db(int64_t p_id, float p_volume_db);
+	void set_layered_pitch_scale(int64_t p_id, float p_pitch_scale);
+	int get_layered_count() const;
 
 	AudioStreamPlayer3D();
 	~AudioStreamPlayer3D();

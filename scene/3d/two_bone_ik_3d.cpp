@@ -56,6 +56,10 @@ bool TwoBoneIK3D::_set(const StringName &p_path, const Variant &p_value) {
 			set_pole_direction(which, static_cast<SecondaryDirection>((int)p_value));
 		} else if (what == "pole_direction_vector") {
 			set_pole_direction_vector(which, p_value);
+		} else if (what == "root_pole_direction") {
+			set_root_pole_direction(which, static_cast<SecondaryDirection>((int)p_value));
+		} else if (what == "root_pole_direction_vector") {
+			set_root_pole_direction_vector(which, p_value);
 		} else if (what == "end_bone_name") {
 			set_end_bone_name(which, p_value);
 		} else if (what == "end_bone") {
@@ -104,6 +108,10 @@ bool TwoBoneIK3D::_get(const StringName &p_path, Variant &r_ret) const {
 			r_ret = (int)get_pole_direction(which);
 		} else if (what == "pole_direction_vector") {
 			r_ret = get_pole_direction_vector(which);
+		} else if (what == "root_pole_direction") {
+			r_ret = (int)get_root_pole_direction(which);
+		} else if (what == "root_pole_direction_vector") {
+			r_ret = get_root_pole_direction_vector(which);
 		} else if (what == "end_bone_name") {
 			r_ret = get_end_bone_name(which);
 		} else if (what == "end_bone") {
@@ -147,6 +155,8 @@ void TwoBoneIK3D::_get_property_list(List<PropertyInfo> *p_list) const {
 		props.push_back(PropertyInfo(Variant::INT, path + "middle_bone", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NO_EDITOR));
 		props.push_back(PropertyInfo(Variant::INT, path + "pole_direction", PROPERTY_HINT_ENUM, SkeletonModifier3D::get_hint_secondary_direction()));
 		props.push_back(PropertyInfo(Variant::VECTOR3, path + "pole_direction_vector"));
+		props.push_back(PropertyInfo(Variant::INT, path + "root_pole_direction", PROPERTY_HINT_ENUM, SkeletonModifier3D::get_hint_secondary_direction()));
+		props.push_back(PropertyInfo(Variant::VECTOR3, path + "root_pole_direction_vector"));
 		props.push_back(PropertyInfo(Variant::STRING, path + "end_bone_name", PROPERTY_HINT_ENUM_SUGGESTION, enum_hint));
 		props.push_back(PropertyInfo(Variant::INT, path + "end_bone", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NO_EDITOR));
 		props.push_back(PropertyInfo(Variant::BOOL, path + "use_virtual_end"));
@@ -186,6 +196,9 @@ void TwoBoneIK3D::_validate_dynamic_prop(PropertyInfo &p_property) const {
 		}
 
 		if (split[2] == "pole_direction_vector" && get_pole_direction(which) != SECONDARY_DIRECTION_CUSTOM) {
+			p_property.usage = PROPERTY_USAGE_NONE;
+		}
+		if (split[2] == "root_pole_direction_vector" && get_root_pole_direction(which) != SECONDARY_DIRECTION_CUSTOM) {
 			p_property.usage = PROPERTY_USAGE_NONE;
 		}
 	}
@@ -470,6 +483,30 @@ Vector3 TwoBoneIK3D::get_pole_direction_vector(int p_index) const {
 	return tb_settings[p_index]->get_pole_direction_vector();
 }
 
+void TwoBoneIK3D::set_root_pole_direction(int p_index, SecondaryDirection p_direction) {
+	ERR_FAIL_INDEX(p_index, (int)settings.size());
+	tb_settings[p_index]->root_pole_direction = p_direction;
+	notify_property_list_changed();
+}
+
+SkeletonModifier3D::SecondaryDirection TwoBoneIK3D::get_root_pole_direction(int p_index) const {
+	ERR_FAIL_INDEX_V(p_index, (int)settings.size(), SECONDARY_DIRECTION_NONE);
+	return tb_settings[p_index]->root_pole_direction;
+}
+
+void TwoBoneIK3D::set_root_pole_direction_vector(int p_index, const Vector3 &p_vector) {
+	ERR_FAIL_INDEX(p_index, (int)settings.size());
+	if (tb_settings[p_index]->root_pole_direction != SECONDARY_DIRECTION_CUSTOM) {
+		return;
+	}
+	tb_settings[p_index]->root_pole_direction_vector = p_vector;
+}
+
+Vector3 TwoBoneIK3D::get_root_pole_direction_vector(int p_index) const {
+	ERR_FAIL_INDEX_V(p_index, (int)settings.size(), Vector3());
+	return tb_settings[p_index]->get_root_pole_direction_vector();
+}
+
 bool TwoBoneIK3D::is_valid(int p_index) const {
 	ERR_FAIL_INDEX_V(p_index, (int)settings.size(), false);
 	return tb_settings[p_index]->root_bone.bone != -1 && tb_settings[p_index]->middle_bone.bone != -1 && tb_settings[p_index]->is_end_valid();
@@ -496,6 +533,10 @@ void TwoBoneIK3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_pole_direction", "index"), &TwoBoneIK3D::get_pole_direction);
 	ClassDB::bind_method(D_METHOD("set_pole_direction_vector", "index", "vector"), &TwoBoneIK3D::set_pole_direction_vector);
 	ClassDB::bind_method(D_METHOD("get_pole_direction_vector", "index"), &TwoBoneIK3D::get_pole_direction_vector);
+	ClassDB::bind_method(D_METHOD("set_root_pole_direction", "index", "direction"), &TwoBoneIK3D::set_root_pole_direction);
+	ClassDB::bind_method(D_METHOD("get_root_pole_direction", "index"), &TwoBoneIK3D::get_root_pole_direction);
+	ClassDB::bind_method(D_METHOD("set_root_pole_direction_vector", "index", "vector"), &TwoBoneIK3D::set_root_pole_direction_vector);
+	ClassDB::bind_method(D_METHOD("get_root_pole_direction_vector", "index"), &TwoBoneIK3D::get_root_pole_direction_vector);
 
 	ClassDB::bind_method(D_METHOD("set_end_bone_name", "index", "bone_name"), &TwoBoneIK3D::set_end_bone_name);
 	ClassDB::bind_method(D_METHOD("get_end_bone_name", "index"), &TwoBoneIK3D::get_end_bone_name);

@@ -701,8 +701,18 @@ void CanvasItemEditor::_get_canvas_items_at_pos(const Point2 &p_pos, Vector<Sele
 		Node *node = r_items[i].item;
 
 		// Make sure the selected node is in the current scene, or editable
+		if (node) {
+			r_items.write[i].hit = node->get_instance_id();
+		}
 		if (node && node != get_tree()->get_edited_scene_root()) {
-			node = scene->get_deepest_editable_node(node);
+			Node *hit = node;
+			node = scene->get_deepest_editable_node(hit);
+			// A selected node an instance exposes stays the target of clicks on it, so it can be dragged.
+			const List<Node *> &selection = editor_selection->get_top_selected_node_list();
+			Node *selected = selection.size() == 1 ? selection.front()->get() : nullptr;
+			if (selected && selected->is_ancestor_of(hit) && node->is_ancestor_of(selected) && scene->is_node_editable(selected)) {
+				node = selected;
+			}
 		}
 
 		CanvasItem *ci = Object::cast_to<CanvasItem>(node);
@@ -727,7 +737,7 @@ void CanvasItemEditor::_get_canvas_items_at_pos(const Point2 &p_pos, Vector<Sele
 		}
 
 		//Remove the item if invalid
-		if (!ci || duplicate || (ci != scene && ci->get_owner() != scene && !scene->is_editable_instance(ci->get_owner())) || (!p_allow_locked && _is_node_locked(ci))) {
+		if (!ci || duplicate || (ci != scene && !scene->is_node_editable(ci)) || (!p_allow_locked && _is_node_locked(ci))) {
 			r_items.remove_at(i);
 			i--;
 		} else {
@@ -2571,6 +2581,13 @@ bool CanvasItemEditor::_gui_input_select(const Ref<InputEvent> &p_event) {
 					return true;
 				}
 			} else {
+				// A click on the selected instance that ends without dragging picks the node its scene exposes there.
+				click_hit = ObjectID();
+				click_selected = ObjectID();
+				if (b->is_pressed() && !b->is_shift_pressed() && editor_selection->get_top_selected_node_list().size() == 1 && editor_selection->is_selected(ci)) {
+					click_hit = selection[0].hit;
+					click_selected = ci->get_instance_id();
+				}
 				bool still_selected = _select_click_on_item(ci, click, b->is_shift_pressed());
 				// Start dragging.
 				if (still_selected && (tool == TOOL_SELECT || tool == TOOL_MOVE) && b->is_pressed()) {
@@ -2589,6 +2606,22 @@ bool CanvasItemEditor::_gui_input_select(const Ref<InputEvent> &p_event) {
 	if (drag_type == DRAG_QUEUED) {
 		if (b.is_valid() && !b->is_pressed()) {
 			_reset_drag();
+			// The click didn't drag: on the selected instance, it goes on to a node its scene exposes there,
+			// then the next one down, then the instance again.
+			Node *hit = ObjectDB::get_instance<Node>(click_hit);
+			Node *clicked_selected = ObjectDB::get_instance<Node>(click_selected);
+			click_hit = ObjectID();
+			click_selected = ObjectID();
+			Node *scene = EditorNode::get_singleton()->get_edited_scene();
+			if (scene && hit && clicked_selected && clicked_selected->is_ancestor_of(hit) && editor_selection->is_selected(clicked_selected)) {
+				CanvasItem *next = Object::cast_to<CanvasItem>(scene->get_editable_node_for_click(hit, clicked_selected));
+				if (next && next != clicked_selected && !_is_node_locked(next)) {
+					editor_selection->clear();
+					editor_selection->add_node(next);
+					selected_from_canvas = true;
+					viewport->queue_redraw();
+				}
+			}
 			return true;
 		}
 		if (m.is_valid()) {
@@ -4090,7 +4123,7 @@ void CanvasItemEditor::_draw_invisible_nodes_positions(Node *p_node, const Trans
 	ERR_FAIL_NULL(p_node);
 
 	Node *scene = EditorNode::get_singleton()->get_edited_scene();
-	if (p_node != scene && p_node->get_owner() != scene && !scene->is_editable_instance(p_node->get_owner())) {
+	if (p_node != scene && !scene->is_node_editable(p_node)) {
 		return;
 	}
 	CanvasItem *ci = Object::cast_to<CanvasItem>(p_node);
@@ -4233,7 +4266,7 @@ void CanvasItemEditor::_draw_locks_and_groups(Node *p_node, const Transform2D &p
 	ERR_FAIL_NULL(p_node);
 
 	Node *scene = EditorNode::get_singleton()->get_edited_scene();
-	if (p_node != scene && p_node->get_owner() != scene && !scene->is_editable_instance(p_node->get_owner())) {
+	if (p_node != scene && !scene->is_node_editable(p_node)) {
 		return;
 	}
 	CanvasItem *ci = Object::cast_to<CanvasItem>(p_node);

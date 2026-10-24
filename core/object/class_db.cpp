@@ -67,6 +67,10 @@ ClassDB::APIType ClassDB::get_current_api() {
 HashMap<StringName, ClassDB::ClassInfo> ClassDB::classes;
 HashMap<StringName, StringName> ClassDB::resource_base_extensions;
 HashMap<StringName, StringName> ClassDB::compat_classes;
+HashMap<StringName, StringName> ClassDB::asosdot_class_groups;
+HashMap<StringName, Vector<StringName>> ClassDB::asosdot_group_classes;
+HashSet<StringName> ClassDB::asosdot_yielded_groups;
+bool ClassDB::asosdot_yielding_open = true;
 
 #ifdef TOOLS_ENABLED
 HashMap<StringName, ObjectGDExtension> ClassDB::placeholder_extensions;
@@ -2305,6 +2309,65 @@ void ClassDB::unregister_extension_class(const StringName &p_class, bool p_free_
 #ifdef TOOLS_ENABLED
 	placeholder_extensions.erase(p_class);
 #endif
+}
+
+void ClassDB::add_asosdot_class_group(const StringName &p_group, const Vector<StringName> &p_classes) {
+	for (const StringName &class_name : p_classes) {
+		asosdot_class_groups[class_name] = p_group;
+	}
+	asosdot_group_classes[p_group].append_array(p_classes);
+}
+
+StringName ClassDB::get_asosdot_class_group(const StringName &p_class) {
+	const StringName *group = asosdot_class_groups.getptr(p_class);
+	return group ? *group : StringName();
+}
+
+bool ClassDB::yield_asosdot_class_group(const StringName &p_group, const String &p_claimed_by) {
+	if (asosdot_yielded_groups.has(p_group)) {
+		return true;
+	}
+	if (!asosdot_yielding_open || !asosdot_group_classes.has(p_group)) {
+		return false;
+	}
+	{
+		Locker::Lock lock(Locker::STATE_WRITE);
+		const Vector<StringName> &group_classes = asosdot_group_classes[p_group];
+		for (const StringName &class_name : group_classes) {
+			ClassInfo *c = classes.getptr(class_name);
+			if (!c || c->gdextension) {
+				continue;
+			}
+			for (KeyValue<StringName, MethodBind *> &F : c->method_map) {
+				memdelete(F.value);
+			}
+			for (KeyValue<StringName, LocalVector<MethodBind *>> &F : c->method_map_compatibility) {
+				for (uint32_t i = 0; i < F.value.size(); i++) {
+					memdelete(F.value[i]);
+				}
+			}
+			classes.erase(class_name);
+			default_values_cached.erase(class_name);
+			default_values.erase(class_name);
+		}
+		// Nothing outside the group may still name a removed class as its parent.
+		for (KeyValue<StringName, ClassInfo> &E : classes) {
+			if (E.value.inherits_ptr && !classes.has(E.value.gdtype->get_super_type_name())) {
+				E.value.inherits_ptr = nullptr;
+			}
+		}
+		asosdot_yielded_groups.insert(p_group);
+	}
+	print_line(vformat("This project's %s uses a class name of Asosdot's %s feature, so it takes the name as in Godot 4.7, and that feature is left out of this project.", p_claimed_by, String(p_group).replace("_", " ")));
+	return true;
+}
+
+bool ClassDB::is_asosdot_class_group_yielded(const StringName &p_group) {
+	return asosdot_yielded_groups.has(p_group);
+}
+
+void ClassDB::close_asosdot_class_yielding() {
+	asosdot_yielding_open = false;
 }
 
 HashMap<StringName, ClassDB::NativeStruct> ClassDB::native_structs;

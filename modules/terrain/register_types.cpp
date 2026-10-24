@@ -35,13 +35,16 @@ void initialize_terrain_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(VoxelGenerator);
 		GDREGISTER_CLASS(VoxelTerrainData);
 		GDREGISTER_CLASS(VoxelTerrain3D);
+		// A project with its own class of one of these names, such as the Terrain3D extension, keeps it,
+		// as in Godot 4.7, and does without Asosdot's terrain.
+		ClassDB::add_asosdot_class_group("terrain", { "Terrain3D", "TerrainData", "TerrainLayer", "TerrainMaterial", "Foliage3D", "FoliageData", "FoliageType", "VoxelGenerator", "VoxelTerrain3D", "VoxelTerrainData" });
 		Terrain3D::navmesh_parse_init();
 		Foliage3D::navmesh_parse_init();
 		VoxelTerrain3D::navmesh_parse_init();
 	}
 #ifdef TOOLS_ENABLED
 	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
-		EditorPlugins::add_by_type<TerrainEditorPlugin>();
+		EditorPlugins::add_by_type<AsosdotTerrainEditorPlugin>();
 	}
 #endif
 }

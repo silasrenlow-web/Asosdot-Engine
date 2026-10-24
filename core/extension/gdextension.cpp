@@ -450,6 +450,11 @@ void GDExtension::_register_extension_class_internal(GDExtensionClassLibraryPtr 
 	StringName class_name = *reinterpret_cast<const StringName *>(p_class_name);
 	StringName parent_class_name = *reinterpret_cast<const StringName *>(p_parent_class_name);
 	ERR_FAIL_COND_MSG(!String(class_name).is_valid_unicode_identifier(), vformat("Attempt to register extension class '%s', which is not a valid class identifier.", class_name));
+	// Asosdot: a class Asosdot adds to Godot 4.7 gives its name to the project's extension, as in Godot 4.7.
+	const StringName asosdot_group = ClassDB::get_asosdot_class_group(class_name);
+	if (asosdot_group != StringName() && ClassDB::class_exists(class_name)) {
+		ClassDB::yield_asosdot_class_group(asosdot_group, vformat("extension class %s", class_name));
+	}
 	ERR_FAIL_COND_MSG(ClassDB::class_exists(class_name), vformat("Attempt to register extension class '%s', which appears to be already registered.", class_name));
 
 	Extension *parent_extension = nullptr;

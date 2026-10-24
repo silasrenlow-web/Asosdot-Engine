@@ -45,7 +45,7 @@
 #include "scene/gui/label.h"
 #include "scene/gui/option_button.h"
 
-Light3D *LensFlareGeneratorDialog::get_selected_light() {
+Light3D *AsosdotLensFlareGeneratorDialog::get_selected_light() {
 	// Called while Node3DEditor is being built to set the button's initial state,
 	// which happens from EditorNode's own constructor, before its singleton is
 	// assigned. Nothing is selected that early anyway.
@@ -70,18 +70,18 @@ Light3D *LensFlareGeneratorDialog::get_selected_light() {
 	return Object::cast_to<Light3D>(nodes.front()->get());
 }
 
-Light3D *LensFlareGeneratorDialog::_get_light() const {
+Light3D *AsosdotLensFlareGeneratorDialog::_get_light() const {
 	return Object::cast_to<Light3D>(ObjectDB::get_instance(light_id));
 }
 
-void LensFlareGeneratorDialog::_match_light_color_toggled(bool p_pressed) {
+void AsosdotLensFlareGeneratorDialog::_match_light_color_toggled(bool p_pressed) {
 	color_picker->set_disabled(p_pressed);
 	if (p_pressed) {
 		_sync_to_light();
 	}
 }
 
-void LensFlareGeneratorDialog::_sync_to_light() {
+void AsosdotLensFlareGeneratorDialog::_sync_to_light() {
 	Light3D *light = _get_light();
 	if (light && match_light_color->is_pressed()) {
 		Color color = light->get_color();
@@ -90,7 +90,7 @@ void LensFlareGeneratorDialog::_sync_to_light() {
 	}
 }
 
-void LensFlareGeneratorDialog::popup_for_selection() {
+void AsosdotLensFlareGeneratorDialog::popup_for_selection() {
 	Light3D *light = get_selected_light();
 	light_id = light ? light->get_instance_id() : ObjectID();
 
@@ -110,7 +110,7 @@ void LensFlareGeneratorDialog::popup_for_selection() {
 	popup_centered_clamped(Size2(460, 0) * EDSCALE, 0.8);
 }
 
-void LensFlareGeneratorDialog::ok_pressed() {
+void AsosdotLensFlareGeneratorDialog::ok_pressed() {
 	Light3D *light = _get_light();
 	ERR_FAIL_NULL(light);
 
@@ -175,7 +175,7 @@ void LensFlareGeneratorDialog::ok_pressed() {
 	ur->commit_action();
 }
 
-void LensFlareGeneratorDialog::_notification(int p_what) {
+void AsosdotLensFlareGeneratorDialog::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_THEME_CHANGED: {
 			target_label->add_theme_color_override(SceneStringName(font_color), get_theme_color(SNAME("readonly_color"), EditorStringName(Editor)));
@@ -183,7 +183,7 @@ void LensFlareGeneratorDialog::_notification(int p_what) {
 	}
 }
 
-LensFlareGeneratorDialog::LensFlareGeneratorDialog() {
+AsosdotLensFlareGeneratorDialog::AsosdotLensFlareGeneratorDialog() {
 	set_title(TTRC("Generate Lens Flare"));
 	set_ok_button_text(TTRC("Generate"));
 
@@ -226,7 +226,7 @@ LensFlareGeneratorDialog::LensFlareGeneratorDialog() {
 	match_light_color->set_text(TTRC("From light"));
 	match_light_color->set_pressed(true);
 	match_light_color->set_tooltip_text(TTRC("Take the colour from the light being generated on."));
-	match_light_color->connect(SceneStringName(toggled), callable_mp(this, &LensFlareGeneratorDialog::_match_light_color_toggled));
+	match_light_color->connect(SceneStringName(toggled), callable_mp(this, &AsosdotLensFlareGeneratorDialog::_match_light_color_toggled));
 	color_hb->add_child(match_light_color);
 	color_picker->set_disabled(true);
 

@@ -198,6 +198,9 @@ public:
 	virtual String get_plugin_version() const;
 	virtual void set_plugin_version(const String &p_version);
 	virtual bool has_main_screen() const;
+	// Asosdot: true while this main screen shows p_plugin's main screen inside itself, so objects
+	// p_plugin edits are edited there without switching screens.
+	virtual bool hosts_main_screen_of(const EditorPlugin *p_plugin) const { return false; }
 	virtual void make_visible(bool p_visible);
 	virtual void set_current() {}
 	virtual void selected_notify() {} //notify that it was raised by the user, not the editor

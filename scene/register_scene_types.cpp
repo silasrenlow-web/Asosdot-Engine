@@ -46,6 +46,7 @@
 #include "scene/animation/animation_tree.h"
 #include "scene/animation/tween.h"
 #include "scene/audio/audio_stream_player.h"
+#include "scene/audio/audio_stream_scrub.h"
 #include "scene/debugger/scene_debugger.h"
 #include "scene/gui/aspect_ratio_container.h"
 #include "scene/gui/box_container.h"
@@ -226,6 +227,7 @@
 #include "scene/3d/aim_modifier_3d.h"
 #include "scene/3d/audio_listener_3d.h"
 #include "scene/3d/audio_stream_player_3d.h"
+#include "scene/3d/blender_constraint_3d.h"
 #include "scene/3d/bone_attachment_3d.h"
 #include "scene/3d/bone_constraint_3d.h"
 #include "scene/3d/bone_twist_disperser_3d.h"
@@ -690,6 +692,9 @@ void register_scene_types() {
 	GDREGISTER_CLASS(CopyTransformModifier3D);
 	GDREGISTER_CLASS(ConvertTransformModifier3D);
 	GDREGISTER_CLASS(AimModifier3D);
+	GDREGISTER_CLASS(BlenderConstraint3D);
+	// Asosdot's classes give way to a project's own classes of the same name, as in Godot 4.7.
+	ClassDB::add_asosdot_class_group("blender_constraint", { "BlenderConstraint3D" });
 	GDREGISTER_ABSTRACT_CLASS(IKModifier3D);
 	GDREGISTER_CLASS(TwoBoneIK3D);
 	GDREGISTER_ABSTRACT_CLASS(ChainIK3D);
@@ -746,6 +751,7 @@ void register_scene_types() {
 #endif // PHYSICS_3D_DISABLED
 	GDREGISTER_CLASS(MultiMeshInstance3D);
 	GDREGISTER_CLASS(Rope3D);
+	ClassDB::add_asosdot_class_group("rope", { "Rope3D" });
 
 	GDREGISTER_CLASS(Curve3D);
 	GDREGISTER_CLASS(Path3D);
@@ -758,6 +764,7 @@ void register_scene_types() {
 	GDREGISTER_CLASS(LensFlare3D);
 	GDREGISTER_CLASS(LensFlare);
 	GDREGISTER_CLASS(LensFlareElement);
+	ClassDB::add_asosdot_class_group("lens_flare", { "LensFlare", "LensFlare3D", "LensFlareElement" });
 	GDREGISTER_CLASS(RemoteTransform3D);
 
 #ifndef PHYSICS_3D_DISABLED
@@ -1026,6 +1033,10 @@ void register_scene_types() {
 	GDREGISTER_CLASS(AudioStreamWAV);
 	GDREGISTER_CLASS(AudioStreamPolyphonic);
 	GDREGISTER_ABSTRACT_CLASS(AudioStreamPlaybackPolyphonic);
+	// Asosdot: what audio tracks play while scrubbing and playing backwards.
+	GDREGISTER_INTERNAL_CLASS(AudioScrubData);
+	GDREGISTER_INTERNAL_CLASS(AudioStreamScrub);
+	GDREGISTER_INTERNAL_CLASS(AudioStreamPlaybackScrub);
 
 	OS::get_singleton()->yield(); // may take time to init
 
@@ -1327,6 +1338,7 @@ void unregister_scene_types() {
 	OS::get_singleton()->benchmark_begin_measure("Scene", "Unregister Types");
 
 	SceneDebugger::deinitialize();
+	AudioStreamScrub::clear_cache();
 
 	if constexpr (GD_IS_CLASS_ENABLED(TextureLayered)) {
 		ResourceLoader::remove_resource_format_loader(resource_loader_texture_layered);

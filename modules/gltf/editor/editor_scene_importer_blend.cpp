@@ -36,6 +36,7 @@
 
 #include "core/config/project_settings.h"
 #include "core/io/resource_importer.h"
+#include "core/object/class_db.h"
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
 #include "editor/editor_node.h"
@@ -309,6 +310,14 @@ Node *EditorSceneFormatImporterBlend::import_scene(const String &p_path, uint32_
 	}
 
 	request_options["unpack_all"] = unpack_original_images;
+	request_options["preserve_shape_keys"] = p_options.has(SNAME("blender/meshes/preserve_shape_keys")) && p_options[SNAME("blender/meshes/preserve_shape_keys")];
+	// Asosdot: bone constraints travel in the armature's extras, so custom properties must be exported with them.
+	// Not when the project has its own BlenderConstraint3D class: then Blender bakes every constraint, as in Godot 4.7.
+	const bool rig_constraints = p_options.has(SNAME("blender/rigs/rebuild_constraints")) && p_options[SNAME("blender/rigs/rebuild_constraints")] && !ClassDB::is_asosdot_class_group_yielded("blender_constraint");
+	request_options["rig_constraints"] = rig_constraints;
+	if (rig_constraints) {
+		parameters_map["export_extras"] = true;
+	}
 	request_options["path"] = source_global;
 	request_options["gltf_options"] = parameters_map;
 
@@ -396,6 +405,7 @@ void EditorSceneFormatImporterBlend::get_import_options(const String &p_path, Li
 	ADD_OPTION_BOOL("blender/meshes/export_geometry_nodes_instances", false);
 	ADD_OPTION_BOOL("blender/meshes/gpu_instances", false);
 	ADD_OPTION_BOOL("blender/meshes/tangents", true);
+	ADD_OPTION_BOOL("blender/meshes/preserve_shape_keys", true);
 	ADD_OPTION_ENUM("blender/meshes/skins", "None,4 Influences (Compatible),All Influences", BLEND_BONE_INFLUENCES_ALL);
 	ADD_OPTION_BOOL("blender/meshes/export_bones_deforming_mesh_only", false);
 	ADD_OPTION_BOOL("blender/materials/unpack_enabled", true);
@@ -403,6 +413,7 @@ void EditorSceneFormatImporterBlend::get_import_options(const String &p_path, Li
 	ADD_OPTION_BOOL("blender/animation/limit_playback", true);
 	ADD_OPTION_BOOL("blender/animation/always_sample", true);
 	ADD_OPTION_BOOL("blender/animation/group_tracks", true);
+	ADD_OPTION_BOOL("blender/rigs/rebuild_constraints", true);
 
 	r_options->push_back(ResourceImporterScene::ImportOption(PropertyInfo(Variant::INT, "gltf/naming_version", PROPERTY_HINT_ENUM, "Godot 4.0 or 4.1,Godot 4.2 to 4.4,Godot 4.5 or later"), 2));
 	r_options->push_back(ResourceImporterScene::ImportOption(PropertyInfo(Variant::INT, "gltf/texture_map_mode", PROPERTY_HINT_ENUM, "Do Not Remap,Remap to StandardMaterial3D", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_UPDATE_ALL_IF_MODIFIED), GLTFDocument::TEXTURE_MAP_MODE_REMAP_TO_STANDARD_MATERIAL));

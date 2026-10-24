@@ -282,6 +282,10 @@ private:
 
 		bool display_folded : 1;
 		bool editable_instance : 1;
+		// Set in this node's own scene: scenes that instance it can edit this node.
+		bool exposed_in_instances : 1;
+		// Set by the editor: the edited scene keeps changes to this node, which its instance no longer exposes.
+		bool instance_changes_kept : 1;
 
 		bool ready_notified : 1;
 		bool ready_first : 1;
@@ -634,6 +638,13 @@ public:
 	void set_editable_instance(RequiredParam<Node> rp_node, bool p_editable);
 	bool is_editable_instance(const Node *p_node) const;
 	Node *get_deepest_editable_node(Node *p_start_node) const;
+
+	void set_exposed_in_instances(bool p_exposed);
+	bool is_exposed_in_instances() const;
+	bool is_node_editable(const Node *p_node) const;
+	Node *get_editable_node_for_click(Node *p_start_node, const Node *p_selected) const;
+	void set_instance_changes_kept(bool p_kept);
+	bool is_instance_changes_kept() const;
 
 #ifdef TOOLS_ENABLED
 	void set_property_pinned(const String &p_property, bool p_pinned);

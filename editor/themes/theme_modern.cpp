@@ -2625,6 +2625,9 @@ void ThemeModern::populate_editor_styles(const Ref<EditorTheme> &p_theme, Editor
 		Ref<StyleBoxFlat> style_animation_track_hover = p_config.base_style->duplicate();
 		style_animation_track_hover->set_bg_color(p_config.surface_high_color);
 
+		Ref<StyleBoxFlat> style_animation_track_selected = p_config.base_style->duplicate();
+		style_animation_track_selected->set_bg_color(Color(p_config.accent_color, 0.25));
+
 		Ref<StyleBoxFlat> style_animation_track_focus = p_config.base_style->duplicate();
 		style_animation_track_focus->set_content_margin_individual(p_config.base_margin * 1.5 * EDSCALE, p_config.base_margin * EDSCALE, p_config.base_margin * 1.5 * EDSCALE, p_config.base_margin * EDSCALE);
 		style_animation_track_focus->set_border_width_all(2);
@@ -2633,6 +2636,7 @@ void ThemeModern::populate_editor_styles(const Ref<EditorTheme> &p_theme, Editor
 
 		p_theme->set_stylebox("odd", "AnimationTrackEdit", style_animation_track_odd);
 		p_theme->set_stylebox(SceneStringName(hover), "AnimationTrackEdit", style_animation_track_hover);
+		p_theme->set_stylebox("selected", "AnimationTrackEdit", style_animation_track_selected);
 		p_theme->set_stylebox("focus", "AnimationTrackEdit", style_animation_track_focus);
 
 		p_theme->set_color("h_line_color", "AnimationTrackEdit", Color(1, 1, 1, 0));

@@ -174,7 +174,9 @@ void DockTabContainer::_notification(int p_what) {
 
 void DockTabContainer::update_visibility() {
 	// Hide the dock container if there are no tabs.
-	set_visible(EditorDockManager::get_singleton()->are_docks_visible() && get_tab_count() > 0);
+	const EditorDockManager *manager = EditorDockManager::get_singleton();
+	const bool side_slot = dock_slot >= 0 && dock_slot < EditorDock::DOCK_SLOT_BOTTOM;
+	set_visible(manager->are_docks_visible() && !(side_slot && manager->are_side_docks_hidden() && !manager->is_side_dock_kept(this)) && get_tab_count() > 0);
 }
 
 DockTabContainer::TabStyle DockTabContainer::get_tab_style() const {

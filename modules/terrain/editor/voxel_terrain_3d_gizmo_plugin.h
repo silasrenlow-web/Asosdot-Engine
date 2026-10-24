@@ -11,15 +11,15 @@
 // Voxel terrain goes on for as far as its generator does, so there is no
 // finite copy of it to click on. Its gizmo asks the terrain itself where a
 // ray meets the ground instead.
-class VoxelTerrain3DGizmo : public EditorNode3DGizmo {
-	GDCLASS(VoxelTerrain3DGizmo, EditorNode3DGizmo);
+class AsosdotVoxelTerrain3DGizmo : public EditorNode3DGizmo {
+	GDCLASS(AsosdotVoxelTerrain3DGizmo, EditorNode3DGizmo);
 
 public:
 	bool intersect_ray(Camera3D *p_camera, const Point2 &p_point, Vector3 &r_pos, Vector3 &r_normal) override;
 };
 
-class VoxelTerrain3DGizmoPlugin : public EditorNode3DGizmoPlugin {
-	GDCLASS(VoxelTerrain3DGizmoPlugin, EditorNode3DGizmoPlugin);
+class AsosdotVoxelTerrain3DGizmoPlugin : public EditorNode3DGizmoPlugin {
+	GDCLASS(AsosdotVoxelTerrain3DGizmoPlugin, EditorNode3DGizmoPlugin);
 
 public:
 	bool has_gizmo(Node3D *p_spatial) override;

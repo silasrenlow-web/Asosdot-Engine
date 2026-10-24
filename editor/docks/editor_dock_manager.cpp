@@ -773,8 +773,27 @@ void EditorDockManager::set_docks_visible(bool p_show) {
 	_update_layout();
 }
 
+bool EditorDockManager::is_side_dock_kept(const Control *p_slot) const {
+	const Node *kept = ObjectDB::get_instance<Node>(side_dock_kept);
+	return kept && kept->get_parent() == p_slot;
+}
+
 bool EditorDockManager::are_docks_visible() const {
 	return docks_visible;
+}
+
+void EditorDockManager::set_side_docks_hidden(bool p_hidden, EditorDock *p_keep) {
+	const ObjectID keep = p_keep ? p_keep->get_instance_id() : ObjectID();
+	if (side_docks_hidden == p_hidden && side_dock_kept == keep) {
+		return;
+	}
+	side_docks_hidden = p_hidden;
+	side_dock_kept = keep;
+	for (int i = 0; i < EditorDock::DOCK_SLOT_MAX; i++) {
+		// Show and hide in reverse order due to the SplitContainer prioritizing the last split offset.
+		dock_slots[p_hidden ? EditorDock::DOCK_SLOT_MAX - i - 1 : i]->update_visibility();
+	}
+	_update_layout();
 }
 
 void EditorDockManager::update_tab_styles() {

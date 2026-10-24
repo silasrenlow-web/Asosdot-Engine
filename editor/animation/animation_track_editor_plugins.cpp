@@ -362,6 +362,80 @@ AnimationTrackEditAudio::AnimationTrackEditAudio() {
 	AudioStreamPreviewGenerator::get_singleton()->connect("preview_updated", callable_mp(this, &AnimationTrackEditAudio::_preview_changed));
 }
 
+/// CAMERA SHOTS ///
+
+bool AsosdotAnimationTrackEditShot::_is_live_key(int p_index) const {
+	return bool(get_animation()->track_get_key_value(get_track(), p_index));
+}
+
+// A shot lasts until the camera's next key (its cut away) or the end of the animation.
+double AsosdotAnimationTrackEditShot::_shot_length(int p_index) const {
+	const Ref<Animation> track_animation = get_animation();
+	const double start = track_animation->track_get_key_time(get_track(), p_index);
+	const double end = p_index + 1 < track_animation->track_get_key_count(get_track()) ? track_animation->track_get_key_time(get_track(), p_index + 1) : track_animation->get_length();
+	return MAX(end - start, 0.0001);
+}
+
+int AsosdotAnimationTrackEditShot::get_key_height() const {
+	Ref<Font> font = get_theme_font(SceneStringName(font), SNAME("Label"));
+	int font_size = get_theme_font_size(SceneStringName(font_size), SNAME("Label"));
+	return int(font->get_height(font_size) * 1.5);
+}
+
+Rect2 AsosdotAnimationTrackEditShot::get_key_rect(int p_index, float p_pixels_sec) {
+	if (!_is_live_key(p_index)) {
+		return AnimationTrackEdit::get_key_rect(p_index, p_pixels_sec);
+	}
+	return Rect2(0, 0, _shot_length(p_index) * p_pixels_sec, get_size().height);
+}
+
+bool AsosdotAnimationTrackEditShot::is_key_selectable_by_distance() const {
+	return false;
+}
+
+void AsosdotAnimationTrackEditShot::draw_key(int p_index, float p_pixels_sec, int p_x, bool p_selected, int p_clip_left, int p_clip_right) {
+	if (!_is_live_key(p_index)) {
+		// Where the camera cuts away: a plain key.
+		AnimationTrackEdit::draw_key(p_index, p_pixels_sec, p_x, p_selected, p_clip_left, p_clip_right);
+		return;
+	}
+
+	const int from_x = MAX(p_x, p_clip_left);
+	const int to_x = MIN(p_x + int(_shot_length(p_index) * p_pixels_sec), p_clip_right);
+	if (to_x <= from_x) {
+		return;
+	}
+
+	Ref<Font> font = get_theme_font(SceneStringName(font), SNAME("Label"));
+	const int font_size = get_theme_font_size(SceneStringName(font_size), SNAME("Label"));
+	const float height = int(font->get_height(font_size) * 1.5);
+	const Rect2 rect(from_x, (get_size().height - height) / 2, to_x - from_x, height);
+
+	Object *camera = ObjectDB::get_instance(id);
+	const String name = camera ? String(Object::cast_to<Node>(camera)->get_name()) : String();
+	Color color = get_shot_color(name);
+	draw_rect(rect, Color(color, 0.45));
+	draw_rect(Rect2(rect.position, Vector2(3 * EDSCALE, rect.size.y)), color);
+	if (p_selected) {
+		draw_rect(rect, get_theme_color(SNAME("accent_color"), EditorStringName(Editor)), false, 2 * EDSCALE);
+	}
+	const float text_width = rect.size.x - 10 * EDSCALE;
+	if (text_width > 8 * EDSCALE) {
+		const Vector2 text_at = rect.position + Vector2(7 * EDSCALE, (rect.size.y - font->get_height(font_size)) / 2 + font->get_ascent(font_size));
+		draw_string(font, text_at, name, HORIZONTAL_ALIGNMENT_LEFT, text_width, font_size, get_theme_color(SceneStringName(font_color), SNAME("Label")));
+	}
+}
+
+void AsosdotAnimationTrackEditShot::set_node(Object *p_object) {
+	id = p_object->get_instance_id();
+}
+
+Color AsosdotAnimationTrackEditShot::get_shot_color(const String &p_camera_name) {
+	// Each camera keeps its colour wherever its shots appear.
+	const float hue = float(p_camera_name.hash() % 360) / 360.0f;
+	return Color::from_hsv(hue, 0.55, 0.85);
+}
+
 /// SPRITE FRAME / FRAME_COORDS ///
 
 int AnimationTrackEditSpriteFrame::get_key_height() const {
@@ -811,6 +885,12 @@ void AnimationTrackEditVolumeDB::draw_key_link(int p_index_from, int p_index_to,
 
 /// AUDIO ///
 
+// A key's pitch plays its stream faster or slower than the timeline, so its offsets (in the
+// stream's seconds) are divided by it to place the clip.
+static float _audio_key_pitch(const Ref<Animation> &p_animation, int p_track, int p_key) {
+	return MAX(p_animation->audio_track_get_key_pitch_scale(p_track, p_key), 0.01f);
+}
+
 void AnimationTrackEditTypeAudio::_preview_changed(ObjectID p_which) {
 	for (int i = 0; i < get_animation()->track_get_key_count(get_track()); i++) {
 		Ref<AudioStream> stream = get_animation()->audio_track_get_key_stream(get_track(), i);
@@ -846,6 +926,7 @@ Rect2 AnimationTrackEditTypeAudio::get_key_rect(int p_index, float p_pixels_sec)
 
 	len -= end_ofs;
 	len -= start_ofs;
+	len /= _audio_key_pitch(get_animation(), get_track(), p_index);
 	if (len <= 0.0001) {
 		len = 0.0001;
 	}
@@ -876,15 +957,18 @@ void AnimationTrackEditTypeAudio::draw_key(int p_index, float p_pixels_sec, int 
 
 	float start_ofs = get_animation()->audio_track_get_key_start_offset(get_track(), p_index);
 	float end_ofs = get_animation()->audio_track_get_key_end_offset(get_track(), p_index);
+	const float pitch_scale = _audio_key_pitch(get_animation(), get_track(), p_index);
+	// Louder or quieter keys draw a taller or flatter wave.
+	const float gain = Math::db_to_linear(get_animation()->audio_track_get_key_volume_db(get_track(), p_index));
 
 	int px_offset = 0;
 	if (len_resizing && p_index == len_resizing_index) {
 		float ofs_local = len_resizing_rel / get_timeline()->get_zoom_scale();
 		if (len_resizing_start) {
-			start_ofs += ofs_local;
+			start_ofs += ofs_local * pitch_scale;
 			px_offset = ofs_local * p_pixels_sec;
 		} else {
-			end_ofs -= ofs_local;
+			end_ofs -= ofs_local * pitch_scale;
 		}
 	}
 
@@ -894,10 +978,11 @@ void AnimationTrackEditTypeAudio::draw_key(int p_index, float p_pixels_sec, int 
 
 	Ref<AudioStreamPreview> preview = AudioStreamPreviewGenerator::get_singleton()->generate_preview(stream);
 
-	int pixel_total_len = len * p_pixels_sec;
+	int pixel_total_len = len / pitch_scale * p_pixels_sec;
 
 	len -= end_ofs;
 	len -= start_ofs;
+	len /= pitch_scale;
 
 	if (len <= 0.0001) {
 		len = 0.0001;
@@ -918,6 +1003,8 @@ void AnimationTrackEditTypeAudio::draw_key(int p_index, float p_pixels_sec, int 
 
 	int from_x = MAX(pixel_begin, p_clip_left);
 	int to_x = MIN(pixel_end, p_clip_right);
+	// A sound keeps playing under the keys after it, so the part past the next key is drawn dimmed.
+	int ringing_to_x = to_x;
 
 	if (get_animation()->track_get_key_count(get_track()) > p_index + 1) {
 		float limit = MIN(len, get_animation()->track_get_key_time(get_track(), p_index + 1) - get_animation()->track_get_key_time(get_track(), p_index));
@@ -933,27 +1020,36 @@ void AnimationTrackEditTypeAudio::draw_key(int p_index, float p_pixels_sec, int 
 	Rect2 rect = Rect2(from_x, (h - fh) / 2, to_x - from_x, fh);
 	draw_rect(rect, Color(0.25, 0.25, 0.25));
 
-	Vector<Vector2> points;
-	points.resize((to_x - from_x) * 2);
 	float preview_len = preview->get_length();
+	auto wave = [&](int p_from, int p_to, const Rect2 &p_rect) {
+		Vector<Vector2> points;
+		points.resize((p_to - p_from) * 2);
+		for (int i = p_from; i < p_to; i++) {
+			float ofs = (i - pixel_begin) * preview_len / pixel_total_len;
+			float ofs_n = ((i + 1) - pixel_begin) * preview_len / pixel_total_len;
+			ofs += start_ofs;
+			ofs_n += start_ofs;
 
-	for (int i = from_x; i < to_x; i++) {
-		float ofs = (i - pixel_begin) * preview_len / pixel_total_len;
-		float ofs_n = ((i + 1) - pixel_begin) * preview_len / pixel_total_len;
-		ofs += start_ofs;
-		ofs_n += start_ofs;
+			float max = CLAMP(preview->get_max(ofs, ofs_n) * gain, -1.0f, 1.0f) * 0.5 + 0.5;
+			float min = CLAMP(preview->get_min(ofs, ofs_n) * gain, -1.0f, 1.0f) * 0.5 + 0.5;
 
-		float max = preview->get_max(ofs, ofs_n) * 0.5 + 0.5;
-		float min = preview->get_min(ofs, ofs_n) * 0.5 + 0.5;
+			int idx = i - p_from;
+			points.write[idx * 2 + 0] = Vector2(i, p_rect.position.y + min * p_rect.size.y);
+			points.write[idx * 2 + 1] = Vector2(i, p_rect.position.y + max * p_rect.size.y);
+		}
+		return points;
+	};
 
-		int idx = i - from_x;
-		points.write[idx * 2 + 0] = Vector2(i, rect.position.y + min * rect.size.y);
-		points.write[idx * 2 + 1] = Vector2(i, rect.position.y + max * rect.size.y);
+	if (ringing_to_x > to_x) {
+		Rect2 ringing = Rect2(to_x, rect.position.y, ringing_to_x - to_x, rect.size.y);
+		draw_rect(ringing, Color(0.25, 0.25, 0.25, 0.35));
+		Vector<Color> ringing_colors = { Color(0.75, 0.75, 0.75, 0.35) };
+		RS::get_singleton()->canvas_item_add_multiline(get_canvas_item(), wave(to_x, ringing_to_x, ringing), ringing_colors);
 	}
 
 	Vector<Color> colors = { Color(0.75, 0.75, 0.75) };
 
-	RS::get_singleton()->canvas_item_add_multiline(get_canvas_item(), points, colors);
+	RS::get_singleton()->canvas_item_add_multiline(get_canvas_item(), wave(from_x, to_x, rect), colors);
 
 	Color cut_color = get_theme_color(SNAME("accent_color"), EditorStringName(Editor));
 	cut_color.a = 0.7;
@@ -1060,6 +1156,7 @@ void AnimationTrackEditTypeAudio::gui_input(const Ref<InputEvent> &p_event) {
 			float end_ofs = get_animation()->audio_track_get_key_end_offset(get_track(), i);
 			len -= end_ofs;
 			len -= start_ofs;
+			len /= _audio_key_pitch(get_animation(), get_track(), i);
 
 			if (get_animation()->track_get_key_count(get_track()) > i + 1) {
 				len = MIN(len, get_animation()->track_get_key_time(get_track(), i + 1) - get_animation()->track_get_key_time(get_track(), i));
@@ -1102,10 +1199,12 @@ void AnimationTrackEditTypeAudio::gui_input(const Ref<InputEvent> &p_event) {
 			len = preview_len;
 		}
 
+		// The drag is in timeline seconds, the offsets in the stream's.
+		const float pitch_scale = _audio_key_pitch(get_animation(), get_track(), len_resizing_index);
 		if (len_resizing_start) {
-			len_resizing_rel = CLAMP(ofs_local, -prev_ofs_start, len - prev_ofs_end - prev_ofs_start) * get_timeline()->get_zoom_scale();
+			len_resizing_rel = CLAMP(ofs_local, -prev_ofs_start / pitch_scale, (len - prev_ofs_end - prev_ofs_start) / pitch_scale) * get_timeline()->get_zoom_scale();
 		} else {
-			len_resizing_rel = CLAMP(ofs_local, -(len - prev_ofs_end - prev_ofs_start), prev_ofs_end) * get_timeline()->get_zoom_scale();
+			len_resizing_rel = CLAMP(ofs_local, -(len - prev_ofs_end - prev_ofs_start) / pitch_scale, prev_ofs_end / pitch_scale) * get_timeline()->get_zoom_scale();
 		}
 
 		queue_redraw();
@@ -1135,11 +1234,12 @@ void AnimationTrackEditTypeAudio::gui_input(const Ref<InputEvent> &p_event) {
 			return;
 		}
 
+		const float pitch_scale = _audio_key_pitch(get_animation(), get_track(), len_resizing_index);
 		if (len_resizing_start) {
 			float ofs_local = len_resizing_rel / get_timeline()->get_zoom_scale();
 			float prev_ofs = get_animation()->audio_track_get_key_start_offset(get_track(), len_resizing_index);
 			float prev_time = get_animation()->track_get_key_time(get_track(), len_resizing_index);
-			float new_ofs = prev_ofs + ofs_local;
+			float new_ofs = prev_ofs + ofs_local * pitch_scale;
 			float new_time = prev_time + ofs_local;
 			if (prev_time != new_time) {
 				undo_redo->create_action(TTR("Change Audio Track Clip Start Offset"));
@@ -1155,7 +1255,7 @@ void AnimationTrackEditTypeAudio::gui_input(const Ref<InputEvent> &p_event) {
 		} else {
 			float ofs_local = -len_resizing_rel / get_timeline()->get_zoom_scale();
 			float prev_ofs = get_animation()->audio_track_get_key_end_offset(get_track(), len_resizing_index);
-			float new_ofs = prev_ofs + ofs_local;
+			float new_ofs = prev_ofs + ofs_local * pitch_scale;
 			if (prev_ofs != new_ofs) {
 				undo_redo->create_action(TTR("Change Audio Track Clip End Offset"));
 				undo_redo->add_do_method(get_animation().ptr(), "audio_track_set_key_end_offset", get_track(), len_resizing_index, new_ofs);
@@ -1346,6 +1446,12 @@ void AnimationTrackEditTypeAnimation::set_node(Object *p_object) {
 
 /////////
 AnimationTrackEdit *AnimationTrackEditDefaultPlugin::create_value_track_edit(Object *p_object, Variant::Type p_type, const String &p_property, PropertyHint p_hint, const String &p_hint_string, int p_usage) {
+	if (p_property == "current" && p_object->is_class("Camera3D")) {
+		AsosdotAnimationTrackEditShot *shot = memnew(AsosdotAnimationTrackEditShot);
+		shot->set_node(p_object);
+		return shot;
+	}
+
 	if (p_property == "playing" && (p_object->is_class("AudioStreamPlayer") || p_object->is_class("AudioStreamPlayer2D") || p_object->is_class("AudioStreamPlayer3D"))) {
 		AnimationTrackEditAudio *audio = memnew(AnimationTrackEditAudio);
 		audio->set_node(p_object);

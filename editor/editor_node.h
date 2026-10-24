@@ -441,6 +441,12 @@ private:
 
 	bool changing_scene = false;
 	bool cmdline_mode = false;
+
+	// Asosdot: records where the editor is stuck if it stops responding.
+	class EditorFreezeWatchdog *freeze_watchdog = nullptr;
+	ObjectID freeze_watched_scene;
+	bool freeze_checked_previous = false;
+	void _update_freeze_watchdog();
 	bool convert_old = false;
 	bool immediate_dialog_confirmed = false;
 	bool restoring_scenes = false;
@@ -895,6 +901,8 @@ public:
 		List<ConnectionWithNodePath> connections_to;
 		List<Connection> connections_from;
 		List<Node::GroupInfo> groups;
+		// Whether the edited scene could edit the node, such as one its instance exposes.
+		bool was_editable = false;
 	};
 
 	struct InstanceModificationsEntry {

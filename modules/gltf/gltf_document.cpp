@@ -3595,6 +3595,10 @@ String GLTFDocument::interpolation_to_string(const GLTFAnimation::Interpolation 
 }
 
 Error GLTFDocument::_serialize_animations(Ref<GLTFState> p_state) {
+	if (!p_state->create_animations) {
+		p_state->json.erase("animations");
+		return OK;
+	}
 	if (!p_state->animation_players.size()) {
 		return OK;
 	}
@@ -4113,7 +4117,7 @@ GLTFMeshIndex GLTFDocument::_convert_mesh_to_gltf(Ref<GLTFState> p_state, MeshIn
 	int32_t blend_count = mesh_resource->get_blend_shape_count();
 	blend_weights.resize(blend_count);
 	for (int32_t blend_i = 0; blend_i < blend_count; blend_i++) {
-		blend_weights.write[blend_i] = 0.0f;
+		blend_weights.write[blend_i] = p_mesh_instance->get_blend_shape_value(blend_i);
 	}
 
 	Ref<GLTFMesh> gltf_mesh;
@@ -4148,6 +4152,21 @@ ImporterMeshInstance3D *GLTFDocument::_generate_mesh_instance(Ref<GLTFState> p_s
 		return mi;
 	}
 	mi->set_mesh(import_mesh);
+	Vector<float> blend_weights = mesh->get_blend_weights();
+	// A node's weights override the mesh defaults without changing other instances of the mesh.
+	if (p_state->json.has("nodes")) {
+		Array json_nodes = p_state->json["nodes"];
+		if (p_node_index < json_nodes.size()) {
+			Dictionary json_node = json_nodes[p_node_index];
+			if (json_node.has("weights")) {
+				Array node_weights = json_node["weights"];
+				for (int i = 0; i < MIN(blend_weights.size(), node_weights.size()); i++) {
+					blend_weights.write[i] = node_weights[i];
+				}
+			}
+		}
+	}
+	mi->set_blend_shape_weights(blend_weights);
 	import_mesh->merge_meta_from(*mesh);
 	return mi;
 }

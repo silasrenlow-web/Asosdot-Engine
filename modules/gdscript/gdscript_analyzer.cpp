@@ -397,6 +397,9 @@ Error GDScriptAnalyzer::resolve_class_inheritance(GDScriptParser::ClassNode *p_c
 		StringName class_name = p_class->identifier->name;
 		if (GDScriptParser::get_builtin_type(class_name) < Variant::VARIANT_MAX) {
 			push_error(vformat(R"(Class "%s" hides a built-in type.)", class_name), p_class->identifier);
+		} else if (class_exists(class_name) && ClassDB::get_asosdot_class_group(class_name) != StringName()) {
+			// Asosdot steps aside for project classes with its class names when the editor starts.
+			push_error(vformat(R"(Class "%s" has the name of an Asosdot class. Restart the editor: this class then takes the name, as in Godot 4.7, and Asosdot's feature is left out of this project.)", class_name), p_class->identifier);
 		} else if (class_exists(class_name)) {
 			push_error(vformat(R"(Class "%s" hides a native class.)", class_name), p_class->identifier);
 		} else if (ScriptServer::is_global_class(class_name) && (!GDScript::is_canonically_equal_paths(ScriptServer::get_global_class_path(class_name), parser->script_path) || p_class != parser->head)) {

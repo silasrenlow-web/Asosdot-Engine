@@ -100,6 +100,7 @@ void MovieWriter::get_supported_extensions(List<String> *r_extensions) const {
 }
 
 void MovieWriter::begin(const Size2i &p_movie_size, uint32_t p_fps, const String &p_base_path) {
+	variable_audio_frames = false;
 	project_name = GLOBAL_GET("application/config/name");
 	movie_size = p_movie_size;
 
@@ -251,6 +252,8 @@ void MovieWriter::add_frame() {
 
 Error MovieWriter::begin_frames(const Size2i &p_movie_size, uint32_t p_fps, const String &p_path) {
 	ERR_FAIL_COND_V(p_fps == 0, ERR_INVALID_PARAMETER);
+	offline_frame = 0;
+	variable_audio_frames = supports_variable_audio_frames();
 	movie_size = p_movie_size;
 	fps = p_fps;
 	mix_rate = get_audio_mix_rate();
@@ -268,14 +271,24 @@ Error MovieWriter::begin_frames(const Size2i &p_movie_size, uint32_t p_fps, cons
 			audio_channels = 2;
 			break;
 	}
-	audio_mix_buffer.resize(mix_rate * audio_channels / fps);
+	audio_mix_buffer.resize(((mix_rate + fps - 1) / fps) * audio_channels);
 	return write_begin(p_movie_size, p_fps, p_path);
 }
 
-Error MovieWriter::write_frame_image(const Ref<Image> &p_image) {
+Error MovieWriter::write_frame_image(const Ref<Image> &p_image, const Vector<int32_t> &p_audio) {
 	ERR_FAIL_COND_V(p_image.is_null(), ERR_INVALID_PARAMETER);
-	memset(audio_mix_buffer.ptr(), 0, audio_mix_buffer.size() * sizeof(int32_t));
-	return write_frame(p_image, audio_mix_buffer.ptr());
+	Error error;
+	if (!p_audio.is_empty()) {
+		ERR_FAIL_COND_V(p_audio.size() != get_frame_audio_sample_count() * audio_channels, ERR_INVALID_PARAMETER);
+		error = write_frame(p_image, p_audio.ptr());
+	} else {
+		memset(audio_mix_buffer.ptr(), 0, audio_mix_buffer.size() * sizeof(int32_t));
+		error = write_frame(p_image, audio_mix_buffer.ptr());
+	}
+	if (error == OK) {
+		offline_frame++;
+	}
+	return error;
 }
 
 void MovieWriter::end_frames() {

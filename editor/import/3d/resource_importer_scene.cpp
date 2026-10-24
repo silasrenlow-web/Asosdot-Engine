@@ -288,6 +288,29 @@ int ResourceImporterScene::get_format_version() const {
 	return 1;
 }
 
+bool ResourceImporterScene::are_import_settings_valid(const String &p_path, const Dictionary &p_meta) const {
+	// A .blend that Godot 4.7 imported lacks what Asosdot adds to it, such as its rig's constraints.
+	// Imported again only where Blender is set up: a failed import would lose the one there is.
+	if (p_path.get_extension().to_lower() != "blend" || p_meta.has("asosdot_blend")) {
+		return true;
+	}
+	const String blender_path = EDITOR_GET("filesystem/import/blender/blender_path");
+	return blender_path.is_empty() || !(FileAccess::exists(blender_path) || DirAccess::exists(blender_path));
+}
+
+// Whether a scene uses a class that Godot 4.7 doesn't have.
+static bool _uses_asosdot_classes(const Node *p_node) {
+	if (ClassDB::get_asosdot_class_group(p_node->get_class_name()) != StringName()) {
+		return true;
+	}
+	for (int i = 0; i < p_node->get_child_count(); i++) {
+		if (_uses_asosdot_classes(p_node->get_child(i))) {
+			return true;
+		}
+	}
+	return false;
+}
+
 bool ResourceImporterScene::get_option_visibility(const String &p_path, const String &p_option, const HashMap<StringName, Variant> &p_options) const {
 	if (p_option.begins_with("mesh_library/")) {
 		return _scene_import_type == "MeshLibrary";
@@ -2875,6 +2898,10 @@ Node *ResourceImporterScene::_generate_meshes(Node *p_node, const Dictionary &p_
 			if (mesh.is_valid()) {
 				_copy_meta(importer_mesh.ptr(), mesh.ptr());
 				mesh_node->set_mesh(mesh);
+				const Vector<float> &blend_weights = src_mesh_node->get_blend_shape_weights();
+				for (int i = 0; i < MIN(blend_weights.size(), mesh->get_blend_shape_count()); i++) {
+					mesh_node->set_blend_shape_value(i, blend_weights[i]);
+				}
 				for (int i = 0; i < mesh->get_surface_count(); i++) {
 					mesh_node->set_surface_override_material(i, src_mesh_node->get_surface_material(i));
 				}
@@ -3486,6 +3513,20 @@ Error ResourceImporterScene::import(ResourceUID::ID p_source_id, const String &p
 		_save_scene_as_mesh_library(p_source_file, p_save_path, scene, p_options, flags);
 	} else {
 		ERR_FAIL_V_MSG(ERR_FILE_UNRECOGNIZED, "Unknown scene import type: " + _scene_import_type);
+	}
+
+	// Asosdot: marks what Godot 4.7 can't load as imported here, so Godot 4.7 imports the file again
+	// itself, and what Godot 4.7 imported without Asosdot's additions, so Asosdot does.
+	Dictionary asosdot_meta;
+	if (p_source_file.get_extension().to_lower() == "blend") {
+		asosdot_meta["asosdot_blend"] = true;
+	}
+	if (_uses_asosdot_classes(scene)) {
+		asosdot_meta["asosdot_only"] = true;
+		asosdot_meta["asosdot_importer_version"] = get_format_version();
+	}
+	if (r_metadata && !asosdot_meta.is_empty()) {
+		*r_metadata = asosdot_meta;
 	}
 
 	memdelete(scene);

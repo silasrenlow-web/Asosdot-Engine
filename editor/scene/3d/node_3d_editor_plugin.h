@@ -53,7 +53,7 @@ class EditorSpinSlider;
 class HSplitContainer;
 class LineEdit;
 class MenuButton;
-class LensFlareGeneratorDialog;
+class AsosdotLensFlareGeneratorDialog;
 class Node3DEditor;
 class Node3DEditorViewport;
 class OptionButton;
@@ -135,7 +135,6 @@ class Node3DEditorViewport : public Control {
 		VIEW_AUDIO_LISTENER,
 		VIEW_AUDIO_DOPPLER,
 		VIEW_GIZMOS,
-		VIEW_LENS_FLARES,
 		VIEW_TRANSFORM_GIZMO,
 		VIEW_GRID,
 		VIEW_INFORMATION,
@@ -179,6 +178,9 @@ class Node3DEditorViewport : public Control {
 		VIEW_LOCK_ROTATION,
 		VIEW_CINEMATIC_PREVIEW,
 		VIEW_AUTO_ORTHOGONAL,
+		// Asosdot's own entries go last, so Godot's keep the numbers Godot 4.7 saves in a
+		// scene's editor state, such as the display mode.
+		VIEW_LENS_FLARES,
 		VIEW_MAX
 	};
 
@@ -326,6 +328,9 @@ private:
 	void _show_tooltip(const String &p_title, const String &p_description) const;
 
 	ObjectID clicked;
+	// The node the last click ray hit, before it was turned into a node the scene can edit.
+	mutable ObjectID clicked_hit;
+	Node3D *_get_exposed_click_target(Node *p_clicked) const;
 	ObjectID material_target;
 	Vector<Node3D *> selection_results;
 	Vector<Node3D *> selection_results_menu;
@@ -520,6 +525,9 @@ public:
 
 	void set_can_preview(Camera3D *p_preview);
 	void switch_preview_camera(Camera3D *p_new_camera);
+	// Asosdot: seeing the scene through its current camera, as the View menu's Cinematic Preview does.
+	void set_cinematic_preview(bool p_enabled);
+	bool is_cinematic_preview() const { return previewing_cinema; }
 	void set_state(const Dictionary &p_state);
 	Dictionary get_state() const;
 	void reset();
@@ -894,7 +902,7 @@ private:
 	Button *sun_environ_settings = nullptr;
 
 	Button *generate_flare_button = nullptr;
-	LensFlareGeneratorDialog *lens_flare_generator = nullptr;
+	AsosdotLensFlareGeneratorDialog *lens_flare_generator = nullptr;
 	void _generate_flare_pressed();
 	void _update_generate_flare_button();
 

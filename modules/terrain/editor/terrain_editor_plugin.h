@@ -29,21 +29,21 @@ class Label;
 class MenuButton;
 class SpinBox;
 class Terrain3D;
-class Terrain3DGizmoPlugin;
+class AsosdotTerrain3DGizmoPlugin;
 class VoxelTerrain3D;
-class VoxelTerrain3DGizmoPlugin;
+class AsosdotVoxelTerrain3DGizmoPlugin;
 class VoxelTerrainData;
-class TerrainCreateDialog;
+class AsosdotTerrainCreateDialog;
 class VBoxContainer;
 
 // The Terrain dock: tools, brush settings and the layer and foliage palettes.
 // It edits whichever Terrain3D, Foliage3D or VoxelTerrain3D is selected;
 // selecting a Foliage3D paints its terrain and selecting a Terrain3D paints
 // its first Foliage3D. Voxel terrain gets the tools that make sense in 3D.
-class TerrainEditor : public EditorDock {
-	GDCLASS(TerrainEditor, EditorDock);
+class AsosdotTerrainEditor : public EditorDock {
+	GDCLASS(AsosdotTerrainEditor, EditorDock);
 
-	friend class TerrainEditorPlugin;
+	friend class AsosdotTerrainEditorPlugin;
 
 	enum MenuOption {
 		MENU_NEW,
@@ -115,7 +115,7 @@ class TerrainEditor : public EditorDock {
 	Button *foliage_save_button = nullptr;
 	Button *foliage_remove_button = nullptr;
 
-	TerrainCreateDialog *create_dialog = nullptr;
+	AsosdotTerrainCreateDialog *create_dialog = nullptr;
 	EditorFileDialog *export_dialog = nullptr;
 	EditorFileDialog *foliage_add_dialog = nullptr;
 	EditorFileDialog *layer_textures_dialog = nullptr;
@@ -237,15 +237,15 @@ public:
 	void edit(Object *p_object);
 	void set_active(bool p_active);
 
-	TerrainEditor();
+	AsosdotTerrainEditor();
 };
 
-class TerrainEditorPlugin : public EditorPlugin {
-	GDCLASS(TerrainEditorPlugin, EditorPlugin);
+class AsosdotTerrainEditorPlugin : public EditorPlugin {
+	GDCLASS(AsosdotTerrainEditorPlugin, EditorPlugin);
 
-	TerrainEditor *terrain_editor = nullptr;
-	Ref<Terrain3DGizmoPlugin> gizmo_plugin;
-	Ref<VoxelTerrain3DGizmoPlugin> voxel_gizmo_plugin;
+	AsosdotTerrainEditor *terrain_editor = nullptr;
+	Ref<AsosdotTerrain3DGizmoPlugin> gizmo_plugin;
+	Ref<AsosdotVoxelTerrain3DGizmoPlugin> voxel_gizmo_plugin;
 
 protected:
 	void _notification(int p_what);
@@ -258,5 +258,5 @@ public:
 	virtual EditorPlugin::AfterGUIInput forward_3d_gui_input(Camera3D *p_camera, const Ref<InputEvent> &p_event) override;
 	virtual void forward_3d_draw_over_viewport(Control *p_overlay) override;
 
-	TerrainEditorPlugin();
+	AsosdotTerrainEditorPlugin();
 };

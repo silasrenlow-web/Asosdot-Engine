@@ -71,6 +71,26 @@ public:
 	AnimationTrackEditAudio();
 };
 
+// Asosdot: a Camera3D's `current` track drawn as the shots the camera is live for, like clips
+// in a video editor, so camera cuts read at a glance.
+class AsosdotAnimationTrackEditShot : public AnimationTrackEdit {
+	GDCLASS(AsosdotAnimationTrackEditShot, AnimationTrackEdit);
+
+	ObjectID id;
+
+	bool _is_live_key(int p_index) const;
+	double _shot_length(int p_index) const;
+
+public:
+	virtual int get_key_height() const override;
+	virtual Rect2 get_key_rect(int p_index, float p_pixels_sec) override;
+	virtual bool is_key_selectable_by_distance() const override;
+	virtual void draw_key(int p_index, float p_pixels_sec, int p_x, bool p_selected, int p_clip_left, int p_clip_right) override;
+
+	void set_node(Object *p_object);
+	static Color get_shot_color(const String &p_camera_name);
+};
+
 class AnimationTrackEditSpriteFrame : public AnimationTrackEdit {
 	GDCLASS(AnimationTrackEditSpriteFrame, AnimationTrackEdit);
 

@@ -20,8 +20,8 @@ class SpinBox;
 
 // New Terrain and Import Heightmap share one dialog: a size, a spacing and a
 // source for the heights, which is flat ground, generated noise or a file.
-class TerrainCreateDialog : public ConfirmationDialog {
-	GDCLASS(TerrainCreateDialog, ConfirmationDialog);
+class AsosdotTerrainCreateDialog : public ConfirmationDialog {
+	GDCLASS(AsosdotTerrainCreateDialog, ConfirmationDialog);
 
 public:
 	enum Mode {
@@ -81,5 +81,5 @@ public:
 	// written in, so the edit can be undone by swapping the old one back.
 	Ref<TerrainData> build(const Ref<TerrainData> &p_existing, float &r_spacing, String &r_error) const;
 
-	TerrainCreateDialog();
+	AsosdotTerrainCreateDialog();
 };

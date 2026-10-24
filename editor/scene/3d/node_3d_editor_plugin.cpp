@@ -54,6 +54,7 @@
 #include "editor/run/editor_run_bar.h"
 #include "editor/scene/3d/gizmos/audio_listener_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/audio_stream_player_3d_gizmo_plugin.h"
+#include "editor/scene/3d/gizmos/blender_constraint_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/camera_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/chain_ik_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/cpu_particles_3d_gizmo_plugin.h"
@@ -716,6 +717,8 @@ void Node3DEditorViewport::_select_clicked(bool p_allow_locked) {
 	Node *node = ObjectDB::get_instance<Node3D>(clicked);
 	Node3D *selected = Object::cast_to<Node3D>(node);
 	clicked = ObjectID();
+	Node *hit = ObjectDB::get_instance<Node>(clicked_hit);
+	clicked_hit = ObjectID();
 
 	if (!selected) {
 		return;
@@ -723,10 +726,18 @@ void Node3DEditorViewport::_select_clicked(bool p_allow_locked) {
 
 	Node *edited_scene = EditorNode::get_singleton()->get_edited_scene();
 
+	// Clicking the selected instance again, without dragging, picks the node its scene exposes
+	// there, then the next one down, then the instance again.
+	clicked_hit = hit ? hit->get_instance_id() : ObjectID();
+	if (Node3D *next = _get_exposed_click_target(node)) {
+		node = next;
+		selected = next;
+	}
+	clicked_hit = ObjectID();
+
 	// Prevent selection of nodes not owned by the edited scene.
 	while (node && node != edited_scene->get_parent()) {
-		Node *node_owner = node->get_owner();
-		if (node_owner == edited_scene || node == edited_scene || (node_owner != nullptr && edited_scene->is_editable_instance(node_owner))) {
+		if (node == edited_scene || edited_scene->is_node_editable(node)) {
 			break;
 		}
 		node = node->get_parent();
@@ -771,6 +782,16 @@ void Node3DEditorViewport::_select_clicked(bool p_allow_locked) {
 	}
 }
 
+Node3D *Node3DEditorViewport::_get_exposed_click_target(Node *p_clicked) const {
+	Node *hit = ObjectDB::get_instance<Node>(clicked_hit);
+	Node *edited_scene = EditorNode::get_singleton()->get_edited_scene();
+	if (!p_clicked || !hit || !edited_scene || clicked_wants_append || editor_selection->get_top_selected_node_list().size() != 1 || !editor_selection->is_selected(p_clicked) || !p_clicked->is_ancestor_of(hit)) {
+		return nullptr;
+	}
+	Node3D *next = Object::cast_to<Node3D>(edited_scene->get_editable_node_for_click(hit, p_clicked));
+	return next != p_clicked ? next : nullptr;
+}
+
 ObjectID Node3DEditorViewport::_select_ray(const Point2 &p_pos) const {
 	Vector3 ray = get_ray(p_pos);
 	Vector3 pos = get_ray_pos(p_pos);
@@ -784,8 +805,14 @@ ObjectID Node3DEditorViewport::_select_ray(const Point2 &p_pos) const {
 
 	Node *edited_scene = get_tree()->get_edited_scene_root();
 	ObjectID closest;
+	ObjectID closest_hit;
 	Node *item = nullptr;
 	float closest_dist = 1e20;
+	// A selected node an instance exposes stays the target of clicks on it, so it can be dragged.
+	Node *selected_node = spatial_editor->get_single_selected_node();
+	if (selected_node && (!edited_scene || !edited_scene->is_node_editable(selected_node))) {
+		selected_node = nullptr;
+	}
 
 	Vector<Node3D *> nodes_with_gizmos = Node3DEditor::get_singleton()->gizmo_bvh_ray_query(pos, pos + ray * camera->get_far());
 
@@ -821,8 +848,13 @@ ObjectID Node3DEditorViewport::_select_ray(const Point2 &p_pos) const {
 
 			if (dist < closest_dist) {
 				item = Object::cast_to<Node>(spat);
+				closest_hit = item->get_instance_id();
 				if (item != edited_scene) {
-					item = edited_scene->get_deepest_editable_node(item);
+					Node *hit = item;
+					item = edited_scene->get_deepest_editable_node(hit);
+					if (selected_node && selected_node->is_ancestor_of(hit) && item->is_ancestor_of(selected_node)) {
+						item = selected_node;
+					}
 				}
 
 				closest = item->get_instance_id();
@@ -832,9 +864,11 @@ ObjectID Node3DEditorViewport::_select_ray(const Point2 &p_pos) const {
 	}
 
 	if (!item) {
+		clicked_hit = ObjectID();
 		return ObjectID();
 	}
 
+	clicked_hit = closest_hit;
 	return closest;
 }
 
@@ -1362,8 +1396,7 @@ void Node3DEditorViewport::_select_region() {
 			}
 			node = edited_scene->get_deepest_editable_node(node);
 			while (node != edited_scene) {
-				Node *node_owner = node->get_owner();
-				if (node_owner == edited_scene || (node_owner != nullptr && edited_scene->is_editable_instance(node_owner))) {
+				if (edited_scene->is_node_editable(node)) {
 					break;
 				}
 				node = node->get_parent();
@@ -1943,12 +1976,12 @@ void Node3DEditorViewport::_list_select(Ref<InputEventMouseButton> b) {
 	// If a node has an invalid owner, recursively check their parents until a valid node is found.
 	for (int i = 0; i < potential_selection_results.size(); i++) {
 		Node3D *node = potential_selection_results[i].item;
+		Node3D *hit = node;
 		while (true) {
 			if (node == nullptr || node == edited_scene->get_parent()) {
 				break;
 			} else {
-				Node *node_owner = node->get_owner();
-				if (node == edited_scene || node_owner == edited_scene || (node_owner != nullptr && edited_scene->is_editable_instance(node_owner))) {
+				if (node == edited_scene || edited_scene->is_node_editable(node)) {
 					if (!selection_results.has(node)) {
 						selection_results.append(node);
 					}
@@ -1957,12 +1990,18 @@ void Node3DEditorViewport::_list_select(Ref<InputEventMouseButton> b) {
 			}
 			node = Object::cast_to<Node3D>(node->get_parent());
 		}
+		// When that is a node an instance exposes, the instance itself is listed too.
+		Node3D *instance = hit && hit != edited_scene ? Object::cast_to<Node3D>(edited_scene->get_deepest_editable_node(hit)) : nullptr;
+		if (instance && instance != node && !selection_results.has(instance)) {
+			selection_results.append(instance);
+		}
 	}
 
 	clicked_wants_append = b->is_shift_pressed();
 
 	if (selection_results.size() == 1) {
 		clicked = selection_results[0]->get_instance_id();
+		clicked_hit = ObjectID();
 		selection_results.clear();
 
 		if (clicked.is_valid()) {
@@ -2599,6 +2638,8 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 					if (!_edit.instant && _edit.mode != TRANSFORM_NONE) {
 						Node3D *selected = spatial_editor->get_single_selected_node();
 						Node3DEditorSelectedItem *se = selected ? editor_selection->get_node_editor_data<Node3DEditorSelectedItem>(selected) : nullptr;
+						// Pressing a selected node starts moving it; if it didn't move, it was a click.
+						const bool moved = _edit.original_mouse_pos != _edit.mouse_pos;
 
 						if (se && se->gizmo.is_valid()) {
 							Vector<int> ids;
@@ -2619,6 +2660,16 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 						_edit.mode = TRANSFORM_NONE;
 						set_message("");
 						spatial_editor->update_transform_gizmo();
+
+						// A click on the selected instance goes on to a node its scene exposes there.
+						if (!moved && !(se && se->gizmo.is_valid())) {
+							Node3D *next = _get_exposed_click_target(ObjectDB::get_instance<Node>(clicked));
+							if (next) {
+								clicked = next->get_instance_id();
+								clicked_hit = ObjectID();
+								_select_clicked(false);
+							}
+						}
 					}
 				}
 
@@ -4994,6 +5045,7 @@ void Node3DEditorViewport::_selection_result_pressed(int p_result) {
 	}
 
 	clicked = selection_results_menu[p_result]->get_instance_id();
+	clicked_hit = ObjectID();
 
 	if (clicked.is_valid()) {
 		_select_clicked(true);
@@ -5013,6 +5065,13 @@ void Node3DEditorViewport::set_can_preview(Camera3D *p_preview) {
 
 	if (!preview_camera->is_pressed() && !previewing_cinema) {
 		preview_camera->set_visible(p_preview);
+	}
+}
+
+void Node3DEditorViewport::set_cinematic_preview(bool p_enabled) {
+	if (previewing_cinema != p_enabled) {
+		// Through the menu option, so the menu's check and the "Cinematic Preview" label follow.
+		_menu_option(VIEW_CINEMATIC_PREVIEW);
 	}
 }
 
@@ -5207,6 +5266,10 @@ void Node3DEditorViewport::set_state(const Dictionary &p_state) {
 	}
 	if (p_state.has("display_mode")) {
 		int display = p_state["display_mode"];
+		if (p_state.has("lens_flares") && !p_state.has("godot_view_ids") && display > VIEW_TRANSFORM_GIZMO) {
+			// Saved by an earlier Asosdot, whose ids from the transform gizmo on were one higher than Godot's.
+			display -= 1;
+		}
 
 		int idx = view_display_menu->get_popup()->get_item_index(display);
 		if (idx != -1 && !view_display_menu->get_popup()->is_item_checked(idx)) {
@@ -5250,7 +5313,7 @@ void Node3DEditorViewport::set_state(const Dictionary &p_state) {
 			_menu_option(VIEW_GIZMOS);
 		}
 	}
-	if (p_state.has("lens_flares")) {
+	if (p_state.has("lens_flares") && view_display_menu->get_popup()->get_item_index(VIEW_LENS_FLARES) != -1) {
 		bool lens_flares = p_state["lens_flares"];
 
 		int idx = view_display_menu->get_popup()->get_item_index(VIEW_LENS_FLARES);
@@ -5367,7 +5430,11 @@ Dictionary Node3DEditorViewport::get_state() const {
 	d["listener"] = viewport->is_audio_listener_3d();
 	d["doppler"] = view_display_menu->get_popup()->is_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_AUDIO_DOPPLER));
 	d["gizmos"] = view_display_menu->get_popup()->is_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_GIZMOS));
-	d["lens_flares"] = view_display_menu->get_popup()->is_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_LENS_FLARES));
+	if (view_display_menu->get_popup()->get_item_index(VIEW_LENS_FLARES) != -1) {
+		d["lens_flares"] = view_display_menu->get_popup()->is_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_LENS_FLARES));
+	}
+	// The display mode above uses Godot's numbers.
+	d["godot_view_ids"] = true;
 	d["transform_gizmo"] = view_display_menu->get_popup()->is_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_TRANSFORM_GIZMO));
 	d["grid"] = view_display_menu->get_popup()->is_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_GRID));
 	d["information"] = view_display_menu->get_popup()->is_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_INFORMATION));
@@ -6900,7 +6967,9 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	view_display_menu->get_popup()->add_separator();
 	view_display_menu->get_popup()->add_check_shortcut(ED_SHORTCUT("spatial_editor/view_environment", TTRC("View Environment")), VIEW_ENVIRONMENT);
 	view_display_menu->get_popup()->add_check_shortcut(ED_SHORTCUT("spatial_editor/view_gizmos", TTRC("View Gizmos")), VIEW_GIZMOS);
-	view_display_menu->get_popup()->add_check_shortcut(ED_SHORTCUT("spatial_editor/view_lens_flares", TTRC("View Lens Flares")), VIEW_LENS_FLARES);
+	if (!ClassDB::is_asosdot_class_group_yielded("lens_flare")) {
+		view_display_menu->get_popup()->add_check_shortcut(ED_SHORTCUT("spatial_editor/view_lens_flares", TTRC("View Lens Flares")), VIEW_LENS_FLARES);
+	}
 	view_display_menu->get_popup()->add_check_shortcut(ED_SHORTCUT("spatial_editor/view_transform_gizmo", TTRC("View Transform Gizmo")), VIEW_TRANSFORM_GIZMO);
 	view_display_menu->get_popup()->add_check_shortcut(ED_SHORTCUT("spatial_editor/view_grid_lines", TTRC("View Grid")), VIEW_GRID);
 	view_display_menu->get_popup()->add_check_shortcut(ED_SHORTCUT("spatial_editor/view_information", TTRC("View Information")), VIEW_INFORMATION);
@@ -6912,7 +6981,9 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	view_display_menu->get_popup()->add_check_shortcut(ED_SHORTCUT("spatial_editor/view_audio_listener", TTRC("Audio Listener")), VIEW_AUDIO_LISTENER);
 	view_display_menu->get_popup()->add_check_shortcut(ED_SHORTCUT("spatial_editor/view_audio_doppler", TTRC("Enable Doppler")), VIEW_AUDIO_DOPPLER);
 	view_display_menu->get_popup()->set_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_GIZMOS), true);
-	view_display_menu->get_popup()->set_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_LENS_FLARES), true);
+	if (view_display_menu->get_popup()->get_item_index(VIEW_LENS_FLARES) != -1) {
+		view_display_menu->get_popup()->set_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_LENS_FLARES), true);
+	}
 	view_display_menu->get_popup()->set_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_TRANSFORM_GIZMO), true);
 	view_display_menu->get_popup()->set_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_GRID), true);
 
@@ -9583,7 +9654,9 @@ void Node3DEditor::shortcut_input(const Ref<InputEvent> &p_event) {
 }
 
 void Node3DEditor::_generate_flare_pressed() {
-	lens_flare_generator->popup_for_selection();
+	if (lens_flare_generator) {
+		lens_flare_generator->popup_for_selection();
+	}
 }
 
 void Node3DEditor::_update_generate_flare_button() {
@@ -9591,7 +9664,8 @@ void Node3DEditor::_update_generate_flare_button() {
 	// the flare should behave. Hidden rather than greyed out: this is the one
 	// button in the toolbar carrying a word of text, so leaving it there for
 	// the selections it cannot act on costs more room than it is worth.
-	Light3D *light = LensFlareGeneratorDialog::get_selected_light();
+	// Left out when the project has its own class of a lens flare name, as with a lens flare add-on.
+	Light3D *light = lens_flare_generator ? AsosdotLensFlareGeneratorDialog::get_selected_light() : nullptr;
 	generate_flare_button->set_visible(light != nullptr);
 	if (light) {
 		generate_flare_button->set_tooltip_text(vformat(TTR("Add a LensFlare3D to %s, set up for its light type."), light->get_name()));
@@ -10169,7 +10243,10 @@ void Node3DEditor::_register_all_gizmos() {
 	add_gizmo_plugin(Ref<Label3DGizmoPlugin>(memnew(Label3DGizmoPlugin)));
 	add_gizmo_plugin(Ref<GeometryInstance3DGizmoPlugin>(memnew(GeometryInstance3DGizmoPlugin)));
 	add_gizmo_plugin(Ref<Marker3DGizmoPlugin>(memnew(Marker3DGizmoPlugin)));
-	add_gizmo_plugin(Ref<Rope3DGizmoPlugin>(memnew(Rope3DGizmoPlugin)));
+	// Asosdot's gizmos stay out of projects whose own classes take their nodes' names.
+	if (!ClassDB::is_asosdot_class_group_yielded("rope")) {
+		add_gizmo_plugin(Ref<AsosdotRope3DGizmoPlugin>(memnew(AsosdotRope3DGizmoPlugin)));
+	}
 	add_gizmo_plugin(Ref<RayCast3DGizmoPlugin>(memnew(RayCast3DGizmoPlugin)));
 	add_gizmo_plugin(Ref<ShapeCast3DGizmoPlugin>(memnew(ShapeCast3DGizmoPlugin)));
 	add_gizmo_plugin(Ref<SpringArm3DGizmoPlugin>(memnew(SpringArm3DGizmoPlugin)));
@@ -10192,8 +10269,13 @@ void Node3DEditor::_register_all_gizmos() {
 	add_gizmo_plugin(Ref<Joint3DGizmoPlugin>(memnew(Joint3DGizmoPlugin)));
 	add_gizmo_plugin(Ref<PhysicalBone3DGizmoPlugin>(memnew(PhysicalBone3DGizmoPlugin)));
 	add_gizmo_plugin(Ref<FogVolumeGizmoPlugin>(memnew(FogVolumeGizmoPlugin)));
-	add_gizmo_plugin(Ref<LensFlare3DGizmoPlugin>(memnew(LensFlare3DGizmoPlugin)));
+	if (!ClassDB::is_asosdot_class_group_yielded("lens_flare")) {
+		add_gizmo_plugin(Ref<AsosdotLensFlare3DGizmoPlugin>(memnew(AsosdotLensFlare3DGizmoPlugin)));
+	}
 	add_gizmo_plugin(Ref<TwoBoneIK3DGizmoPlugin>(memnew(TwoBoneIK3DGizmoPlugin)));
+	if (!ClassDB::is_asosdot_class_group_yielded("blender_constraint")) {
+		add_gizmo_plugin(Ref<AsosdotBlenderConstraint3DGizmoPlugin>(memnew(AsosdotBlenderConstraint3DGizmoPlugin)));
+	}
 	add_gizmo_plugin(Ref<ChainIK3DGizmoPlugin>(memnew(ChainIK3DGizmoPlugin)));
 }
 
@@ -10762,8 +10844,10 @@ Node3DEditor::Node3DEditor() {
 	generate_flare_button->connect(SceneStringName(pressed), callable_mp(this, &Node3DEditor::_generate_flare_pressed));
 	main_menu_hbox->add_child(generate_flare_button);
 
-	lens_flare_generator = memnew(LensFlareGeneratorDialog);
-	add_child(lens_flare_generator);
+	if (!ClassDB::is_asosdot_class_group_yielded("lens_flare")) {
+		lens_flare_generator = memnew(AsosdotLensFlareGeneratorDialog);
+		add_child(lens_flare_generator);
+	}
 	_update_generate_flare_button();
 
 	rope_simulate_button = memnew(Button);
@@ -10783,6 +10867,11 @@ Node3DEditor::Node3DEditor() {
 	rope_reset_button->set_shortcut_context(this);
 	rope_reset_button->connect(SceneStringName(pressed), callable_mp(this, &Node3DEditor::_rope_reset_pressed));
 	main_menu_hbox->add_child(rope_reset_button);
+	if (ClassDB::is_asosdot_class_group_yielded("rope")) {
+		// The project has its own class named Rope3D.
+		rope_simulate_button->hide();
+		rope_reset_button->hide();
+	}
 
 	// The override is process wide and outlives any one editor session's
 	// toolbar state, so make sure the two agree on startup.

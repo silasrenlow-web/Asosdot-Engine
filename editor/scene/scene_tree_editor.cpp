@@ -211,6 +211,16 @@ void SceneTreeEditor::_cell_button_pressed(Object *p_item, int p_column, int p_i
 		set_selected(n);
 
 		EditorDockManager::get_singleton()->focus_dock(GroupsDock::get_singleton());
+	} else if (p_id == BUTTON_EXPOSED) {
+		if (n->get_owner() != get_scene_node()) {
+			return;
+		}
+		undo_redo->create_action(TTR("Stop Exposing Node in Instances"));
+		undo_redo->add_do_method(n, "set_exposed_in_instances", false);
+		undo_redo->add_undo_method(n, "set_exposed_in_instances", true);
+		undo_redo->add_do_method(this, "_update_tree");
+		undo_redo->add_undo_method(this, "_update_tree");
+		undo_redo->commit_action();
 	} else if (p_id == BUTTON_UNIQUE) {
 		bool ask_before_revoking_unique_name = EDITOR_GET("docks/scene_tree/ask_before_revoking_unique_name");
 		revoke_node = n;
@@ -287,11 +297,21 @@ void SceneTreeEditor::_update_node_subtree(Node *p_node, TreeItem *p_parent, boo
 	// which the editor needs not to know about.
 
 	bool part_of_subscene = false;
+	Node *scene_node = get_scene_node();
+	const bool show_subscenes = show_enabled_subscene || can_open_instance;
 
-	if (!display_foreign && p_node->get_owner() != get_scene_node() && p_node != get_scene_node()) {
-		if ((show_enabled_subscene || can_open_instance) && p_node->get_owner() && (get_scene_node()->is_editable_instance(p_node->get_owner()))) {
+	if (!display_foreign && p_node != scene_node && (p_node->get_owner() != scene_node || !scene_node->is_node_editable(p_node))) {
+		if (show_subscenes && p_node->get_owner() && p_node->get_owner() != scene_node && scene_node->is_node_editable(p_node)) {
 			part_of_subscene = true;
 			// Allow.
+		} else if (show_subscenes && p_node->get_owner() && p_node->get_owner() != scene_node) {
+			// A part of an instance this scene can't edit. Nodes the instance's scene exposes may be
+			// further down; they show under the nearest node that is shown.
+			node_cache.remove(p_node, false);
+			for (int i = 0; i < p_node->get_child_count(false); i++) {
+				_update_node_subtree(p_node->get_child(i, false), p_parent, p_force);
+			}
+			return;
 		} else {
 			// Stale node, remove recursively.
 			node_cache.remove(p_node, true);
@@ -306,9 +326,18 @@ void SceneTreeEditor::_update_node_subtree(Node *p_node, TreeItem *p_parent, boo
 
 	bool is_new = false;
 
+	// Whether this node shows under a node other than its parent, which isn't shown.
+	bool flattened = false;
+	if (p_parent && p_node->get_parent()) {
+		// Without reviving a parent that is no longer shown.
+		HashMap<Node *, CachedNode>::Iterator P = node_cache.get(p_node->get_parent(), false);
+		flattened = !P || P->value.item != p_parent;
+	}
+
 	if (I) {
 		item = I->value.item;
 		TreeItem *current_parent = item->get_parent();
+		I->value.flattened = flattened;
 
 		// Our parent might be re-created because of a changed type.
 		if (p_parent && p_parent != current_parent) {
@@ -317,7 +346,9 @@ void SceneTreeEditor::_update_node_subtree(Node *p_node, TreeItem *p_parent, boo
 			}
 			p_parent->add_child(item);
 			I->value.removed = false;
-			_move_node_item(p_parent, I);
+			if (!flattened) {
+				_move_node_item(p_parent, I);
+			}
 		}
 
 		if (I->value.has_moved_children) {
@@ -333,12 +364,14 @@ void SceneTreeEditor::_update_node_subtree(Node *p_node, TreeItem *p_parent, boo
 			}
 			index = 0;
 		} else {
-			index = p_node->get_index(false);
+			// A node shown under a node other than its parent goes after that node's children.
+			index = flattened ? -1 : p_node->get_index(false);
 			item = tree->create_item(p_parent, index);
 		}
 
 		I = node_cache.add(p_node, item);
 		I->value.index = index;
+		I->value.flattened = flattened;
 		is_new = true;
 	}
 
@@ -355,9 +388,15 @@ void SceneTreeEditor::_update_node_subtree(Node *p_node, TreeItem *p_parent, boo
 
 	// Force update all our children if we are new or if we were forced to update.
 	bool force_update_children = p_force || is_new;
-	// Update all our children.
-	for (int i = 0; i < p_node->get_child_count(false); i++) {
-		_update_node_subtree(p_node->get_child(i, false), item, force_update_children);
+	// Update all our children: first those shown as themselves, then hidden parts of instances,
+	// whose exposed nodes show here after them.
+	for (int pass = 0; pass < 2; pass++) {
+		for (int i = 0; i < p_node->get_child_count(false); i++) {
+			Node *child = p_node->get_child(i, false);
+			if (_is_hidden_instance_part(child) == (pass == 1)) {
+				_update_node_subtree(child, item, force_update_children);
+			}
+		}
 	}
 
 	if (valid_types.size()) {
@@ -391,6 +430,12 @@ void SceneTreeEditor::_update_node_subtree(Node *p_node, TreeItem *p_parent, boo
 			}
 		}
 	}
+}
+
+bool SceneTreeEditor::_is_hidden_instance_part(Node *p_node) const {
+	// A node of an instance that this scene can't edit, which the dock looks through for exposed nodes.
+	Node *scene_node = get_scene_node();
+	return !display_foreign && (show_enabled_subscene || can_open_instance) && p_node != scene_node && p_node->get_owner() && p_node->get_owner() != scene_node && !scene_node->is_node_editable(p_node);
 }
 
 void SceneTreeEditor::_update_node(Node *p_node, TreeItem *p_item, bool p_part_of_subscene) {
@@ -517,6 +562,25 @@ void SceneTreeEditor::_update_node(Node *p_node, TreeItem *p_item, bool p_part_o
 			}
 
 			p_item->add_button(0, get_editor_theme_icon(warning_icon), BUTTON_WARNING, false, TTR("Node configuration warning:") + all_warnings);
+		}
+
+		if (p_node->is_exposed_in_instances() || p_node->is_instance_changes_kept()) {
+			Node *node_owner = p_node->get_owner();
+			const bool own = node_owner == get_scene_node();
+			String button_text;
+			Color button_color(1, 1, 1);
+			if (own) {
+				button_text = TTR("Exposed in instances: scenes that instance this one can edit this node without Editable Children.") + "\n" + TTR("Click to stop exposing it.");
+			} else if (p_node->is_exposed_in_instances()) {
+				button_text = vformat(TTR("Exposed by %s: this scene can edit it without Editable Children."), node_owner ? node_owner->get_scene_file_path().get_file() : String());
+			} else if (node_owner && !get_scene_node()->is_editable_instance(node_owner)) {
+				button_text = vformat(TTR("%s no longer exposes this node, but this scene changes it, so it stays here and the changes are kept.\nRevert them to remove it from this scene."), node_owner->get_scene_file_path().get_file());
+				button_color = get_theme_color(SNAME("warning_color"), EditorStringName(Editor));
+			}
+			if (!button_text.is_empty()) {
+				p_item->add_button(0, get_editor_theme_icon(SNAME("ExposedNode")), BUTTON_EXPOSED, !own, button_text);
+				p_item->set_button_color(0, p_item->get_button_count(0) - 1, button_color);
+			}
 		}
 
 		if (p_node->is_unique_name_in_owner()) {
@@ -685,6 +749,24 @@ void SceneTreeEditor::_update_node_tooltip(Node *p_node, TreeItem *p_item) {
 			p_item->add_button(0, get_editor_theme_icon(SNAME("InstanceOptions")), BUTTON_SUBSCENE, false, TTR("Open in Editor"));
 		}
 		tooltip += String("\n" + TTR("Instance:") + " " + p_node->get_scene_file_path());
+
+		// The nodes its scene lets other scenes edit.
+		List<Node *> owned;
+		p_node->get_owned_by(p_node, &owned);
+		PackedStringArray exposed;
+		for (const Node *E : owned) {
+			if (E->is_exposed_in_instances()) {
+				exposed.push_back(String(p_node->get_path_to(E)));
+			}
+		}
+		if (!exposed.is_empty()) {
+			tooltip += "\n" + TTR("Exposes:") + " " + String(", ").join(exposed);
+		}
+	}
+
+	Node *node_owner = p_node->get_owner();
+	if (node_owner && node_owner != get_scene_node() && (p_node->is_exposed_in_instances() || p_node->is_instance_changes_kept())) {
+		tooltip += "\n" + vformat(TTR("In %s at %s"), node_owner->get_scene_file_path().get_file(), String(node_owner->get_path_to(p_node)));
 	}
 
 	StringName custom_type = EditorNode::get_singleton()->get_object_custom_type_name(p_node);
@@ -786,7 +868,7 @@ void SceneTreeEditor::_move_node_children(HashMap<Node *, CachedNode>::Iterator 
 
 	for (int i = 0; i < cc; i++) {
 		HashMap<Node *, CachedNode>::Iterator CI = node_cache.get(node->get_child(i, false));
-		if (CI) {
+		if (CI && !CI->value.flattened) {
 			_move_node_item(item, CI, previous_item);
 			previous_item = CI->value.item;
 		} else {

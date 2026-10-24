@@ -2697,6 +2697,71 @@ Node *Node::get_deepest_editable_node(Node *p_start_node) const {
 	return node;
 }
 
+void Node::set_exposed_in_instances(bool p_exposed) {
+	ERR_THREAD_GUARD
+	if (data.exposed_in_instances == p_exposed) {
+		return;
+	}
+	data.exposed_in_instances = p_exposed;
+	_emit_editor_state_changed();
+}
+
+bool Node::is_exposed_in_instances() const {
+	return data.exposed_in_instances;
+}
+
+bool Node::is_node_editable(const Node *p_node) const {
+	// Called on a scene's root. A node of this scene is editable where its parent is. A node of an
+	// instance is editable where its instance is, if the instance has editable children, or the
+	// instance's own scene exposes the node.
+	const Node *node = p_node;
+	while (node && node != this) {
+		const Node *owner = node->data.owner;
+		if (owner == this) {
+			node = node->data.parent;
+			continue;
+		}
+		if (!owner || !(owner->data.editable_instance || node->data.exposed_in_instances || node->data.instance_changes_kept)) {
+			return false;
+		}
+		node = owner;
+	}
+	return node == this;
+}
+
+Node *Node::get_editable_node_for_click(Node *p_start_node, const Node *p_selected) const {
+	ERR_FAIL_NULL_V(p_start_node, nullptr);
+	Node *deepest = get_deepest_editable_node(p_start_node);
+	// A click selects an instance as before. Clicking the selected instance again picks the node
+	// its scene exposes there, then the next one down, then the instance again.
+	if (!p_selected || p_selected == p_start_node || !p_selected->is_ancestor_of(p_start_node) || !is_node_editable(p_selected)) {
+		return deepest;
+	}
+	if (deepest != p_selected && !deepest->is_ancestor_of(p_selected)) {
+		return deepest;
+	}
+	Node *next = nullptr;
+	for (Node *node = p_start_node; node && node != p_selected; node = node->data.parent) {
+		if (is_node_editable(node)) {
+			next = node;
+		}
+	}
+	return next ? next : deepest;
+}
+
+void Node::set_instance_changes_kept(bool p_kept) {
+	ERR_THREAD_GUARD
+	if (data.instance_changes_kept == p_kept) {
+		return;
+	}
+	data.instance_changes_kept = p_kept;
+	_emit_editor_state_changed();
+}
+
+bool Node::is_instance_changes_kept() const {
+	return data.instance_changes_kept;
+}
+
 #ifdef TOOLS_ENABLED
 void Node::set_property_pinned(const String &p_property, bool p_pinned) {
 	ERR_THREAD_GUARD
@@ -2859,6 +2924,16 @@ Node *Node::_duplicate(int p_flags, HashMap<const Node *, Node *> *r_duplimap) c
 			ERR_CONTINUE(!duplicated_node);
 
 			duplicated_node->data.editable_instance = source_node->data.editable_instance;
+		}
+
+		// Changes the scene keeps to nodes of the instance go with the copy.
+		for (const Node *source_node : node_tree) {
+			if (source_node->data.instance_changes_kept) {
+				Node *duplicated_node = node->get_node_or_null(get_path_to(source_node));
+				if (duplicated_node) {
+					duplicated_node->data.instance_changes_kept = true;
+				}
+			}
 		}
 	}
 
@@ -3866,6 +3941,11 @@ void Node::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_scene_instance_load_placeholder"), &Node::get_scene_instance_load_placeholder);
 	ClassDB::bind_method(D_METHOD("set_editable_instance", "node", "is_editable"), &Node::set_editable_instance);
 	ClassDB::bind_method(D_METHOD("is_editable_instance", "node"), &Node::is_editable_instance);
+	ClassDB::bind_method(D_METHOD("set_exposed_in_instances", "exposed"), &Node::set_exposed_in_instances);
+	ClassDB::bind_method(D_METHOD("is_exposed_in_instances"), &Node::is_exposed_in_instances);
+	ClassDB::bind_method(D_METHOD("is_node_editable", "node"), &Node::is_node_editable);
+	ClassDB::bind_method(D_METHOD("set_instance_changes_kept", "kept"), &Node::set_instance_changes_kept);
+	ClassDB::bind_method(D_METHOD("is_instance_changes_kept"), &Node::is_instance_changes_kept);
 
 	ClassDB::bind_method(D_METHOD("get_viewport"), &Node::get_viewport);
 
@@ -4038,6 +4118,7 @@ void Node::_bind_methods() {
 
 	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "name", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "set_name", "get_name");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "unique_name_in_owner", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NO_EDITOR), "set_unique_name_in_owner", "is_unique_name_in_owner");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "exposed_in_instances", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NO_EDITOR), "set_exposed_in_instances", "is_exposed_in_instances");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "scene_file_path", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "set_scene_file_path", "get_scene_file_path");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "owner", PROPERTY_HINT_RESOURCE_TYPE, Node::get_class_static(), PROPERTY_USAGE_NONE), "set_owner", "get_owner");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "multiplayer", PROPERTY_HINT_RESOURCE_TYPE, MultiplayerAPI::get_class_static(), PROPERTY_USAGE_NONE), "", "get_multiplayer");
@@ -4119,6 +4200,8 @@ Node::Node() {
 
 	data.display_folded = false;
 	data.editable_instance = false;
+	data.exposed_in_instances = false;
+	data.instance_changes_kept = false;
 
 	data.ready_notified = false; // This is a small hack, so if a node is added during _ready() to the tree, it correctly gets the _ready() notification.
 	data.ready_first = true;

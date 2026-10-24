@@ -66,11 +66,16 @@ void ExportTemplateManager::_request_mirrors() {
 	mirrors_empty = true;
 	_update_install_button();
 
-	// Downloadable export templates are only available for stable and official alpha/beta/RC builds
-	// (which always have a number following their status, e.g. "alpha1").
-	// Therefore, don't display download-related features when using a development version
-	// (whose builds aren't numbered).
-	if (!strcmp(GODOT_VERSION_STATUS, "dev") || !strcmp(GODOT_VERSION_STATUS, "beta") || !strcmp(GODOT_VERSION_STATUS, "rc")) {
+	// Asosdot: Godot's mirrors only have Godot's templates, which lack Asosdot's classes, so they're
+	// never offered. Asosdot's are built with the engine and installed from a .tpz or by copying.
+	if (true) {
+		_set_empty_mirror_list();
+		mirrors_list->set_tooltip_text(TTRC("Asosdot's export templates aren't downloadable: Godot's would lack Asosdot's nodes and fixes. Install the .tpz built with this Asosdot version, with \"Install from File\"."));
+	} else if (!strcmp(GODOT_VERSION_STATUS, "dev") || !strcmp(GODOT_VERSION_STATUS, "beta") || !strcmp(GODOT_VERSION_STATUS, "rc")) {
+		// Downloadable export templates are only available for stable and official alpha/beta/RC builds
+		// (which always have a number following their status, e.g. "alpha1").
+		// Therefore, don't display download-related features when using a development version
+		// (whose builds aren't numbered).
 		_set_empty_mirror_list();
 		mirrors_list->set_tooltip_text(TTRC("Official export templates aren't available for development builds."));
 #ifdef REAL_T_IS_DOUBLE
@@ -198,7 +203,7 @@ void ExportTemplateManager::_delete_confirmed() {
 	_delete_file(item_to_delete);
 
 	const String selected_version = version_list->get_item_text(version_list->get_current());
-	if (selected_version != GODOT_VERSION_FULL_CONFIG) {
+	if (selected_version != ASOSDOT_EXPORT_TEMPLATES_VERSION) {
 		// Deleting all installed templates removes the version from list.
 		_update_version_list();
 	}
@@ -288,6 +293,13 @@ void ExportTemplateManager::_tpz_file_selected(const String &p_file) {
 
 	if (version.is_empty()) {
 		EditorNode::get_singleton()->show_warning(TTR("No version.txt found inside the export templates file."));
+		unzClose(pkg);
+		return;
+	}
+
+	if (!version.begins_with("asosdot.")) {
+		// Asosdot: Godot's templates would export games missing Asosdot's nodes and fixes.
+		EditorNode::get_singleton()->show_warning(vformat(TTR("These are Godot's export templates (%s). Games exported with them would lack Asosdot's nodes and fixes, so Asosdot doesn't use them.\nInstall the templates built with Asosdot instead (%s)."), version, ASOSDOT_EXPORT_TEMPLATES_VERSION));
 		unzClose(pkg);
 		return;
 	}
@@ -558,7 +570,7 @@ void ExportTemplateManager::_initialize_template_data() {
 	}
 
 	// Template directory status.
-	DirAccess::make_dir_recursive_absolute(_get_template_folder_path(GODOT_VERSION_FULL_CONFIG));
+	DirAccess::make_dir_recursive_absolute(_get_template_folder_path(ASOSDOT_EXPORT_TEMPLATES_VERSION));
 	_update_version_list();
 }
 
@@ -574,7 +586,7 @@ void ExportTemplateManager::_update_version_list() {
 
 	int current_version_id = -1;
 	for (const String &dir : templates_dir->get_directories()) {
-		if (dir == GODOT_VERSION_FULL_CONFIG) {
+		if (dir == ASOSDOT_EXPORT_TEMPLATES_VERSION) {
 			version_list->add_item(dir);
 			version_list->set_item_custom_fg_color(-1, theme_cache.current_version_color);
 			current_version_id = version_list->get_item_count() - 1;
@@ -613,7 +625,7 @@ void ExportTemplateManager::_update_template_tree() {
 	Ref<DirAccess> template_directory = DirAccess::open(_get_template_folder_path(selected_version));
 	ERR_FAIL_COND(template_directory.is_null());
 
-	bool is_current_version = (selected_version == GODOT_VERSION_FULL_CONFIG);
+	bool is_current_version = (selected_version == ASOSDOT_EXPORT_TEMPLATES_VERSION);
 	HashMap<TemplateID, LocalVector<String>> installed_template_files;
 
 	for (const KeyValue<PlatformID, PlatformInfo> &KV : platform_map) {
@@ -844,7 +856,7 @@ void ExportTemplateManager::_update_install_button() {
 
 bool ExportTemplateManager::_can_download_templates() {
 	const String selected_version = version_list->get_item_text(version_list->get_current());
-	return !mirrors_empty && _is_online() && selected_version == GODOT_VERSION_FULL_CONFIG;
+	return !mirrors_empty && _is_online() && selected_version == ASOSDOT_EXPORT_TEMPLATES_VERSION;
 }
 
 void ExportTemplateManager::_update_folding_cache(TreeItem *p_item) {
@@ -1398,7 +1410,7 @@ String ExportTemplateManager::get_android_source_zip(const Ref<EditorExportPrese
 		}
 	}
 
-	const String templates_dir = EditorPaths::get_singleton()->get_export_templates_dir().path_join(GODOT_VERSION_FULL_CONFIG);
+	const String templates_dir = EditorPaths::get_singleton()->get_export_templates_dir().path_join(ASOSDOT_EXPORT_TEMPLATES_VERSION);
 	return templates_dir.path_join("android_source.zip");
 }
 
@@ -1410,7 +1422,7 @@ String ExportTemplateManager::get_android_template_identifier(const Ref<EditorEx
 			return android_source_zip + String(" [") + FileAccess::get_md5(android_source_zip) + String("]");
 		}
 	}
-	return GODOT_VERSION_FULL_CONFIG;
+	return ASOSDOT_EXPORT_TEMPLATES_VERSION;
 }
 
 bool ExportTemplateManager::is_android_template_installed(const Ref<EditorExportPreset> &p_preset) {
@@ -1691,7 +1703,7 @@ ExportTemplateManager::ExportTemplateManager() {
 	mirrors_requester->connect("request_completed", callable_mp(this, &ExportTemplateManager::_mirrors_request_completed));
 	add_child(mirrors_requester);
 
-	const String template_directory = _get_template_folder_path(GODOT_VERSION_FULL_CONFIG);
+	const String template_directory = _get_template_folder_path(ASOSDOT_EXPORT_TEMPLATES_VERSION);
 	for (int i = 0; i < 5; i++) {
 		TemplateDownloader *downloader = memnew(TemplateDownloader(template_directory));
 		downloader->set_use_threads(true);

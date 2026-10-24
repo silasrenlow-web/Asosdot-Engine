@@ -66,7 +66,7 @@ void AudioStreamPlayerInternal::_update_stream_parameters() {
 void AudioStreamPlayerInternal::process() {
 	Vector<Ref<AudioStreamPlayback>> playbacks_to_remove;
 	for (Ref<AudioStreamPlayback> &playback : stream_playbacks) {
-		if (playback.is_valid() && !AudioServer::get_singleton()->is_playback_active(playback) && !AudioServer::get_singleton()->is_playback_paused(playback)) {
+		if (playback.is_valid() && !_is_layer(playback) && !AudioServer::get_singleton()->is_playback_active(playback) && !AudioServer::get_singleton()->is_playback_paused(playback)) {
 			playbacks_to_remove.push_back(playback);
 		}
 	}
@@ -74,7 +74,8 @@ void AudioStreamPlayerInternal::process() {
 	for (Ref<AudioStreamPlayback> &playback : playbacks_to_remove) {
 		stream_playbacks.erase(playback);
 	}
-	if (!playbacks_to_remove.is_empty() && stream_playbacks.is_empty()) {
+	const bool layer_stopped = _process_layered();
+	if ((!playbacks_to_remove.is_empty() || layer_stopped) && stream_playbacks.is_empty()) {
 		// This node is no longer actively playing audio.
 		active.clear();
 		_set_process(false);
@@ -84,10 +85,41 @@ void AudioStreamPlayerInternal::process() {
 	}
 }
 
+// Reports layered sounds that ended by themselves, and lets the layer go once none are left.
+bool AudioStreamPlayerInternal::_process_layered() {
+	if (layer_playback.is_null() || layer_needs_start) {
+		return false;
+	}
+	LocalVector<int64_t> ended;
+	for (uint32_t i = 0; i < layered.size();) {
+		if (layer_playback->is_stream_playing(layered[i].voice)) {
+			i++;
+		} else {
+			ended.push_back(layered[i].id);
+			layered.remove_at(i);
+		}
+	}
+	bool stopped = false;
+	if (layered.is_empty()) {
+		AudioServer::get_singleton()->stop_playback_stream(layer_playback);
+		stream_playbacks.erase(layer_playback);
+		layer_playback.unref();
+		stopped = true;
+	}
+	for (const int64_t id : ended) {
+		node->emit_signal(SNAME("layered_finished"), id);
+	}
+	return stopped;
+}
+
 void AudioStreamPlayerInternal::ensure_playback_limit() {
-	while (stream_playbacks.size() > max_polyphony) {
-		AudioServer::get_singleton()->stop_playback_stream(stream_playbacks[0]);
-		stream_playbacks.remove_at(0);
+	// Layered sounds share one playback of their own, which doesn't count toward max_polyphony.
+	int own_playbacks = stream_playbacks.size() - (layer_playback.is_valid() ? 1 : 0);
+	while (own_playbacks > max_polyphony) {
+		const int oldest = _is_layer(stream_playbacks[0]) ? 1 : 0;
+		AudioServer::get_singleton()->stop_playback_stream(stream_playbacks[oldest]);
+		stream_playbacks.remove_at(oldest);
+		own_playbacks--;
 	}
 }
 
@@ -113,6 +145,8 @@ void AudioStreamPlayerInternal::notification(int p_what) {
 				AudioServer::get_singleton()->stop_playback_stream(playback);
 			}
 			stream_playbacks.clear();
+			layer_playback.unref();
+			layered.clear();
 		} break;
 
 		case Node::NOTIFICATION_SUSPENDED:
@@ -275,18 +309,24 @@ void AudioStreamPlayerInternal::seek(float p_seconds) {
 }
 
 void AudioStreamPlayerInternal::stop_basic() {
-	for (Ref<AudioStreamPlayback> &playback : stream_playbacks) {
-		AudioServer::get_singleton()->stop_playback_stream(playback);
+	// Only the player's own stream: layered sounds go on until stop_all_layered().
+	for (int i = stream_playbacks.size() - 1; i >= 0; i--) {
+		if (_is_layer(stream_playbacks[i])) {
+			continue;
+		}
+		AudioServer::get_singleton()->stop_playback_stream(stream_playbacks[i]);
+		stream_playbacks.remove_at(i);
 	}
-	stream_playbacks.clear();
 
-	active.clear();
-	_set_process(false);
+	if (stream_playbacks.is_empty()) {
+		active.clear();
+		_set_process(false);
+	}
 }
 
 bool AudioStreamPlayerInternal::is_playing() const {
 	for (const Ref<AudioStreamPlayback> &playback : stream_playbacks) {
-		if (AudioServer::get_singleton()->is_playback_active(playback)) {
+		if (!_is_layer(playback) && AudioServer::get_singleton()->is_playback_active(playback)) {
 			return true;
 		}
 	}
@@ -295,8 +335,10 @@ bool AudioStreamPlayerInternal::is_playing() const {
 
 float AudioStreamPlayerInternal::get_playback_position() {
 	// Return the playback position of the most recently started playback stream.
-	if (!stream_playbacks.is_empty()) {
-		return AudioServer::get_singleton()->get_playback_position(stream_playbacks[stream_playbacks.size() - 1]);
+	for (int i = stream_playbacks.size() - 1; i >= 0; i--) {
+		if (!_is_layer(stream_playbacks[i])) {
+			return AudioServer::get_singleton()->get_playback_position(stream_playbacks[i]);
+		}
 	}
 	return 0;
 }
@@ -329,12 +371,109 @@ void AudioStreamPlayerInternal::set_max_polyphony(int p_max_polyphony) {
 }
 
 bool AudioStreamPlayerInternal::has_stream_playback() {
-	return !stream_playbacks.is_empty();
+	return stream_playbacks.size() > (layer_playback.is_valid() ? 1 : 0);
 }
 
 Ref<AudioStreamPlayback> AudioStreamPlayerInternal::get_stream_playback() {
-	ERR_FAIL_COND_V_MSG(stream_playbacks.is_empty(), Ref<AudioStreamPlayback>(), "Player is inactive. Call play() before requesting get_stream_playback().");
-	return stream_playbacks[stream_playbacks.size() - 1];
+	for (int i = stream_playbacks.size() - 1; i >= 0; i--) {
+		if (!_is_layer(stream_playbacks[i])) {
+			return stream_playbacks[i];
+		}
+	}
+	ERR_FAIL_V_MSG(Ref<AudioStreamPlayback>(), "Player is inactive. Call play() before requesting get_stream_playback().");
+}
+
+int64_t AudioStreamPlayerInternal::play_layered(const Ref<AudioStream> &p_stream, float p_from_pos, float p_volume_db, float p_pitch_scale) {
+	ERR_FAIL_COND_V(p_stream.is_null(), AudioStreamPlaybackPolyphonic::INVALID_ID);
+	ERR_FAIL_COND_V_MSG(!node->is_inside_tree(), AudioStreamPlaybackPolyphonic::INVALID_ID, "Playback can only happen when a node is inside the scene tree");
+	ERR_FAIL_COND_V(p_pitch_scale <= 0.0, AudioStreamPlaybackPolyphonic::INVALID_ID);
+	ERR_FAIL_COND_V_MSG(Math::is_nan(p_volume_db), AudioStreamPlaybackPolyphonic::INVALID_ID, "Volume can't be set to NaN.");
+	if (layer_playback.is_null()) {
+		if (layer_stream.is_null()) {
+			layer_stream.instantiate();
+			layer_stream->set_polyphony(MAX_LAYERED);
+		}
+		layer_playback = layer_stream->instantiate_playback();
+		stream_playbacks.push_back(layer_playback);
+		layer_needs_start = true;
+		active.set();
+		_set_process(true);
+	}
+	float sound_volume_db = p_volume_db;
+	if (_is_sample() && p_stream->can_be_sampled()) {
+		// A sample plays outside the mix, where the player's own volume can't reach it.
+		sound_volume_db += volume_db;
+	}
+	const int64_t voice = layer_playback->play_stream(p_stream, p_from_pos, sound_volume_db, p_pitch_scale, playback_type, get_bus());
+	ERR_FAIL_COND_V_MSG(voice == AudioStreamPlaybackPolyphonic::INVALID_ID, AudioStreamPlaybackPolyphonic::INVALID_ID, vformat("%s already plays %d layered sounds, the most it can.", node->get_path(), MAX_LAYERED));
+	LayeredSound sound;
+	sound.id = next_layered_id++;
+	sound.voice = voice;
+	layered.push_back(sound);
+	return sound.id;
+}
+
+const AudioStreamPlayerInternal::LayeredSound *AudioStreamPlayerInternal::_find_layered(int64_t p_id) const {
+	for (const LayeredSound &sound : layered) {
+		if (sound.id == p_id) {
+			return &sound;
+		}
+	}
+	return nullptr;
+}
+
+void AudioStreamPlayerInternal::stop_layered(int64_t p_id) {
+	for (uint32_t i = 0; i < layered.size(); i++) {
+		if (layered[i].id == p_id) {
+			layer_playback->stop_stream(layered[i].voice);
+			layered.remove_at(i);
+			return;
+		}
+	}
+}
+
+void AudioStreamPlayerInternal::stop_all_layered() {
+	if (layer_playback.is_null()) {
+		return;
+	}
+	AudioServer::get_singleton()->stop_playback_stream(layer_playback);
+	stream_playbacks.erase(layer_playback);
+	layer_playback.unref();
+	layered.clear();
+	layer_needs_start = false;
+	if (stream_playbacks.is_empty()) {
+		active.clear();
+		_set_process(false);
+	}
+}
+
+bool AudioStreamPlayerInternal::is_layered_playing(int64_t p_id) const {
+	const LayeredSound *sound = _find_layered(p_id);
+	return sound && layer_playback->is_stream_playing(sound->voice);
+}
+
+void AudioStreamPlayerInternal::set_layered_volume_db(int64_t p_id, float p_volume_db) {
+	ERR_FAIL_COND_MSG(Math::is_nan(p_volume_db), "Volume can't be set to NaN.");
+	if (const LayeredSound *sound = _find_layered(p_id)) {
+		layer_playback->set_stream_volume(sound->voice, p_volume_db);
+	}
+}
+
+void AudioStreamPlayerInternal::set_layered_pitch_scale(int64_t p_id, float p_pitch_scale) {
+	ERR_FAIL_COND(p_pitch_scale <= 0.0);
+	if (const LayeredSound *sound = _find_layered(p_id)) {
+		layer_playback->set_stream_pitch_scale(sound->voice, p_pitch_scale);
+	}
+}
+
+int AudioStreamPlayerInternal::get_layered_count() const {
+	int count = 0;
+	for (const LayeredSound &sound : layered) {
+		if (layer_playback->is_stream_playing(sound.voice)) {
+			count++;
+		}
+	}
+	return count;
 }
 
 void AudioStreamPlayerInternal::set_playback_type(AudioServer::PlaybackType p_playback_type) {

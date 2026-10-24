@@ -623,6 +623,9 @@
 		<member name="editors/3d_gizmos/gizmo_settings/show_collision_shapes_only_when_selected" type="bool" setter="" getter="">
 			If [code]true[/code], collision shapes in the 3D editor are visible only when selected. If [code]false[/code], collision shapes are always visible.
 		</member>
+		<member name="editors/animation/audio_scrubbing" type="bool" setter="" getter="">
+			If [code]true[/code], dragging the animation editor's playhead plays the audio tracks under it, forwards or backwards at the speed the playhead moves, and falls silent when it stops, like scrubbing in a video editor.
+		</member>
 		<member name="editors/animation/autorename_animation_tracks" type="bool" setter="" getter="">
 			If [code]true[/code], automatically updates animation tracks' target paths when renaming or reparenting nodes in the Scene tree dock.
 		</member>

@@ -52,6 +52,9 @@ public:
 		NodePath pole_node;
 		SecondaryDirection pole_direction = SECONDARY_DIRECTION_NONE; // Sort to pole target plane.
 		Vector3 pole_direction_vector; // Custom vector.
+		// Asosdot: the root bone's own pole direction. Unset, the root rolls with the middle bone.
+		SecondaryDirection root_pole_direction = SECONDARY_DIRECTION_NONE;
+		Vector3 root_pole_direction_vector; // Custom vector.
 		NodePath target_node;
 
 		IKModifier3DSolverInfo *root_joint_solver_info = nullptr;
@@ -74,9 +77,9 @@ public:
 			return use_virtual_end ? middle_bone.bone : end_bone.bone; // Hack, but useful for external class such as TwoBoneIK3DGizmoPlugin.
 		}
 
-		Vector3 get_pole_direction_vector() const {
+		static Vector3 get_direction_vector(SecondaryDirection p_direction, const Vector3 &p_custom) {
 			Vector3 ret;
-			switch (pole_direction) {
+			switch (p_direction) {
 				case SECONDARY_DIRECTION_NONE:
 					ret = Vector3(0, 0, 0);
 					break;
@@ -99,10 +102,54 @@ public:
 					ret = Vector3(0, 0, -1);
 					break;
 				case SECONDARY_DIRECTION_CUSTOM:
-					ret = pole_direction_vector;
+					ret = p_custom;
 					break;
 			}
 			return ret;
+		}
+		Vector3 get_pole_direction_vector() const {
+			return get_direction_vector(pole_direction, pole_direction_vector);
+		}
+		Vector3 get_root_pole_direction_vector() const {
+			return get_direction_vector(root_pole_direction, root_pole_direction_vector);
+		}
+
+		// The roll about p_axis that turns p_vector into the plane with normal p_normal, on the pole's side.
+		// False when there is no such plane or roll axis.
+		static bool solve_roll(const Vector3 &p_axis, const Vector3 &p_vector, const Vector3 &p_normal, const Vector3 &p_pole_dir, double &r_angle) {
+			const Vector3 &a = p_axis;
+			const Vector3 &k = p_vector;
+			const Vector3 &n = p_normal;
+			if (a.is_zero_approx() || k.is_zero_approx() || n.is_zero_approx()) {
+				return false;
+			}
+			if (Math::is_zero_approx(n.dot(k))) {
+				r_angle = 0.0; // Already in the plane.
+				return true;
+			}
+			// c0 cosθ + c1 sinθ + c2 = 0
+			double c0 = n.dot(k - a * k.dot(a)); // n·(k⊥a)
+			double c1 = n.dot(a.cross(k)); // n·(a×k)
+			double c2 = n.dot(a) * k.dot(a); // (n·a)(k·a)
+			double r = Math::sqrt(c0 * c0 + c1 * c1);
+			double cos_arg = CLAMP(-c2 / r, -1.0, 1.0);
+			double phi = Math::atan2(c1, c0);
+			double acosv = Math::acos(cos_arg);
+
+			// Two candidate angles.
+			double t1 = phi + acosv;
+			double t2 = phi - acosv;
+			Quaternion q1(a, t1);
+			Quaternion q2(a, t2);
+
+			// Choose the one whose projected pole points closer to pole side.
+			Vector3 pole_proj = snap_vector_to_plane(n, p_pole_dir).normalized();
+			Vector3 k1p = snap_vector_to_plane(n, q1.xform(k)).normalized();
+			Vector3 k2p = snap_vector_to_plane(n, q2.xform(k)).normalized();
+			double s1 = pole_proj.is_zero_approx() ? Math::abs(t1) : k1p.dot(pole_proj);
+			double s2 = pole_proj.is_zero_approx() ? Math::abs(t2) : k2p.dot(pole_proj);
+			r_angle = s1 >= s2 ? t1 : t2;
+			return true;
 		}
 
 		void cache_current_vectors(Skeleton3D *p_skeleton) {
@@ -179,50 +226,29 @@ public:
 			mid_joint_solver_info->current_gpose.normalize();
 
 			bool is_pole_defined = pole_direction != SECONDARY_DIRECTION_NONE && (pole_direction != SECONDARY_DIRECTION_CUSTOM || !pole_direction_vector.is_zero_approx());
+			bool is_root_pole_defined = root_pole_direction != SECONDARY_DIRECTION_NONE && (root_pole_direction != SECONDARY_DIRECTION_CUSTOM || !root_pole_direction_vector.is_zero_approx());
 			// Fix roll to align pole vector to plane.
-			if (is_pole_defined) {
-				// Calc roll angles.
-				Quaternion root_roll_rot = Quaternion();
-				Quaternion mid_roll_rot = Quaternion();
-
+			if (is_pole_defined || is_root_pole_defined) {
 				// Make roll to align pole_vector onto plane with selecting the point nearer pole_destination.
 				Vector3 pole_dir = get_projected_normal(root_pos, end_pos, p_pole_destination);
 				if (pole_dir.is_zero_approx()) {
 					return;
 				}
-				Vector3 a = mid_joint_solver_info->current_vector.normalized(); // Global roll axis (mid forward in current pose).
-				Vector3 k = mid_joint_solver_info->current_gpose.xform(get_pole_direction_vector()).normalized(); // Global pole vector.
 				Vector3 n = pole_dir.cross((mid_pos - root_pos).normalized()).normalized(); // Global plane normal.
 
-				// Guard: degenerate cases (zero or already parallel)
-				if (a.is_zero_approx() || k.is_zero_approx() || n.is_zero_approx() || Math::is_zero_approx(n.dot(k))) {
+				// Calc roll angles. Each bone's forward vector in the current pose is its roll axis.
+				double mid_roll = 0.0;
+				if (is_pole_defined && !solve_roll(mid_joint_solver_info->current_vector.normalized(), mid_joint_solver_info->current_gpose.xform(get_pole_direction_vector()).normalized(), n, pole_dir, mid_roll)) {
 					return;
 				}
-				// c0 cosθ + c1 sinθ + c2 = 0
-				double c0 = n.dot(k - a * k.dot(a)); // n·(k⊥a)
-				double c1 = n.dot(a.cross(k)); // n·(a×k)
-				double c2 = n.dot(a) * k.dot(a); // (n·a)(k·a)
-				double r = Math::sqrt(c0 * c0 + c1 * c1);
-				double cos_arg = CLAMP(-c2 / r, -1.0, 1.0);
-				double phi = Math::atan2(c1, c0);
-				double acosv = Math::acos(cos_arg);
-
-				// Two candidate angles.
-				double t1 = phi + acosv;
-				double t2 = phi - acosv;
-				Quaternion q1(a, t1);
-				Quaternion q2(a, t2);
-
-				// Choose the one whose projected pole points closer to pole side.
-				Vector3 pole_proj = snap_vector_to_plane(n, pole_dir).normalized();
-				Vector3 k1p = snap_vector_to_plane(n, q1.xform(k)).normalized();
-				Vector3 k2p = snap_vector_to_plane(n, q2.xform(k)).normalized();
-				double s1 = pole_proj.is_zero_approx() ? Math::abs(t1) : k1p.dot(pole_proj);
-				double s2 = pole_proj.is_zero_approx() ? Math::abs(t2) : k2p.dot(pole_proj);
-
-				double t = s1 >= s2 ? t1 : t2;
-				root_roll_rot = Quaternion(root_joint_solver_info->forward_vector, t);
-				mid_roll_rot = Quaternion(mid_joint_solver_info->forward_vector, t);
+				// With a pole direction of its own, the root keeps that direction in the plane too,
+				// as a hinged chain does: each bone then twists the way Blender's IK twists it.
+				double root_roll = mid_roll;
+				if (is_root_pole_defined && !solve_roll(root_joint_solver_info->current_vector.normalized(), root_joint_solver_info->current_gpose.xform(get_root_pole_direction_vector()).normalized(), n, pole_dir, root_roll)) {
+					return;
+				}
+				Quaternion root_roll_rot = Quaternion(root_joint_solver_info->forward_vector, root_roll);
+				Quaternion mid_roll_rot = Quaternion(mid_joint_solver_info->forward_vector, mid_roll);
 
 				root_joint_solver_info->current_lpose = root_joint_solver_info->current_lpose * root_roll_rot;
 				root_joint_solver_info->current_gpose = parent_gpose * root_joint_solver_info->current_lpose;
@@ -308,6 +334,12 @@ public:
 	SecondaryDirection get_pole_direction(int p_index) const;
 	void set_pole_direction_vector(int p_index, const Vector3 &p_vector);
 	Vector3 get_pole_direction_vector(int p_index) const;
+
+	// Asosdot: a pole direction for the root bone too, so it twists as a hinged chain does.
+	void set_root_pole_direction(int p_index, SecondaryDirection p_axis);
+	SecondaryDirection get_root_pole_direction(int p_index) const;
+	void set_root_pole_direction_vector(int p_index, const Vector3 &p_vector);
+	Vector3 get_root_pole_direction_vector(int p_index) const;
 
 	bool is_valid(int p_index) const; // Helper for editor and validation.
 

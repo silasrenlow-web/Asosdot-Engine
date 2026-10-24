@@ -49,6 +49,9 @@ void MovieWriterMJPEG::get_supported_extensions(List<String> *r_extensions) cons
 }
 
 Error MovieWriterMJPEG::write_begin(const Size2i &p_movie_size, uint32_t p_fps, const String &p_base_path) {
+	frame_count = 0;
+	jpg_frame_sizes.clear();
+	audio_frame_sizes.clear();
 	// Quick & Dirty MJPEG Code based on - https://docs.microsoft.com/en-us/windows/win32/directshow/avi-riff-file-reference
 
 	base_path = p_base_path.get_basename();
@@ -194,6 +197,9 @@ Error MovieWriterMJPEG::write_begin(const Size2i &p_movie_size, uint32_t p_fps, 
 
 Error MovieWriterMJPEG::write_frame(const Ref<Image> &p_image, const int32_t *p_audio_data) {
 	ERR_FAIL_COND_V(f.is_null(), ERR_UNCONFIGURED);
+	// Sample counts alternate when the sample rate is not divisible by FPS.
+	audio_block_size = get_frame_audio_sample_count() * audio_bit_depth / 8 * get_frame_audio_channels();
+	audio_frame_sizes.push_back(audio_block_size);
 
 	Vector<uint8_t> jpg_buffer = p_image->save_jpg_to_buffer(quality);
 	uint32_t s = jpg_buffer.size();
@@ -234,6 +240,7 @@ void MovieWriterMJPEG::write_end() {
 		f->store_32(8 * 4 * frame_count);
 		uint32_t ofs = 4;
 		uint32_t all_data_size = 0;
+		uint64_t total_audio_size = 0;
 		for (uint32_t i = 0; i < frame_count; i++) {
 			f->store_buffer((const uint8_t *)"00db", 4);
 			f->store_32(16); // AVI_KEYFRAME
@@ -245,15 +252,16 @@ void MovieWriterMJPEG::write_end() {
 			f->store_buffer((const uint8_t *)"01wb", 4);
 			f->store_32(16); // AVI_KEYFRAME
 			f->store_32(ofs);
-			f->store_32(audio_block_size);
+			f->store_32(audio_frame_sizes[i]);
 
-			ofs += audio_block_size + 8;
-			all_data_size += jpg_frame_sizes[i] + audio_block_size;
+			ofs += audio_frame_sizes[i] + 8;
+			all_data_size += jpg_frame_sizes[i] + audio_frame_sizes[i];
+			total_audio_size += audio_frame_sizes[i];
 		}
 
 		uint32_t file_size = f->get_position();
 		f->seek(4);
-		f->store_32(file_size - 78);
+		f->store_32(file_size - 8);
 		f->seek(total_frames_ofs);
 		f->store_32(frame_count);
 		f->seek(total_frames_ofs2);
@@ -261,7 +269,7 @@ void MovieWriterMJPEG::write_end() {
 		f->seek(total_frames_ofs3);
 		f->store_32(frame_count);
 		f->seek(total_audio_frames_ofs4);
-		f->store_32(frame_count * mix_rate / fps);
+		f->store_32(total_audio_size / (audio_bit_depth / 8 * get_frame_audio_channels()));
 		f->seek(movi_data_ofs);
 		f->store_32(all_data_size + 4 + 16 * frame_count);
 

@@ -11,8 +11,8 @@
 // The viewport only selects nodes through their gizmos, and a terrain has no
 // handles to draw, so this gizmo exists to give it a surface to click on: a
 // coarse copy of the terrain, invisible, used only for picking.
-class Terrain3DGizmoPlugin : public EditorNode3DGizmoPlugin {
-	GDCLASS(Terrain3DGizmoPlugin, EditorNode3DGizmoPlugin);
+class AsosdotTerrain3DGizmoPlugin : public EditorNode3DGizmoPlugin {
+	GDCLASS(AsosdotTerrain3DGizmoPlugin, EditorNode3DGizmoPlugin);
 
 public:
 	bool has_gizmo(Node3D *p_spatial) override;

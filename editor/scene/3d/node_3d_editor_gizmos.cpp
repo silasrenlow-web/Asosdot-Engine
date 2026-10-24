@@ -53,11 +53,8 @@ bool EditorNode3DGizmo::is_editable() const {
 		return true;
 	}
 
-	if (edited_root->is_editable_instance(spatial_node->get_owner())) {
-		return true;
-	}
-
-	return false;
+	// A node of an instance with editable children, or one the instance's scene exposes.
+	return edited_root->is_node_editable(spatial_node);
 }
 
 void EditorNode3DGizmo::clear() {

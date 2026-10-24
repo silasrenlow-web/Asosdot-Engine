@@ -34,6 +34,11 @@
 #include "core/io/marshalls.h"
 #include "core/object/class_db.h"
 
+void Animation::_read_audio_key_shape(const Dictionary &p_key, AudioKey &r_key) {
+	r_key.volume_db = p_key.get("volume_db", 0.0);
+	r_key.pitch_scale = MAX((real_t)p_key.get("pitch_scale", 1.0), (real_t)0.01);
+}
+
 bool Animation::_set(const StringName &p_name, const Variant &p_value) {
 	String prop_name = p_name;
 
@@ -409,6 +414,7 @@ bool Animation::_set(const StringName &p_name, const Variant &p_value) {
 						ak.value.start_offset = d2["start_offset"];
 						ak.value.end_offset = d2["end_offset"];
 						ak.value.stream = d2["stream"];
+						_read_audio_key_shape(d2, ak.value);
 
 						ad->values.push_back(ak);
 					}
@@ -816,6 +822,13 @@ bool Animation::_get(const StringName &p_name, Variant &r_ret) const {
 					clip["start_offset"] = vls[i].value.start_offset;
 					clip["end_offset"] = vls[i].value.end_offset;
 					clip["stream"] = vls[i].value.stream;
+					// Stored only when changed, so animations without them stay as Godot writes them.
+					if (!Math::is_zero_approx(vls[i].value.volume_db)) {
+						clip["volume_db"] = vls[i].value.volume_db;
+					}
+					if (!Math::is_equal_approx(vls[i].value.pitch_scale, (real_t)1.0)) {
+						clip["pitch_scale"] = vls[i].value.pitch_scale;
+					}
 					clips.push_back(clip);
 					idx++;
 				}
@@ -1813,6 +1826,7 @@ int Animation::track_insert_key(int p_track, double p_time, const Variant &p_key
 			ak.value.start_offset = k["start_offset"];
 			ak.value.end_offset = k["end_offset"];
 			ak.value.stream = k["stream"];
+			_read_audio_key_shape(k, ak.value);
 			ret = _insert(p_time, at->values, ak);
 
 		} break;
@@ -1954,6 +1968,8 @@ Variant Animation::track_get_key_value(int p_track, int p_key_idx) const {
 			k["start_offset"] = at->values[p_key_idx].value.start_offset;
 			k["end_offset"] = at->values[p_key_idx].value.end_offset;
 			k["stream"] = at->values[p_key_idx].value.stream;
+			k["volume_db"] = at->values[p_key_idx].value.volume_db;
+			k["pitch_scale"] = at->values[p_key_idx].value.pitch_scale;
 			return k;
 
 		} break;
@@ -2330,6 +2346,7 @@ void Animation::track_set_key_value(int p_track, int p_key_idx, const Variant &p
 			at->values[p_key_idx].value.start_offset = k["start_offset"];
 			at->values[p_key_idx].value.end_offset = k["end_offset"];
 			at->values[p_key_idx].value.stream = k["stream"];
+			_read_audio_key_shape(k, at->values[p_key_idx].value);
 
 		} break;
 		case TYPE_ANIMATION: {
@@ -3781,6 +3798,60 @@ real_t Animation::audio_track_get_key_end_offset(int p_track, int p_key) const {
 	return at->values[p_key].value.end_offset;
 }
 
+void Animation::audio_track_set_key_volume_db(int p_track, int p_key, real_t p_volume_db) {
+	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_track, tracks.size());
+	Track *t = tracks[p_track];
+	ERR_FAIL_COND(t->type != TYPE_AUDIO);
+
+	AudioTrack *at = static_cast<AudioTrack *>(t);
+
+	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_key, at->values.size());
+	ERR_FAIL_COND_MSG(Math::is_nan(p_volume_db), "Volume can't be set to NaN.");
+
+	at->values[p_key].value.volume_db = p_volume_db;
+
+	emit_changed();
+}
+
+real_t Animation::audio_track_get_key_volume_db(int p_track, int p_key) const {
+	ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_track, tracks.size(), 0);
+	const Track *t = tracks[p_track];
+	ERR_FAIL_COND_V(t->type != TYPE_AUDIO, 0);
+
+	const AudioTrack *at = static_cast<const AudioTrack *>(t);
+
+	ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_key, at->values.size(), 0);
+
+	return at->values[p_key].value.volume_db;
+}
+
+void Animation::audio_track_set_key_pitch_scale(int p_track, int p_key, real_t p_pitch_scale) {
+	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_track, tracks.size());
+	Track *t = tracks[p_track];
+	ERR_FAIL_COND(t->type != TYPE_AUDIO);
+
+	AudioTrack *at = static_cast<AudioTrack *>(t);
+
+	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_key, at->values.size());
+	ERR_FAIL_COND(p_pitch_scale <= 0.0);
+
+	at->values[p_key].value.pitch_scale = p_pitch_scale;
+
+	emit_changed();
+}
+
+real_t Animation::audio_track_get_key_pitch_scale(int p_track, int p_key) const {
+	ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_track, tracks.size(), 1);
+	const Track *t = tracks[p_track];
+	ERR_FAIL_COND_V(t->type != TYPE_AUDIO, 1);
+
+	const AudioTrack *at = static_cast<const AudioTrack *>(t);
+
+	ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_key, at->values.size(), 1);
+
+	return at->values[p_key].value.pitch_scale;
+}
+
 void Animation::audio_track_set_use_blend(int p_track, bool p_enable) {
 	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_track, tracks.size());
 	Track *t = tracks[p_track];
@@ -4034,6 +4105,10 @@ void Animation::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("audio_track_get_key_stream", "track_idx", "key_idx"), &Animation::audio_track_get_key_stream);
 	ClassDB::bind_method(D_METHOD("audio_track_get_key_start_offset", "track_idx", "key_idx"), &Animation::audio_track_get_key_start_offset);
 	ClassDB::bind_method(D_METHOD("audio_track_get_key_end_offset", "track_idx", "key_idx"), &Animation::audio_track_get_key_end_offset);
+	ClassDB::bind_method(D_METHOD("audio_track_set_key_volume_db", "track_idx", "key_idx", "volume_db"), &Animation::audio_track_set_key_volume_db);
+	ClassDB::bind_method(D_METHOD("audio_track_get_key_volume_db", "track_idx", "key_idx"), &Animation::audio_track_get_key_volume_db);
+	ClassDB::bind_method(D_METHOD("audio_track_set_key_pitch_scale", "track_idx", "key_idx", "pitch_scale"), &Animation::audio_track_set_key_pitch_scale);
+	ClassDB::bind_method(D_METHOD("audio_track_get_key_pitch_scale", "track_idx", "key_idx"), &Animation::audio_track_get_key_pitch_scale);
 	ClassDB::bind_method(D_METHOD("audio_track_set_use_blend", "track_idx", "enable"), &Animation::audio_track_set_use_blend);
 	ClassDB::bind_method(D_METHOD("audio_track_is_use_blend", "track_idx"), &Animation::audio_track_is_use_blend);
 

@@ -295,6 +295,13 @@ void AudioStreamPlayer3D::_notification(int p_what) {
 				setplay.set(-1);
 			}
 
+			if (internal->layer_needs_start) {
+				internal->layer_needs_start = false;
+				HashMap<StringName, Vector<AudioFrame>> bus_map;
+				bus_map[_get_actual_bus()] = volume_vector;
+				AudioServer::get_singleton()->start_playback_stream(internal->layer_playback, bus_map, 0.0, actual_pitch_scale, linear_attenuation, attenuation_filter_cutoff_hz);
+			}
+
 			if (!internal->stream_playbacks.is_empty() && internal->active.is_set()) {
 				internal->process();
 			}
@@ -384,7 +391,7 @@ Vector<AudioFrame> AudioStreamPlayer3D::_update_panning() {
 	output_volume_vector.resize(VOLUME_VECTOR_SIZE);
 	output_volume_vector.fill(AudioFrame(0, 0));
 
-	if (!internal->active.is_set() || internal->stream.is_null()) {
+	if (!internal->active.is_set() || (internal->stream.is_null() && internal->layer_playback.is_null())) {
 		return output_volume_vector;
 	}
 
@@ -669,8 +676,43 @@ void AudioStreamPlayer3D::seek(float p_seconds) {
 }
 
 void AudioStreamPlayer3D::stop() {
+	_stop_stream();
+	internal->stop_all_layered();
+}
+
+// Stops the player's own stream only, for changing the stream, seeking and restarting it.
+void AudioStreamPlayer3D::_stop_stream() {
 	setplay.set(-1);
 	internal->stop_basic();
+}
+
+int64_t AudioStreamPlayer3D::play_layered(const Ref<AudioStream> &p_stream, float p_from_pos, float p_volume_db, float p_pitch_scale) {
+	const int64_t id = internal->play_layered(p_stream, p_from_pos, p_volume_db, p_pitch_scale);
+	if (internal->layer_needs_start) {
+		// Started on the next physics step, with the panning worked out first.
+		force_update_panning = true;
+	}
+	return id;
+}
+
+void AudioStreamPlayer3D::stop_layered(int64_t p_id) {
+	internal->stop_layered(p_id);
+}
+
+bool AudioStreamPlayer3D::is_layered_playing(int64_t p_id) const {
+	return internal->is_layered_playing(p_id);
+}
+
+void AudioStreamPlayer3D::set_layered_volume_db(int64_t p_id, float p_volume_db) {
+	internal->set_layered_volume_db(p_id, p_volume_db);
+}
+
+void AudioStreamPlayer3D::set_layered_pitch_scale(int64_t p_id, float p_pitch_scale) {
+	internal->set_layered_pitch_scale(p_id, p_pitch_scale);
+}
+
+int AudioStreamPlayer3D::get_layered_count() const {
+	return internal->get_layered_count();
 }
 
 bool AudioStreamPlayer3D::is_playing() const {
@@ -933,6 +975,13 @@ void AudioStreamPlayer3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_playback_type", "playback_type"), &AudioStreamPlayer3D::set_playback_type);
 	ClassDB::bind_method(D_METHOD("get_playback_type"), &AudioStreamPlayer3D::get_playback_type);
 
+	ClassDB::bind_method(D_METHOD("play_layered", "stream", "from_position", "volume_db", "pitch_scale"), &AudioStreamPlayer3D::play_layered, DEFVAL(0.0), DEFVAL(0.0), DEFVAL(1.0));
+	ClassDB::bind_method(D_METHOD("stop_layered", "id"), &AudioStreamPlayer3D::stop_layered);
+	ClassDB::bind_method(D_METHOD("is_layered_playing", "id"), &AudioStreamPlayer3D::is_layered_playing);
+	ClassDB::bind_method(D_METHOD("set_layered_volume_db", "id", "volume_db"), &AudioStreamPlayer3D::set_layered_volume_db);
+	ClassDB::bind_method(D_METHOD("set_layered_pitch_scale", "id", "pitch_scale"), &AudioStreamPlayer3D::set_layered_pitch_scale);
+	ClassDB::bind_method(D_METHOD("get_layered_count"), &AudioStreamPlayer3D::get_layered_count);
+
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "stream", PROPERTY_HINT_RESOURCE_TYPE, AudioStream::get_class_static()), "set_stream", "get_stream");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "attenuation_model", PROPERTY_HINT_ENUM, "Inverse,Inverse Square,Logarithmic,Disabled"), "set_attenuation_model", "get_attenuation_model");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "volume_db", PROPERTY_HINT_RANGE, "-80,80,suffix:dB"), "set_volume_db", "get_volume_db");
@@ -969,10 +1018,11 @@ void AudioStreamPlayer3D::_bind_methods() {
 	BIND_ENUM_CONSTANT(DOPPLER_TRACKING_PHYSICS_STEP);
 
 	ADD_SIGNAL(MethodInfo("finished"));
+	ADD_SIGNAL(MethodInfo("layered_finished", PropertyInfo(Variant::INT, "id")));
 }
 
 AudioStreamPlayer3D::AudioStreamPlayer3D() {
-	internal = memnew(AudioStreamPlayerInternal(this, callable_mp(this, &AudioStreamPlayer3D::play), callable_mp(this, &AudioStreamPlayer3D::stop), true));
+	internal = memnew(AudioStreamPlayerInternal(this, callable_mp(this, &AudioStreamPlayer3D::play), callable_mp(this, &AudioStreamPlayer3D::_stop_stream), true));
 	velocity_tracker.instantiate();
 	set_disable_scale(true);
 	cached_global_panning_strength = GLOBAL_GET_CACHED(float, "audio/general/3d_panning_strength");

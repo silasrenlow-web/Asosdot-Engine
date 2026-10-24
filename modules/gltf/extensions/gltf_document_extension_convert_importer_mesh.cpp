@@ -66,6 +66,10 @@ MeshInstance3D *GLTFDocumentExtensionConvertImporterMesh::convert_importer_mesh_
 	if (importer_mesh.is_valid()) {
 		Ref<ArrayMesh> array_mesh = importer_mesh->get_mesh();
 		mesh_instance_node_3d->set_mesh(array_mesh);
+		const Vector<float> &blend_weights = p_importer_mesh_instance_3d->get_blend_shape_weights();
+		for (int i = 0; i < MIN(blend_weights.size(), array_mesh->get_blend_shape_count()); i++) {
+			mesh_instance_node_3d->set_blend_shape_value(i, blend_weights[i]);
+		}
 		_copy_meta(importer_mesh.ptr(), array_mesh.ptr());
 	} else {
 		WARN_PRINT("glTF: ImporterMeshInstance3D does not have a valid mesh. This should not happen. Continuing anyway.");

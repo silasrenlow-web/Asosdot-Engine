@@ -8,23 +8,23 @@
 
 #include "scene/3d/rope_3d.h"
 
-Rope3DGizmoPlugin::Rope3DGizmoPlugin() {
+AsosdotRope3DGizmoPlugin::AsosdotRope3DGizmoPlugin() {
 	create_material("rope_material", Color(0.99, 0.5, 0.5));
 }
 
-bool Rope3DGizmoPlugin::has_gizmo(Node3D *p_spatial) {
+bool AsosdotRope3DGizmoPlugin::has_gizmo(Node3D *p_spatial) {
 	return Object::cast_to<Rope3D>(p_spatial) != nullptr;
 }
 
-String Rope3DGizmoPlugin::get_gizmo_name() const {
+String AsosdotRope3DGizmoPlugin::get_gizmo_name() const {
 	return "Rope3D";
 }
 
-int Rope3DGizmoPlugin::get_priority() const {
+int AsosdotRope3DGizmoPlugin::get_priority() const {
 	return -1;
 }
 
-void Rope3DGizmoPlugin::redraw(EditorNode3DGizmo *p_gizmo) {
+void AsosdotRope3DGizmoPlugin::redraw(EditorNode3DGizmo *p_gizmo) {
 	Rope3D *rope = Object::cast_to<Rope3D>(p_gizmo->get_node_3d());
 
 	p_gizmo->clear();

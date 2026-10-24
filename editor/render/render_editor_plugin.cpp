@@ -7,10 +7,12 @@
 #include "render_editor_plugin.h"
 
 #include "core/config/project_settings.h"
+#include "core/io/dir_access.h"
 #include "core/math/triangle_mesh.h"
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
 #include "core/os/os.h"
+#include "editor/docks/filesystem_dock.h"
 #include "editor/editor_interface.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
@@ -25,14 +27,19 @@
 #include "scene/3d/mesh_instance_3d.h"
 #include "scene/3d/skeleton_3d.h"
 #include "scene/animation/animation_player.h"
+#include "scene/audio/audio_stream_player.h"
 #include "scene/gui/aspect_ratio_container.h"
 #include "scene/gui/button.h"
 #include "scene/gui/dialogs.h"
+#include "scene/gui/item_list.h"
 #include "scene/gui/label.h"
+#include "scene/gui/menu_button.h"
 #include "scene/gui/progress_bar.h"
+#include "scene/gui/separator.h"
 #include "scene/gui/slider.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/subviewport_container.h"
+#include "scene/gui/tab_bar.h"
 #include "scene/main/viewport.h"
 #include "scene/resources/3d/sky_material.h"
 #include "scene/resources/environment.h"
@@ -97,11 +104,13 @@ void each_geometry(Node *p_node, const F &p_function) {
 } // namespace
 
 /* -------------------------------------------------------------------------- */
-/*                                 RenderShot                                 */
+/*                                 AsosdotRenderShot                                 */
 /* -------------------------------------------------------------------------- */
 
-Dictionary RenderShot::get_defaults() {
+Dictionary AsosdotRenderShot::get_defaults() {
 	Dictionary d;
+	d["shot_name"] = String("Shot 1");
+	d["camera_blend"] = 0.0;
 	d["camera"] = NodePath();
 	d["fov"] = 35.0;
 	d["studio"] = STUDIO_STUDIO;
@@ -122,33 +131,44 @@ Dictionary RenderShot::get_defaults() {
 	d["animation_player"] = NodePath();
 	d["animation"] = String();
 	d["animation_speed"] = 1.0;
+	d["animation_start"] = 0.0;
+	d["dialogue"] = String();
+	d["dialogue_offset"] = 0.0;
+	d["dialogue_volume_db"] = 0.0;
+	d["music"] = String();
+	d["music_start"] = 0.0;
+	d["music_offset"] = 0.0;
+	d["music_volume_db"] = 0.0;
 	return d;
 }
 
-RenderShot::RenderShot() {
+AsosdotRenderShot::AsosdotRenderShot() {
 	values = get_defaults();
+	editor_set_section_unfold("Shot", true);
+	editor_set_section_unfold("Camera", true);
+	editor_set_section_unfold("Sequence Output", true);
 }
 
-Variant RenderShot::get_value(const StringName &p_name) const {
+Variant AsosdotRenderShot::get_value(const StringName &p_name) const {
 	return values.get(p_name, Variant());
 }
 
-void RenderShot::set_value(const StringName &p_name, const Variant &p_value) {
+void AsosdotRenderShot::set_value(const StringName &p_name, const Variant &p_value) {
 	set(p_name, p_value);
 }
 
-void RenderShot::set_state(const Dictionary &p_state) {
+void AsosdotRenderShot::set_state(const Dictionary &p_state) {
 	values = get_defaults();
 	for (const KeyValue<Variant, Variant> &E : p_state) {
 		if (values.has(E.key) && Variant::can_convert(E.value.get_type(), Variant(values[E.key]).get_type())) {
-			values[E.key] = E.value;
+			_set(E.key, E.value);
 		}
 	}
 	notify_property_list_changed();
 	emit_changed();
 }
 
-bool RenderShot::_set(const StringName &p_name, const Variant &p_value) {
+bool AsosdotRenderShot::_set(const StringName &p_name, const Variant &p_value) {
 	if (!values.has(p_name)) {
 		return false;
 	}
@@ -162,6 +182,22 @@ bool RenderShot::_set(const StringName &p_name, const Variant &p_value) {
 			return false;
 		}
 	}
+	if (type == Variant::FLOAT && !Math::is_finite(double(value))) {
+		return false;
+	}
+	if (p_name == SNAME("duration")) {
+		value = CLAMP(double(value), 0.1, 3600.0);
+	} else if (p_name == SNAME("fps")) {
+		value = CLAMP(int(value), 1, 240);
+	} else if (p_name == SNAME("supersampling")) {
+		value = CLAMP(int(value), 1, 4);
+	} else if (p_name == SNAME("animation_speed")) {
+		value = CLAMP(double(value), 0.01, 100.0);
+	} else if (p_name == SNAME("camera_blend") || p_name == SNAME("animation_start") || p_name == SNAME("music_start") || p_name == SNAME("music_offset") || p_name == SNAME("dialogue_offset")) {
+		value = CLAMP(double(value), 0.0, 86400.0);
+	} else if (p_name == SNAME("music_volume_db") || p_name == SNAME("dialogue_volume_db")) {
+		value = CLAMP(double(value), -80.0, 24.0);
+	}
 	values[p_name] = value;
 	if (p_name == SNAME("studio") || p_name == SNAME("resolution") || p_name == SNAME("camera") || p_name == SNAME("animation_player") || p_name == SNAME("transparent_background")) {
 		notify_property_list_changed();
@@ -170,7 +206,7 @@ bool RenderShot::_set(const StringName &p_name, const Variant &p_value) {
 	return true;
 }
 
-bool RenderShot::_get(const StringName &p_name, Variant &r_ret) const {
+bool AsosdotRenderShot::_get(const StringName &p_name, Variant &r_ret) const {
 	if (!values.has(p_name)) {
 		return false;
 	}
@@ -178,12 +214,30 @@ bool RenderShot::_get(const StringName &p_name, Variant &r_ret) const {
 	return true;
 }
 
-void RenderShot::_get_property_list(List<PropertyInfo> *p_list) const {
+void AsosdotRenderShot::_get_property_list(List<PropertyInfo> *p_list) const {
 	const bool scene_camera = !NodePath(values["camera"]).is_empty();
 	const bool studio_lit = int(values["studio"]) != STUDIO_SCENE;
 	const bool custom = int(values["resolution"]) == RESOLUTION_CUSTOM;
 	const uint32_t hidden = PROPERTY_USAGE_NO_EDITOR;
 	const uint32_t shown = PROPERTY_USAGE_DEFAULT;
+	if (sequence_output) {
+		p_list->push_back(PropertyInfo(Variant::NIL, "Sequence Output", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_GROUP));
+		p_list->push_back(PropertyInfo(Variant::INT, "resolution", PROPERTY_HINT_ENUM, U"1280 × 720,1920 × 1080,2560 × 1440,3840 × 2160 (4K),1080 × 1080,2048 × 2048,1080 × 1920 (Portrait),512 × 512 (Icon),Custom"));
+		p_list->push_back(PropertyInfo(Variant::INT, "width", PROPERTY_HINT_RANGE, "16,16384,1,suffix:px", custom ? shown : hidden));
+		p_list->push_back(PropertyInfo(Variant::INT, "height", PROPERTY_HINT_RANGE, "16,16384,1,suffix:px", custom ? shown : hidden));
+		p_list->push_back(PropertyInfo(Variant::INT, "supersampling", PROPERTY_HINT_ENUM, U"Off:1,2×:2,3×:3,4×:4"));
+		p_list->push_back(PropertyInfo(Variant::INT, "fps", PROPERTY_HINT_RANGE, "1,240,1,suffix:FPS"));
+		p_list->push_back(PropertyInfo(Variant::NIL, "Music", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_GROUP));
+		p_list->push_back(PropertyInfo(Variant::STRING, "music", PROPERTY_HINT_FILE, "*.wav,*.ogg,*.mp3"));
+		p_list->push_back(PropertyInfo(Variant::FLOAT, "music_start", PROPERTY_HINT_RANGE, "0,3600,0.01,or_greater,suffix:s"));
+		p_list->push_back(PropertyInfo(Variant::FLOAT, "music_offset", PROPERTY_HINT_RANGE, "0,3600,0.01,or_greater,suffix:s"));
+		p_list->push_back(PropertyInfo(Variant::FLOAT, "music_volume_db", PROPERTY_HINT_RANGE, "-80,24,0.1,suffix:dB"));
+		return;
+	}
+	p_list->push_back(PropertyInfo(Variant::NIL, "Shot", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_GROUP));
+	p_list->push_back(PropertyInfo(Variant::STRING, "shot_name"));
+	p_list->push_back(PropertyInfo(Variant::FLOAT, "duration", PROPERTY_HINT_RANGE, "0.1,3600,0.01,suffix:s"));
+	p_list->push_back(PropertyInfo(Variant::FLOAT, "camera_blend", PROPERTY_HINT_RANGE, "0,60,0.01,suffix:s"));
 
 	p_list->push_back(PropertyInfo(Variant::NIL, "Camera", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_GROUP));
 	p_list->push_back(PropertyInfo(Variant::NODE_PATH, "camera", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Camera3D"));
@@ -199,15 +253,7 @@ void RenderShot::_get_property_list(List<PropertyInfo> *p_list) const {
 	p_list->push_back(PropertyInfo(Variant::BOOL, "transparent_background"));
 	p_list->push_back(PropertyInfo(Variant::BOOL, "ground_shadow", PROPERTY_HINT_NONE, "", (studio_lit && bool(values["transparent_background"])) ? shown : hidden));
 
-	p_list->push_back(PropertyInfo(Variant::NIL, "Output", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_GROUP));
-	p_list->push_back(PropertyInfo(Variant::INT, "resolution", PROPERTY_HINT_ENUM, U"1280 × 720,1920 × 1080,2560 × 1440,3840 × 2160 (4K),1080 × 1080,2048 × 2048,1080 × 1920 (Portrait),512 × 512 (Icon),Custom"));
-	p_list->push_back(PropertyInfo(Variant::INT, "width", PROPERTY_HINT_RANGE, "16,16384,1,suffix:px", custom ? shown : hidden));
-	p_list->push_back(PropertyInfo(Variant::INT, "height", PROPERTY_HINT_RANGE, "16,16384,1,suffix:px", custom ? shown : hidden));
-	p_list->push_back(PropertyInfo(Variant::INT, "supersampling", PROPERTY_HINT_ENUM, U"Off:1,2×:2,3×:3,4×:4"));
-
 	p_list->push_back(PropertyInfo(Variant::NIL, "Animation", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_GROUP));
-	p_list->push_back(PropertyInfo(Variant::FLOAT, "duration", PROPERTY_HINT_RANGE, "0.1,600,0.01,or_greater,suffix:s"));
-	p_list->push_back(PropertyInfo(Variant::INT, "fps", PROPERTY_HINT_RANGE, "1,240,1,suffix:FPS"));
 	p_list->push_back(PropertyInfo(Variant::INT, "camera_motion", PROPERTY_HINT_ENUM, "None,Turntable,Half Turn,Swing,Dolly In", scene_camera ? hidden : shown));
 	p_list->push_back(PropertyInfo(Variant::NODE_PATH, "animation_player", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "AnimationPlayer"));
 
@@ -228,20 +274,25 @@ void RenderShot::_get_property_list(List<PropertyInfo> *p_list) const {
 	}
 	p_list->push_back(PropertyInfo(Variant::STRING, "animation", PROPERTY_HINT_ENUM_SUGGESTION, names, player ? shown : hidden));
 	p_list->push_back(PropertyInfo(Variant::FLOAT, "animation_speed", PROPERTY_HINT_RANGE, "0.01,10,0.01,or_greater", player ? shown : hidden));
+	p_list->push_back(PropertyInfo(Variant::FLOAT, "animation_start", PROPERTY_HINT_RANGE, "0,3600,0.01,or_greater,suffix:s", player ? shown : hidden));
+	p_list->push_back(PropertyInfo(Variant::NIL, "Dialogue", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_GROUP));
+	p_list->push_back(PropertyInfo(Variant::STRING, "dialogue", PROPERTY_HINT_FILE, "*.wav,*.ogg,*.mp3"));
+	p_list->push_back(PropertyInfo(Variant::FLOAT, "dialogue_offset", PROPERTY_HINT_RANGE, "0,3600,0.01,or_greater,suffix:s"));
+	p_list->push_back(PropertyInfo(Variant::FLOAT, "dialogue_volume_db", PROPERTY_HINT_RANGE, "-80,24,0.1,suffix:dB"));
 }
 
-void RenderShot::_validate_property(PropertyInfo &p_property) const {
+void AsosdotRenderShot::_validate_property(PropertyInfo &p_property) const {
 	// A shot is settings, not a resource anyone saves.
 	if (String(p_property.name).begins_with("resource_")) {
 		p_property.usage = PROPERTY_USAGE_NO_EDITOR;
 	}
 }
 
-bool RenderShot::_property_can_revert(const StringName &p_name) const {
+bool AsosdotRenderShot::_property_can_revert(const StringName &p_name) const {
 	return values.has(p_name);
 }
 
-bool RenderShot::_property_get_revert(const StringName &p_name, Variant &r_property) const {
+bool AsosdotRenderShot::_property_get_revert(const StringName &p_name, Variant &r_property) const {
 	const Dictionary defaults = get_defaults();
 	if (!defaults.has(p_name)) {
 		return false;
@@ -250,7 +301,7 @@ bool RenderShot::_property_get_revert(const StringName &p_name, Variant &r_prope
 	return true;
 }
 
-Size2i RenderShot::get_output_size() const {
+Size2i AsosdotRenderShot::get_output_size() const {
 	switch (int(values["resolution"])) {
 		case RESOLUTION_720P:
 			return Size2i(1280, 720);
@@ -273,7 +324,7 @@ Size2i RenderShot::get_output_size() const {
 	}
 }
 
-void RenderShot::_bind_methods() {
+void AsosdotRenderShot::_bind_methods() {
 	BIND_ENUM_CONSTANT(STUDIO_SCENE);
 	BIND_ENUM_CONSTANT(STUDIO_STUDIO);
 	BIND_ENUM_CONSTANT(STUDIO_SOFT_BOX);
@@ -286,7 +337,7 @@ void RenderShot::_bind_methods() {
 /*                                   Scene                                    */
 /* -------------------------------------------------------------------------- */
 
-Node *RenderEditor::_get_scene_root() const {
+Node *AsosdotRenderEditor::_get_scene_root() const {
 	if (EditorNode::get_editor_data().get_edited_scene_count() == 0) {
 		return nullptr;
 	}
@@ -294,7 +345,7 @@ Node *RenderEditor::_get_scene_root() const {
 	return root && root->is_inside_tree() ? root : nullptr;
 }
 
-AABB RenderEditor::_get_subject_bounds() const {
+AABB AsosdotRenderEditor::_get_subject_bounds() const {
 	Node *root = _get_scene_root();
 	AABB bounds;
 	bool any = false;
@@ -314,7 +365,7 @@ AABB RenderEditor::_get_subject_bounds() const {
 	return bounds;
 }
 
-Camera3D *RenderEditor::_get_scene_camera() const {
+Camera3D *AsosdotRenderEditor::_get_scene_camera() const {
 	const NodePath path = shot->get_value("camera");
 	Node *root = _get_scene_root();
 	if (path.is_empty() || !root) {
@@ -323,7 +374,7 @@ Camera3D *RenderEditor::_get_scene_camera() const {
 	return Object::cast_to<Camera3D>(root->get_node_or_null(path));
 }
 
-AnimationPlayer *RenderEditor::_get_animation_player() const {
+AnimationPlayer *AsosdotRenderEditor::_get_animation_player() const {
 	const NodePath path = shot->get_value("animation_player");
 	Node *root = _get_scene_root();
 	if (path.is_empty() || !root) {
@@ -332,11 +383,11 @@ AnimationPlayer *RenderEditor::_get_animation_player() const {
 	return Object::cast_to<AnimationPlayer>(root->get_node_or_null(path));
 }
 
-void RenderEditor::_frame_subject() {
+void AsosdotRenderEditor::_frame_subject() {
 	const AABB bounds = _get_subject_bounds();
 	subject_bounds = bounds;
 	const float radius = MAX(bounds.size.length() * 0.5f, 0.05f);
-	const Size2i out = shot->get_output_size();
+	const Size2i out = sequence_output->get_output_size();
 	const float ratio = float(out.x) / MAX(out.y, 1);
 	// Godot's field of view is vertical; a tall picture is narrower across.
 	float fov = Math::deg_to_rad(float(shot->get_value("fov")));
@@ -353,7 +404,7 @@ void RenderEditor::_frame_subject() {
 /*                                   Camera                                   */
 /* -------------------------------------------------------------------------- */
 
-Transform3D RenderEditor::_camera_transform_at(float p_time, float &r_fov) const {
+Transform3D AsosdotRenderEditor::_camera_transform_at(float p_time, float &r_fov) const {
 	if (Camera3D *camera = _get_scene_camera()) {
 		r_fov = camera->get_fov();
 		return camera->get_global_transform();
@@ -363,16 +414,16 @@ Transform3D RenderEditor::_camera_transform_at(float p_time, float &r_fov) const
 	const float duration = MAX(float(shot->get_value("duration")), 0.01f);
 	const float u = CLAMP(p_time / duration, 0.0f, 1.0f);
 	switch (int(shot->get_value("camera_motion"))) {
-		case RenderShot::CAMERA_MOTION_TURNTABLE:
+		case AsosdotRenderShot::CAMERA_MOTION_TURNTABLE:
 			yaw += Math::TAU * u;
 			break;
-		case RenderShot::CAMERA_MOTION_HALF_TURN:
+		case AsosdotRenderShot::CAMERA_MOTION_HALF_TURN:
 			yaw += Math::PI * u;
 			break;
-		case RenderShot::CAMERA_MOTION_SWING:
+		case AsosdotRenderShot::CAMERA_MOTION_SWING:
 			yaw += Math::sin(Math::TAU * u) * Math::deg_to_rad(25.0f);
 			break;
-		case RenderShot::CAMERA_MOTION_DOLLY_IN:
+		case AsosdotRenderShot::CAMERA_MOTION_DOLLY_IN:
 			distance *= Math::lerp(1.25f, 0.8f, u * u * (3.0f - 2.0f * u));
 			break;
 		default:
@@ -382,10 +433,15 @@ Transform3D RenderEditor::_camera_transform_at(float p_time, float &r_fov) const
 	return orbit_transform(orbit_target, yaw, orbit_pitch, distance);
 }
 
-void RenderEditor::_update_cameras() {
+void AsosdotRenderEditor::_update_cameras() {
 	float fov = 35.0;
-	const Transform3D xform = _camera_transform_at(time, fov);
+	Transform3D xform = _camera_transform_at(time, fov);
 	Camera3D *scene_camera = _get_scene_camera();
+	const int projection = scene_camera ? int(scene_camera->get_projection()) : int(Camera3D::PROJECTION_PERSPECTIVE);
+	const int keep_aspect = scene_camera ? int(scene_camera->get_keep_aspect_mode()) : int(Camera3D::KEEP_HEIGHT);
+	if (camera_blend_active && projection == camera_blend_projection && keep_aspect == camera_blend_aspect) {
+		xform = camera_blend_from.interpolate_with(xform, camera_blend_weight);
+	}
 	for (Camera3D *camera : { preview_camera, render_camera }) {
 		if (scene_camera) {
 			camera->set_projection(scene_camera->get_projection());
@@ -400,7 +456,11 @@ void RenderEditor::_update_cameras() {
 			camera->set_near(MAX(radius * 0.005f, 0.01f));
 			camera->set_far(MAX(radius * 200.0f, orbit_distance * 20.0f));
 		}
-		camera->set_fov(fov);
+		const bool blend = camera_blend_active && int(camera->get_projection()) == camera_blend_projection && int(camera->get_keep_aspect_mode()) == camera_blend_aspect;
+		camera->set_fov(blend ? Math::lerp(camera_blend_fov, fov, camera_blend_weight) : fov);
+		if (blend) {
+			camera->set_size(Math::lerp(camera_blend_size, camera->get_size(), camera_blend_weight));
+		}
 		if (camera->is_inside_tree()) {
 			camera->set_global_transform(xform);
 		} else {
@@ -414,10 +474,10 @@ void RenderEditor::_update_cameras() {
 /*                                   Studio                                   */
 /* -------------------------------------------------------------------------- */
 
-void RenderEditor::_update_studio() {
+void AsosdotRenderEditor::_update_studio() {
 	const int mode = shot->get_value("studio");
 	const bool transparent = shot->get_value("transparent_background");
-	const bool lit = active && mode != RenderShot::STUDIO_SCENE;
+	const bool lit = active && mode != AsosdotRenderShot::STUDIO_SCENE;
 	const float energy = shot->get_value("light_energy");
 
 	// The 3D view's preview sun and sky would add to the studio's lights.
@@ -456,7 +516,7 @@ void RenderEditor::_update_studio() {
 	environment->set_sky(Ref<Sky>());
 
 	switch (mode) {
-		case RenderShot::STUDIO_STUDIO: {
+		case AsosdotRenderShot::STUDIO_STUDIO: {
 			// Key, fill and rim: the classic three.
 			environment->set_bg_color(Color(0.16, 0.16, 0.18));
 			environment->set_ambient_light_color(Color(0.55, 0.57, 0.62));
@@ -471,7 +531,7 @@ void RenderEditor::_update_studio() {
 			rim_light->set_color(Color(1, 1, 1));
 			rim_light->set_param(Light3D::PARAM_ENERGY, 1.8 * energy);
 		} break;
-		case RenderShot::STUDIO_SOFT_BOX: {
+		case AsosdotRenderShot::STUDIO_SOFT_BOX: {
 			// Big soft sources and a bright seamless backdrop: product shots.
 			environment->set_bg_color(Color(0.92, 0.92, 0.94));
 			environment->set_ambient_light_color(Color(0.92, 0.93, 0.97));
@@ -486,7 +546,7 @@ void RenderEditor::_update_studio() {
 			rim_light->set_color(Color(1, 1, 1));
 			rim_light->set_param(Light3D::PARAM_ENERGY, 0.6 * energy);
 		} break;
-		case RenderShot::STUDIO_OUTDOOR: {
+		case AsosdotRenderShot::STUDIO_OUTDOOR: {
 			// Sun and sky.
 			environment->set_background(Environment::BG_SKY);
 			Ref<Sky> sky;
@@ -501,7 +561,7 @@ void RenderEditor::_update_studio() {
 			key_light->set_param(Light3D::PARAM_SIZE, 0.6);
 			key_light->set_sky_mode(DirectionalLight3D::SKY_MODE_LIGHT_AND_SKY);
 		} break;
-		case RenderShot::STUDIO_NIGHT: {
+		case AsosdotRenderShot::STUDIO_NIGHT: {
 			// Moonlight and a cold rim, for the dark.
 			environment->set_bg_color(Color(0.01, 0.012, 0.025));
 			environment->set_ambient_light_color(Color(0.12, 0.15, 0.25));
@@ -512,7 +572,7 @@ void RenderEditor::_update_studio() {
 			rim_light->set_color(Color(0.45, 0.75, 1.0));
 			rim_light->set_param(Light3D::PARAM_ENERGY, 1.6 * energy);
 		} break;
-		case RenderShot::STUDIO_SPOTLIGHT: {
+		case AsosdotRenderShot::STUDIO_SPOTLIGHT: {
 			// One hard light from above in the dark: horror posters.
 			environment->set_bg_color(Color(0, 0, 0));
 			environment->set_ambient_light_color(Color(0.06, 0.06, 0.07));
@@ -559,7 +619,7 @@ void RenderEditor::_update_studio() {
 	_update_output_label();
 }
 
-void RenderEditor::_place_studio(const Transform3D &p_camera) {
+void AsosdotRenderEditor::_place_studio(const Transform3D &p_camera) {
 	const Vector3 center = subject_bounds.get_center();
 	const float radius = MAX(subject_bounds.size.length() * 0.5f, 0.05f);
 	const float camera_yaw = yaw_of(p_camera.basis);
@@ -588,7 +648,7 @@ void RenderEditor::_place_studio(const Transform3D &p_camera) {
 	backdrop->set_transform(Transform3D(Basis(Vector3(0, 1, 0), camera_yaw), Vector3(center.x, subject_bounds.position.y, center.z)));
 }
 
-void RenderEditor::_build_backdrop(float p_size) {
+void AsosdotRenderEditor::_build_backdrop(float p_size) {
 	backdrop_built_size = p_size;
 	// A cyclorama: a floor that curves up into a wall, so there is no corner
 	// behind the subject.
@@ -649,8 +709,13 @@ void RenderEditor::_build_backdrop(float p_size) {
 /*                                    Time                                    */
 /* -------------------------------------------------------------------------- */
 
-void RenderEditor::_apply_time(float p_time) {
+void AsosdotRenderEditor::_apply_time(float p_time) {
 	time = p_time;
+	if (!evaluating_transition) {
+		sequence_time = _shot_start(selected_shot) + p_time;
+	}
+	clip_time = double(shot->get_value("animation_start")) + double(p_time) * double(shot->get_value("animation_speed"));
+	applied_animation = vformat("%s|%s|%s|%s", shot->get_value("animation_player"), shot->get_value("animation"), shot->get_value("animation_speed"), shot->get_value("animation_start"));
 	AnimationPlayer *player = _get_animation_player();
 	const StringName animation = String(shot->get_value("animation"));
 	if (player && animation != StringName() && player->has_animation(animation)) {
@@ -659,20 +724,22 @@ void RenderEditor::_apply_time(float p_time) {
 			_save_pose(player, animation);
 		}
 		const Ref<Animation> clip = player->get_animation(animation);
-		double at = double(p_time) * double(shot->get_value("animation_speed"));
 		if (clip->get_length() > 0.0) {
-			at = clip->get_loop_mode() != Animation::LOOP_NONE ? Math::fmod(at, (double)clip->get_length()) : MIN(at, (double)clip->get_length());
+			clip_time = clip->get_loop_mode() != Animation::LOOP_NONE ? Math::fmod(clip_time, (double)clip->get_length()) : MIN(clip_time, (double)clip->get_length());
 		}
 		if (player->get_assigned_animation() != animation) {
 			player->set_assigned_animation(animation);
 		}
-		player->seek(at, true);
+		player->seek(clip_time, true);
+	} else {
+		// The clip is gone, or another was chosen with nothing to play.
+		_restore_pose();
 	}
 	_update_cameras();
 	_update_timeline();
 }
 
-void RenderEditor::_save_pose(AnimationPlayer *p_player, const StringName &p_clip) {
+void AsosdotRenderEditor::_save_pose(AnimationPlayer *p_player, const StringName &p_clip) {
 	saved_pose.clear();
 	posed = true;
 	posed_player = p_player->get_instance_id();
@@ -684,62 +751,139 @@ void RenderEditor::_save_pose(AnimationPlayer *p_player, const StringName &p_cli
 		return;
 	}
 	for (int t = 0; t < clip->get_track_count(); t++) {
-		const NodePath path = clip->track_get_path(t);
-		Node *node = animation_root->get_node_or_null(NodePath(path.get_concatenated_names()));
-		if (!node) {
+		SavedValue saved;
+		if (_saved_value_for_track(clip, t, animation_root, saved)) {
+			saved_pose.push_back(saved);
+		}
+	}
+}
+
+bool AsosdotRenderEditor::_saved_value_for_track(const Ref<Animation> &p_clip, int p_track, Node *p_animation_root, SavedValue &r_saved) const {
+	const NodePath path = p_clip->track_get_path(p_track);
+	Node *node = p_animation_root->get_node_or_null(NodePath(path.get_concatenated_names()));
+	if (!node) {
+		return false;
+	}
+	r_saved.object = node->get_instance_id();
+	switch (p_clip->track_get_type(p_track)) {
+		case Animation::TYPE_VALUE:
+		case Animation::TYPE_BEZIER: {
+			r_saved.property = path.get_subnames();
+			bool valid = false;
+			r_saved.value = node->get_indexed(r_saved.property, &valid);
+			return valid && !r_saved.property.is_empty();
+		}
+		case Animation::TYPE_POSITION_3D:
+		case Animation::TYPE_ROTATION_3D:
+		case Animation::TYPE_SCALE_3D: {
+			Skeleton3D *skeleton = Object::cast_to<Skeleton3D>(node);
+			if (skeleton && path.get_subname_count() == 1) {
+				r_saved.bone = skeleton->find_bone(path.get_subname(0));
+				if (r_saved.bone < 0) {
+					return false;
+				}
+				Array pose;
+				pose.push_back(skeleton->get_bone_pose_position(r_saved.bone));
+				pose.push_back(skeleton->get_bone_pose_rotation(r_saved.bone));
+				pose.push_back(skeleton->get_bone_pose_scale(r_saved.bone));
+				r_saved.value = pose;
+				return true;
+			}
+			if (Node3D *node_3d = Object::cast_to<Node3D>(node)) {
+				r_saved.value = node_3d->get_transform();
+				return true;
+			}
+			return false;
+		}
+		case Animation::TYPE_BLEND_SHAPE: {
+			MeshInstance3D *mesh_instance = Object::cast_to<MeshInstance3D>(node);
+			if (!mesh_instance || path.get_subname_count() != 1) {
+				return false;
+			}
+			r_saved.blend_shape = mesh_instance->find_blend_shape_by_name(path.get_subname(0));
+			if (r_saved.blend_shape < 0) {
+				return false;
+			}
+			r_saved.value = mesh_instance->get_blend_shape_value(r_saved.blend_shape);
+			return true;
+		}
+		default:
+			return false;
+	}
+}
+
+String AsosdotRenderEditor::_saved_value_key(const SavedValue &p_saved) {
+	String property;
+	for (const StringName &name : p_saved.property) {
+		property += ":" + String(name);
+	}
+	return vformat("%d/%d/%d%s", (uint64_t)p_saved.object, p_saved.bone, p_saved.blend_shape, property);
+}
+
+void AsosdotRenderEditor::_put_back(const SavedValue &p_saved) {
+	Object *object = ObjectDB::get_instance(p_saved.object);
+	if (!object) {
+		return;
+	}
+	if (p_saved.blend_shape >= 0) {
+		Object::cast_to<MeshInstance3D>(object)->set_blend_shape_value(p_saved.blend_shape, p_saved.value);
+	} else if (p_saved.bone >= 0) {
+		Skeleton3D *skeleton = Object::cast_to<Skeleton3D>(object);
+		const Array pose = p_saved.value;
+		skeleton->set_bone_pose_position(p_saved.bone, pose[0]);
+		skeleton->set_bone_pose_rotation(p_saved.bone, pose[1]);
+		skeleton->set_bone_pose_scale(p_saved.bone, pose[2]);
+	} else if (p_saved.property.is_empty()) {
+		Object::cast_to<Node3D>(object)->set_transform(p_saved.value);
+	} else {
+		object->set_indexed(p_saved.property, p_saved.value);
+	}
+}
+
+void AsosdotRenderEditor::_sync_saved_pose() {
+	// Keys can give the clip tracks it didn't have, and undoing them take
+	// tracks away. What a new track animates is saved as it is now, which is
+	// the pose it was given by hand; what a track no longer animates goes
+	// back to what was saved for it and is forgotten.
+	AnimationPlayer *player = ObjectDB::get_instance<AnimationPlayer>(posed_player);
+	if (!posed || !player || !player->has_animation(posed_clip)) {
+		return;
+	}
+	const Ref<Animation> clip = player->get_animation(posed_clip);
+	Node *animation_root = player->get_node_or_null(player->get_root_node());
+	if (clip.is_null() || !animation_root) {
+		return;
+	}
+	HashSet<String> have;
+	for (const SavedValue &saved : saved_pose) {
+		have.insert(_saved_value_key(saved));
+	}
+	HashSet<String> wanted;
+	LocalVector<SavedValue> fresh;
+	for (int t = 0; t < clip->get_track_count(); t++) {
+		SavedValue saved;
+		if (!_saved_value_for_track(clip, t, animation_root, saved)) {
 			continue;
 		}
-		SavedValue saved;
-		saved.object = node->get_instance_id();
-		switch (clip->track_get_type(t)) {
-			case Animation::TYPE_VALUE:
-			case Animation::TYPE_BEZIER: {
-				saved.property = path.get_subnames();
-				bool valid = false;
-				saved.value = node->get_indexed(saved.property, &valid);
-				if (!valid || saved.property.is_empty()) {
-					continue;
-				}
-			} break;
-			case Animation::TYPE_POSITION_3D:
-			case Animation::TYPE_ROTATION_3D:
-			case Animation::TYPE_SCALE_3D: {
-				Skeleton3D *skeleton = Object::cast_to<Skeleton3D>(node);
-				if (skeleton && path.get_subname_count() == 1) {
-					saved.bone = skeleton->find_bone(path.get_subname(0));
-					if (saved.bone < 0) {
-						continue;
-					}
-					Array pose;
-					pose.push_back(skeleton->get_bone_pose_position(saved.bone));
-					pose.push_back(skeleton->get_bone_pose_rotation(saved.bone));
-					pose.push_back(skeleton->get_bone_pose_scale(saved.bone));
-					saved.value = pose;
-				} else if (Node3D *node_3d = Object::cast_to<Node3D>(node)) {
-					saved.value = node_3d->get_transform();
-				} else {
-					continue;
-				}
-			} break;
-			case Animation::TYPE_BLEND_SHAPE: {
-				MeshInstance3D *mesh_instance = Object::cast_to<MeshInstance3D>(node);
-				if (!mesh_instance || path.get_subname_count() != 1) {
-					continue;
-				}
-				saved.blend_shape = mesh_instance->find_blend_shape_by_name(path.get_subname(0));
-				if (saved.blend_shape < 0) {
-					continue;
-				}
-				saved.value = mesh_instance->get_blend_shape_value(saved.blend_shape);
-			} break;
-			default:
-				continue;
+		const String key = _saved_value_key(saved);
+		wanted.insert(key);
+		if (!have.has(key)) {
+			have.insert(key);
+			fresh.push_back(saved);
 		}
+	}
+	for (int i = (int)saved_pose.size() - 1; i >= 0; i--) {
+		if (!wanted.has(_saved_value_key(saved_pose[i]))) {
+			_put_back(saved_pose[i]);
+			saved_pose.remove_at(i);
+		}
+	}
+	for (const SavedValue &saved : fresh) {
 		saved_pose.push_back(saved);
 	}
 }
 
-void RenderEditor::_restore_pose() {
+void AsosdotRenderEditor::_restore_pose() {
 	if (!posed) {
 		return;
 	}
@@ -747,24 +891,7 @@ void RenderEditor::_restore_pose() {
 	// In reverse, so where two tracks touch the same thing, the value saved
 	// first, from before posing, is the one left.
 	for (int i = (int)saved_pose.size() - 1; i >= 0; i--) {
-		const SavedValue &saved = saved_pose[i];
-		Object *object = ObjectDB::get_instance(saved.object);
-		if (!object) {
-			continue;
-		}
-		if (saved.blend_shape >= 0) {
-			Object::cast_to<MeshInstance3D>(object)->set_blend_shape_value(saved.blend_shape, saved.value);
-		} else if (saved.bone >= 0) {
-			Skeleton3D *skeleton = Object::cast_to<Skeleton3D>(object);
-			const Array pose = saved.value;
-			skeleton->set_bone_pose_position(saved.bone, pose[0]);
-			skeleton->set_bone_pose_rotation(saved.bone, pose[1]);
-			skeleton->set_bone_pose_scale(saved.bone, pose[2]);
-		} else if (saved.property.is_empty()) {
-			Object::cast_to<Node3D>(object)->set_transform(saved.value);
-		} else {
-			object->set_indexed(saved.property, saved.value);
-		}
+		_put_back(saved_pose[i]);
 	}
 	saved_pose.clear();
 	AnimationPlayer *player = ObjectDB::get_instance<AnimationPlayer>(posed_player);
@@ -774,22 +901,27 @@ void RenderEditor::_restore_pose() {
 	}
 }
 
-void RenderEditor::_update_timeline() {
-	const float duration = MAX(float(shot->get_value("duration")), 0.01f);
-	timeline->set_max(duration);
-	timeline->set_step(1.0 / MAX(int(shot->get_value("fps")), 1));
-	timeline->set_value_no_signal(time);
-	time_label->set_text(vformat("%s / %s s", String::num(time, 2), String::num(duration, 2)));
+void AsosdotRenderEditor::_update_timeline() {
+	// The sequence strip draws the playhead and the keys, so only the readout is kept here.
+	const double duration = _sequence_duration();
+	sequence_strip->queue_redraw();
+	time_label->set_text(_format_timecode(sequence_time, sequence_output->get_value("fps")));
+	time_label->set_tooltip_text(vformat(TTR("%s / %s seconds"), String::num(sequence_time, 3), String::num(duration, 3)));
 }
 
-void RenderEditor::_timeline_changed(double p_value) {
+void AsosdotRenderEditor::_seek_sequence(double p_time) {
 	playing = false;
 	play_button->set_button_icon(get_editor_theme_icon(SNAME("Play")));
-	_apply_time(p_value);
+	_stop_audio();
+	_apply_sequence_time(p_time);
 }
 
-void RenderEditor::_play_pressed() {
+void AsosdotRenderEditor::_play_pressed() {
+	if (job.active) {
+		return;
+	}
 	playing = !playing;
+	_update_preview_audio(true);
 	play_button->set_button_icon(get_editor_theme_icon(playing ? SNAME("Pause") : SNAME("Play")));
 }
 
@@ -797,28 +929,118 @@ void RenderEditor::_play_pressed() {
 /*                                  Settings                                  */
 /* -------------------------------------------------------------------------- */
 
-void RenderEditor::_shot_changed() {
+void AsosdotRenderEditor::_shot_changed() {
+	if (updating_sequence) {
+		return;
+	}
+	_update_sequence_ui();
+	sequence_time = _shot_start(selected_shot) + MIN(time, float(shot->get_value("duration")));
 	if (job.active) {
 		return;
 	}
+	if (!active) {
+		// Undoing keys from another tab can change the shot; the scene is
+		// only posed while the tab is open.
+		_update_output_label();
+		_update_timeline();
+		return;
+	}
 	_update_studio();
-	_apply_time(MIN(time, float(shot->get_value("duration"))));
+	const float t = MIN(time, float(shot->get_value("duration")));
+	// Lighting, size and the like leave a pose that isn't keyed yet alone.
+	if (t != time || camera_blend_active || double(shot->get_value("camera_blend")) > 0.0 || applied_animation != vformat("%s|%s|%s|%s", shot->get_value("animation_player"), shot->get_value("animation"), shot->get_value("animation_speed"), shot->get_value("animation_start"))) {
+		_apply_sequence_time(sequence_time);
+	} else {
+		_update_cameras();
+		_update_timeline();
+	}
+	_update_preview_audio(true);
+	_update_pose_bar();
 }
 
-void RenderEditor::_update_output_label() {
-	const Size2i out = shot->get_output_size();
+void AsosdotRenderEditor::_update_output_label() {
+	const Size2i out = sequence_output->get_output_size();
 	aspect->set_ratio(float(out.x) / MAX(out.y, 1));
-	size_label->set_text(vformat(U"%d × %d", out.x, out.y));
-	hint_label->set_text(_get_scene_camera() ? TTR("Viewing through the scene's camera. Click the subject to select it for editing.") : TTR("Drag to orbit, Shift+drag to pan, scroll to zoom. Click the subject to select it for editing."));
+	size_label->set_text(vformat(U"%d × %d · %d FPS", out.x, out.y, sequence_output->get_value("fps")));
+	_update_workspace_labels();
+	if (pose_mode) {
+		hint_label->set_text(TTR("R: Rotate   G: Move   E: Reach   I: Key Pose"));
+		hint_label->set_tooltip_text(TTR("Click a bone or part to pose it. Shift+drag rotates freely; Alt+drag twists. Shift+I keys the whole skeleton; Alt+I deletes keys. Drag elsewhere to orbit."));
+	} else {
+		hint_label->set_text(_get_scene_camera() ? TTR(U"Scene camera · Click a subject to select it") : TTR("Drag: Orbit   Shift+drag: Pan   Scroll: Zoom"));
+		hint_label->set_tooltip_text(TTR("The preview shows the render camera. Click a subject to select it for editing. Studio cameras can orbit, pan and zoom."));
+	}
 }
 
 /* -------------------------------------------------------------------------- */
 /*                                   Input                                    */
 /* -------------------------------------------------------------------------- */
 
-void RenderEditor::_preview_input(const Ref<InputEvent> &p_event) {
+void AsosdotRenderEditor::_preview_input(const Ref<InputEvent> &p_event) {
+	if (job.active) {
+		return;
+	}
 	const bool studio_camera = _get_scene_camera() == nullptr;
+	const Ref<InputEventKey> k = p_event;
+	if (k.is_valid() && k->is_pressed() && !k->is_echo()) {
+		if (pose_drag.kind != DRAG_NONE && k->get_keycode() == Key::ESCAPE) {
+			_cancel_pose_drag();
+			preview_surface->accept_event();
+			return;
+		}
+		if (!pose_mode || pose_drag.kind != DRAG_NONE) {
+			return;
+		}
+		bool handled = true;
+		switch (k->get_keycode_with_modifiers()) {
+			case Key::R:
+				_set_pose_tool(POSE_TOOL_ROTATE);
+				break;
+			case Key::G:
+				_set_pose_tool(POSE_TOOL_MOVE);
+				break;
+			case Key::E:
+				_set_pose_tool(POSE_TOOL_REACH);
+				break;
+			case Key::I:
+				_key(KEY_POSED);
+				break;
+			case KeyModifierMask::SHIFT | Key::I:
+				_key(KEY_SKELETON);
+				break;
+			case KeyModifierMask::ALT | Key::I:
+				_key(KEY_DELETE);
+				break;
+			case Key::UP:
+				_select_parent();
+				break;
+			default:
+				handled = false;
+		}
+		if (handled) {
+			preview_surface->accept_event();
+		}
+		return;
+	}
 	const Ref<InputEventMouseButton> mb = p_event;
+	if (mb.is_valid() && pose_drag.kind != DRAG_NONE) {
+		// Another button while posing puts the pose back as it was.
+		if (mb->is_pressed() && mb->get_button_index() == MouseButton::RIGHT) {
+			_cancel_pose_drag();
+		} else if (!mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT) {
+			_end_pose_drag();
+		}
+		preview_surface->accept_event();
+		return;
+	}
+	if (mb.is_valid() && pose_mode && mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT) {
+		if (_begin_pose_drag(mb->get_position(), mb->is_shift_pressed(), mb->is_alt_pressed())) {
+			playing = false;
+			play_button->set_button_icon(get_editor_theme_icon(SNAME("Play")));
+			preview_surface->accept_event();
+			return;
+		}
+	}
 	if (mb.is_valid()) {
 		if (mb->is_pressed() && (mb->get_button_index() == MouseButton::WHEEL_UP || mb->get_button_index() == MouseButton::WHEEL_DOWN)) {
 			if (studio_camera) {
@@ -835,7 +1057,11 @@ void RenderEditor::_preview_input(const Ref<InputEvent> &p_event) {
 				drag_moved = false;
 			} else {
 				if (dragging && !drag_moved && mb->get_button_index() == MouseButton::LEFT) {
-					_pick(mb->get_position());
+					if (pose_mode) {
+						_pose_pick(mb->get_position());
+					} else {
+						_pick(mb->get_position());
+					}
 				}
 				dragging = false;
 			}
@@ -844,6 +1070,18 @@ void RenderEditor::_preview_input(const Ref<InputEvent> &p_event) {
 		return;
 	}
 	const Ref<InputEventMouseMotion> mm = p_event;
+	if (mm.is_valid() && pose_drag.kind != DRAG_NONE) {
+		_update_pose_drag(mm->get_position());
+		preview_surface->accept_event();
+		return;
+	}
+	if (mm.is_valid() && pose_mode && !dragging) {
+		const PoseTarget hovered = _pick_bone(mm->get_position());
+		if (!(hovered == pose_hovered)) {
+			pose_hovered = hovered;
+			preview_surface->queue_redraw();
+		}
+	}
 	if (mm.is_valid() && dragging) {
 		if (mm->get_relative().length() > 1.0f) {
 			drag_moved = true;
@@ -864,14 +1102,14 @@ void RenderEditor::_preview_input(const Ref<InputEvent> &p_event) {
 	}
 }
 
-void RenderEditor::_pick(const Point2 &p_point) {
+GeometryInstance3D *AsosdotRenderEditor::_raycast_geometry(const Point2 &p_point) const {
 	Node *root = _get_scene_root();
 	if (!root) {
-		return;
+		return nullptr;
 	}
 	const Vector3 from = preview_camera->project_ray_origin(p_point);
 	const Vector3 dir = preview_camera->project_ray_normal(p_point);
-	Node *best = nullptr;
+	GeometryInstance3D *best = nullptr;
 	float best_distance = Math::INF;
 	each_geometry(root, [&](GeometryInstance3D *p_geometry) {
 		const Transform3D xform = p_geometry->get_global_transform();
@@ -903,7 +1141,13 @@ void RenderEditor::_pick(const Point2 &p_point) {
 			best = p_geometry;
 		}
 	});
-	if (!best) {
+	return best;
+}
+
+void AsosdotRenderEditor::_pick(const Point2 &p_point) {
+	Node *root = _get_scene_root();
+	Node *best = _raycast_geometry(p_point);
+	if (!root || !best) {
 		return;
 	}
 	// Select what the scene can edit: a node of an instanced scene selects
@@ -922,36 +1166,59 @@ void RenderEditor::_pick(const Point2 &p_point) {
 /*                                 Rendering                                  */
 /* -------------------------------------------------------------------------- */
 
-void RenderEditor::_render_image_pressed() {
+String AsosdotRenderEditor::_default_output_path(const String &p_extension) const {
+	// Where the last render went, or beside the scene, in the project.
 	Node *root = _get_scene_root();
 	const String scene_path = root ? root->get_scene_file_path() : String();
-	const String base = scene_path.is_empty() ? String("res://render") : scene_path.get_basename() + "_render";
-	image_dialog->set_current_path(base + ".png");
+	String dir = last_output_dir;
+	if (dir.is_empty() || !DirAccess::dir_exists_absolute(dir)) {
+		dir = scene_path.is_empty() ? String("res://") : scene_path.get_base_dir();
+	}
+	const String name = (scene_path.is_empty() ? String("render") : scene_path.get_file().get_basename() + "_render") + "." + p_extension;
+	// The dialogs browse the whole disk, which knows nothing of res://.
+	return ProjectSettings::get_singleton()->globalize_path(dir.path_join(name));
+}
+
+String AsosdotRenderEditor::_chosen_output_path(const String &p_path) {
+	// A file in the project is written through res://, so the FileSystem
+	// dock finds and imports it.
+	const String path = ProjectSettings::get_singleton()->localize_path(p_path);
+	last_output_dir = path.get_base_dir();
+	return path;
+}
+
+void AsosdotRenderEditor::_reveal_output() {
+	const String path = reveal_path;
+	reveal_path = String();
+	if (!path.is_empty() && FileSystemDock::get_singleton() && FileAccess::exists(path)) {
+		FileSystemDock::get_singleton()->navigate_to_path(path);
+	}
+}
+
+void AsosdotRenderEditor::_render_image_pressed() {
+	image_dialog->set_current_path(_default_output_path("png"));
 	image_dialog->popup_file_dialog();
 }
 
-void RenderEditor::_render_animation_pressed() {
-	Node *root = _get_scene_root();
-	const String scene_path = root ? root->get_scene_file_path() : String();
-	const String base = scene_path.is_empty() ? String("res://render") : scene_path.get_basename() + "_render";
-	animation_dialog->set_current_path(base + ".avi");
+void AsosdotRenderEditor::_render_animation_pressed() {
+	animation_dialog->set_current_path(_default_output_path("ogv"));
 	animation_dialog->popup_file_dialog();
 }
 
-void RenderEditor::_image_path_selected(const String &p_path) {
-	_start_job(p_path, false);
+void AsosdotRenderEditor::_image_path_selected(const String &p_path) {
+	_start_job(_chosen_output_path(p_path), false);
 }
 
-void RenderEditor::_animation_path_selected(const String &p_path) {
-	_start_job(p_path, true);
+void AsosdotRenderEditor::_animation_path_selected(const String &p_path) {
+	_start_job(_chosen_output_path(p_path), true);
 }
 
-void RenderEditor::_start_job(const String &p_path, bool p_animation) {
+void AsosdotRenderEditor::_start_job(const String &p_path, bool p_animation) {
 	if (job.active) {
 		return;
 	}
 	const String extension = p_path.get_extension().to_lower();
-	Size2i out = shot->get_output_size();
+	Size2i out = sequence_output->get_output_size();
 	MovieWriter *writer = nullptr;
 	if (p_animation && extension != "png") {
 		writer = MovieWriter::find_writer_for_file(p_path);
@@ -962,7 +1229,7 @@ void RenderEditor::_start_job(const String &p_path, bool p_animation) {
 		// Video encoders want even dimensions.
 		out -= Size2i(out.x & 1, out.y & 1);
 	}
-	int supersampling = MAX(int(shot->get_value("supersampling")), 1);
+	int supersampling = MAX(int(sequence_output->get_value("supersampling")), 1);
 	while (supersampling > 1 && MAX(out.x, out.y) * supersampling > MAX_RENDER_SIZE) {
 		supersampling--;
 	}
@@ -974,11 +1241,16 @@ void RenderEditor::_start_job(const String &p_path, bool p_animation) {
 	job.path = p_path;
 	job.size = out;
 	job.supersampling = supersampling;
-	job.fps = MAX(int(shot->get_value("fps")), 1);
-	job.frame_count = p_animation ? MAX(1, (int)Math::round(float(shot->get_value("duration")) * job.fps)) : 1;
+	job.fps = MAX(int(sequence_output->get_value("fps")), 1);
+	job.frame_count = p_animation ? MAX(1, (int)Math::ceil(_sequence_duration() * job.fps - 0.00001)) : 1;
 	job.warmup = WARMUP_FRAMES;
 	job.writer = writer;
-	job.time_before = time;
+	job.time_before = sequence_time;
+	job.shot_before = selected_shot;
+	job.low_processor_before = OS::get_singleton()->is_in_low_processor_usage_mode();
+	_stop_audio();
+	_set_sequence_editing(false);
+	play_button->set_button_icon(get_editor_theme_icon(SNAME("Play")));
 
 	if (writer) {
 		const Error err = writer->begin_frames(out, (uint32_t)job.fps, p_path);
@@ -995,16 +1267,189 @@ void RenderEditor::_start_job(const String &p_path, bool p_animation) {
 	RenderingServer::get_singleton()->directional_soft_shadow_filter_set_quality(RSE::SHADOW_QUALITY_SOFT_ULTRA);
 	RenderingServer::get_singleton()->positional_soft_shadow_filter_set_quality(RSE::SHADOW_QUALITY_SOFT_ULTRA);
 	// Continuous redraws while rendering, one frame drawn per editor frame.
-	job.low_processor_before = OS::get_singleton()->is_in_low_processor_usage_mode();
 	OS::get_singleton()->set_low_processor_usage_mode(false);
 	progress_bar->set_max(job.frame_count);
 	progress_bar->set_value(0);
-	progress_label->set_text(vformat(TTR("Rendering %s at %d × %d..."), p_path.get_file(), out.x, out.y));
+	progress_label->set_text(vformat(TTR(U"Rendering %s at %d × %d..."), p_path.get_file(), out.x, out.y));
 	progress_dialog->popup_centered(Size2(420, 0) * EDSCALE);
+
+	// Enough frames in flight to keep the cores busy, within about 512 MiB of image data.
+	const int64_t frame_bytes = MAX(int64_t(out.x) * out.y * 4, int64_t(1));
+	max_frames_in_flight = CLAMP(int((int64_t(512) << 20) / frame_bytes), 2, MAX(2, WorkerThreadPool::get_singleton()->get_thread_count()));
+	frame_write_failed.clear();
+	if (job.writer) {
+		_prepare_render_audio();
+		frame_writer_movie = job.writer;
+		frame_slots.post(max_frames_in_flight);
+		frame_writer_thread.start(&AsosdotRenderEditor::_frame_writer_thread_func, this);
+	}
 	set_process(true);
 }
 
-Ref<Image> RenderEditor::_grab_frame() {
+namespace {
+
+struct SupersampleResolve {
+	const uint8_t *src = nullptr;
+	uint8_t *dst = nullptr;
+	int src_width = 0;
+	int dst_width = 0;
+	int factor = 1;
+};
+
+// One output row: each pixel is the average of its factor x factor block. Colour is weighted by
+// alpha, so the edges of a transparent render don't take on the background's colour.
+void _resolve_supersampled_row(void *p_userdata, uint32_t p_row) {
+	const SupersampleResolve &r = *static_cast<const SupersampleResolve *>(p_userdata);
+	const uint32_t block = r.factor * r.factor;
+	uint8_t *out = r.dst + size_t(p_row) * r.dst_width * 4;
+	for (int x = 0; x < r.dst_width; x++) {
+		uint32_t sum_r = 0;
+		uint32_t sum_g = 0;
+		uint32_t sum_b = 0;
+		uint32_t sum_a = 0;
+		for (int sy = 0; sy < r.factor; sy++) {
+			const uint8_t *in = r.src + (size_t(p_row) * r.factor + sy) * r.src_width * 4 + size_t(x) * r.factor * 4;
+			for (int sx = 0; sx < r.factor; sx++, in += 4) {
+				const uint32_t a = in[3];
+				sum_r += in[0] * a;
+				sum_g += in[1] * a;
+				sum_b += in[2] * a;
+				sum_a += a;
+			}
+		}
+		if (sum_a > 0) {
+			out[0] = uint8_t((sum_r + sum_a / 2) / sum_a);
+			out[1] = uint8_t((sum_g + sum_a / 2) / sum_a);
+			out[2] = uint8_t((sum_b + sum_a / 2) / sum_a);
+		} else {
+			out[0] = 0;
+			out[1] = 0;
+			out[2] = 0;
+		}
+		out[3] = uint8_t((sum_a + block / 2) / block);
+		out += 4;
+	}
+}
+
+// Supersampling's resolve, done as a box filter across all cores. A Lanczos resize of the same
+// frame took 150 ms at 1080p and 650 ms at 4K on one thread.
+Ref<Image> _resolve_supersampled(const Ref<Image> &p_image, int p_factor, const Size2i &p_size) {
+	if (p_image->get_width() != p_size.x * p_factor || p_image->get_height() != p_size.y * p_factor) {
+		Ref<Image> resized = p_image->duplicate();
+		resized->resize(p_size.x, p_size.y, Image::INTERPOLATE_LANCZOS);
+		return resized;
+	}
+	const Vector<uint8_t> src = p_image->get_data();
+	Vector<uint8_t> dst;
+	dst.resize(p_size.x * p_size.y * 4);
+
+	SupersampleResolve resolve;
+	resolve.src = src.ptr();
+	resolve.dst = dst.ptrw();
+	resolve.src_width = p_image->get_width();
+	resolve.dst_width = p_size.x;
+	resolve.factor = p_factor;
+
+	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+	const WorkerThreadPool::GroupID group = pool->add_native_group_task(&_resolve_supersampled_row, &resolve, p_size.y, -1, true, "Render supersampling resolve");
+	pool->wait_for_group_task_completion(group);
+
+	return Image::create_from_data(p_size.x, p_size.y, false, Image::FORMAT_RGBA8, dst);
+}
+
+struct ImageFileWrite {
+	Ref<Image> image;
+	String path;
+	SafeFlag *failed = nullptr;
+};
+
+void _write_image_file(void *p_userdata) {
+	ImageFileWrite *write = static_cast<ImageFileWrite *>(p_userdata);
+	const String extension = write->path.get_extension().to_lower();
+	Error err;
+	if (extension == "jpg" || extension == "jpeg") {
+		err = write->image->save_jpg(write->path, 0.92);
+	} else if (extension == "webp") {
+		err = write->image->save_webp(write->path, false, 0.92);
+	} else {
+		err = write->image->save_png(write->path);
+	}
+	if (err != OK) {
+		write->failed->set();
+	}
+	memdelete(write);
+}
+
+} // namespace
+
+void AsosdotRenderEditor::_queue_image_file(const Ref<Image> &p_image, const String &p_path) {
+	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+	if (frame_write_tasks.size() >= uint32_t(max_frames_in_flight)) {
+		pool->wait_for_task_completion(frame_write_tasks[0]);
+		frame_write_tasks.remove_at(0);
+	}
+	ImageFileWrite *write = memnew(ImageFileWrite);
+	write->image = p_image;
+	write->path = p_path;
+	write->failed = &frame_write_failed;
+	frame_write_tasks.push_back(pool->add_native_task(&_write_image_file, write, false, "Render frame write"));
+}
+
+void AsosdotRenderEditor::_frame_writer_thread_func(void *p_userdata) {
+	AsosdotRenderEditor *self = static_cast<AsosdotRenderEditor *>(p_userdata);
+	while (true) {
+		self->frame_queue_semaphore.wait();
+		MovieFrame frame;
+		{
+			MutexLock lock(self->frame_queue_mutex);
+			if (self->frame_queue.is_empty()) {
+				if (self->frame_writer_exit) {
+					return;
+				}
+				continue;
+			}
+			frame = self->frame_queue.front()->get();
+			self->frame_queue.pop_front();
+		}
+		if (!self->frame_write_failed.is_set() && self->frame_writer_movie->write_frame_image(frame.image, frame.audio) != OK) {
+			self->frame_write_failed.set();
+		}
+		self->frame_slots.post();
+	}
+}
+
+void AsosdotRenderEditor::_queue_movie_frame(const Ref<Image> &p_image) {
+	frame_slots.wait(); // Holds rendering back while the encoder catches up.
+	{
+		MutexLock lock(frame_queue_mutex);
+		frame_queue.push_back({ p_image, _mix_render_audio() });
+	}
+	frame_queue_semaphore.post();
+}
+
+// Waits for every queued frame to be written. Safe to call when nothing is queued.
+void AsosdotRenderEditor::_flush_frame_writes() {
+	WorkerThreadPool *pool = WorkerThreadPool::get_singleton();
+	for (const WorkerThreadPool::TaskID &task : frame_write_tasks) {
+		pool->wait_for_task_completion(task);
+	}
+	frame_write_tasks.clear();
+
+	if (frame_writer_thread.is_started()) {
+		{
+			MutexLock lock(frame_queue_mutex);
+			frame_writer_exit = true;
+		}
+		frame_queue_semaphore.post();
+		frame_writer_thread.wait_to_finish();
+		frame_writer_exit = false;
+		while (frame_slots.try_wait()) {
+		}
+	}
+	frame_writer_movie = nullptr;
+}
+
+Ref<Image> AsosdotRenderEditor::_grab_frame() {
 	Ref<Image> image = render_viewport->get_texture()->get_image();
 	if (image.is_null() || image->is_empty()) {
 		return Ref<Image>();
@@ -1013,12 +1458,12 @@ Ref<Image> RenderEditor::_grab_frame() {
 		image->convert(Image::FORMAT_RGBA8);
 	}
 	if (job.supersampling > 1) {
-		image->resize(job.size.x, job.size.y, Image::INTERPOLATE_LANCZOS);
+		image = _resolve_supersampled(image, job.supersampling, job.size);
 	}
 	return image;
 }
 
-void RenderEditor::_step_job() {
+void AsosdotRenderEditor::_step_job() {
 	if (job.cancelled) {
 		_finish_job(TTR("Rendering was cancelled."));
 		return;
@@ -1035,22 +1480,14 @@ void RenderEditor::_step_job() {
 			_finish_job(TTR("The render came back empty."));
 			return;
 		}
-		Error err = OK;
-		if (!job.animation) {
-			const String extension = job.path.get_extension().to_lower();
-			if (extension == "jpg" || extension == "jpeg") {
-				err = image->save_jpg(job.path, 0.92);
-			} else if (extension == "webp") {
-				err = image->save_webp(job.path, false, 0.92);
-			} else {
-				err = image->save_png(job.path);
-			}
-		} else if (job.writer) {
-			err = job.writer->write_frame_image(image);
+		if (job.writer) {
+			_queue_movie_frame(image);
+		} else if (job.animation) {
+			_queue_image_file(image, vformat("%s_%s.png", job.path.get_basename(), String::num_int64(job.frame + 1).pad_zeros(4)));
 		} else {
-			err = image->save_png(vformat("%s_%s.png", job.path.get_basename(), String::num_int64(job.frame + 1).pad_zeros(4)));
+			_queue_image_file(image, job.path);
 		}
-		if (err != OK) {
+		if (frame_write_failed.is_set()) {
 			_finish_job(vformat(TTR("Could not write \"%s\"."), job.path));
 			return;
 		}
@@ -1058,16 +1495,30 @@ void RenderEditor::_step_job() {
 		job.waiting = false;
 		progress_bar->set_value(job.frame);
 		if (job.frame >= job.frame_count) {
-			_finish_job();
+			// The last frames may still be writing, and a failure there should still be reported.
+			_flush_frame_writes();
+			_finish_job(frame_write_failed.is_set() ? vformat(TTR("Could not write \"%s\"."), job.path) : String());
 			return;
 		}
 	}
-	_apply_time(job.animation ? job.frame / job.fps : time);
+	if (job.animation) {
+		_apply_sequence_time(job.frame / job.fps);
+		if (job.rendered_shot != selected_shot) {
+			job.warmup = WARMUP_FRAMES;
+			job.rendered_shot = selected_shot;
+		}
+		progress_label->set_text(vformat(TTR("Rendering shot %d of %d: %s"), selected_shot + 1, shots.size(), shot->get_value("shot_name")));
+	} else {
+		// A still is taken as the preview shows it, with any pose that isn't
+		// keyed yet.
+		_update_cameras();
+	}
 	render_viewport->set_update_mode(SubViewport::UPDATE_ONCE);
 	job.waiting = true;
 }
 
-void RenderEditor::_finish_job(const String &p_error) {
+void AsosdotRenderEditor::_finish_job(const String &p_error) {
+	_flush_frame_writes();
 	if (job.writer) {
 		job.writer->end_frames();
 		job.writer = nullptr;
@@ -1078,27 +1529,48 @@ void RenderEditor::_finish_job(const String &p_error) {
 	const String path = job.path;
 	const bool animation = job.animation;
 	const int frames = job.frame;
-	const float time_before = job.time_before;
+	const double time_before = job.time_before;
+	const int shot_before = job.shot_before;
+	render_audio.clear();
 	job = Job();
+	_set_sequence_editing(true);
 	progress_dialog->hide();
 	render_viewport->set_update_mode(SubViewport::UPDATE_DISABLED);
 	render_viewport->set_size(Size2i(2, 2));
 	set_process(active);
-	_apply_time(time_before);
+	if (animation) {
+		if (active) {
+			_apply_sequence_time(time_before);
+		} else {
+			_restore_pose();
+			_activate_shot(shot_before);
+			sequence_time = time_before;
+			time = MAX(0.0, time_before - _shot_start(selected_shot));
+			_update_timeline();
+		}
+	} else {
+		_update_cameras();
+	}
 
-	if (path.begins_with("res://")) {
+	if (path.begins_with("res://") && frames > 0) {
+		// Shown in the FileSystem dock once the scan has found it.
+		reveal_path = animation && path.get_extension().to_lower() == "png" ? vformat("%s_%s.png", path.get_basename(), String::num_int64(1).pad_zeros(4)) : path;
+		if (!EditorFileSystem::get_singleton()->is_connected("filesystem_changed", callable_mp(this, &AsosdotRenderEditor::_reveal_output))) {
+			EditorFileSystem::get_singleton()->connect("filesystem_changed", callable_mp(this, &AsosdotRenderEditor::_reveal_output), CONNECT_ONE_SHOT);
+		}
 		EditorFileSystem::get_singleton()->scan_changes();
 	}
+	const String where = path.begins_with("res://") ? path : vformat(TTR("%s, outside the project"), path);
 	if (!p_error.is_empty()) {
 		EditorToaster::get_singleton()->popup_str(p_error, EditorToaster::SEVERITY_WARNING);
 	} else if (animation) {
-		EditorToaster::get_singleton()->popup_str(vformat(TTR("Rendered %d frames to %s."), frames, path), EditorToaster::SEVERITY_INFO);
+		EditorToaster::get_singleton()->popup_str(vformat(TTR("Rendered %d frames to %s."), frames, where), EditorToaster::SEVERITY_INFO);
 	} else {
-		EditorToaster::get_singleton()->popup_str(vformat(TTR("Rendered %s."), path), EditorToaster::SEVERITY_INFO);
+		EditorToaster::get_singleton()->popup_str(vformat(TTR("Rendered %s."), where), EditorToaster::SEVERITY_INFO);
 	}
 }
 
-void RenderEditor::_cancel_job() {
+void AsosdotRenderEditor::_cancel_job() {
 	if (job.active) {
 		job.cancelled = true;
 	}
@@ -1108,86 +1580,103 @@ void RenderEditor::_cancel_job() {
 /*                                  Lifecycle                                 */
 /* -------------------------------------------------------------------------- */
 
-void RenderEditor::set_active(bool p_active) {
+void AsosdotRenderEditor::set_active(bool p_active) {
 	if (active == p_active) {
 		return;
 	}
 	active = p_active;
 	preview->set_update_mode(active ? SubViewport::UPDATE_WHEN_VISIBLE : SubViewport::UPDATE_DISABLED);
+	set_process_input(active);
 	if (active) {
+		_set_workspace_focus(workspace_focus);
 		if (!framed) {
 			_frame_subject();
 		}
 		_update_studio();
-		_apply_time(time);
+		_apply_sequence_time(sequence_time);
 	} else {
+		if (owns_editor_focus) {
+			EditorInterface::get_singleton()->set_distraction_free_mode(editor_focus_before);
+			owns_editor_focus = false;
+		}
+		_cancel_job();
+		_stop_audio();
+		_cancel_pose_drag();
 		playing = false;
 		play_button->set_button_icon(get_editor_theme_icon(SNAME("Play")));
 		_restore_pose();
 		_update_studio();
 	}
+	_update_pose_bar();
 	set_process(active || job.active);
 }
 
-void RenderEditor::scene_changed() {
+void AsosdotRenderEditor::scene_changed() {
+	if (job.active) {
+		_finish_job(TTR("Rendering stopped because the edited scene changed."));
+	}
+	_stop_audio();
+	_cancel_pose_drag();
 	_restore_pose();
 	playing = false;
-	shot->set_meta(SNAME("__base_node_relative"), _get_scene_root());
-	shot->notify_property_list_changed();
+	pose_selected = PoseTarget();
+	pose_hovered = PoseTarget();
+	pose_touched.clear();
+	for (const SequenceShot &entry : shots) {
+		entry.settings->set_meta(SNAME("__base_node_relative"), _get_scene_root());
+		entry.settings->notify_property_list_changed();
+	}
 	if (active) {
 		if (!framed) {
 			_frame_subject();
 		}
 		_update_studio();
-		_apply_time(time);
+		_apply_sequence_time(sequence_time);
 	}
+	_update_pose_bar();
 }
 
-Dictionary RenderEditor::get_state() const {
-	Dictionary state;
-	state["shot"] = shot->get_state();
-	state["orbit_target"] = orbit_target;
-	state["orbit_yaw"] = orbit_yaw;
-	state["orbit_pitch"] = orbit_pitch;
-	state["orbit_distance"] = orbit_distance;
-	state["framed"] = framed;
-	return state;
-}
-
-void RenderEditor::set_state(const Dictionary &p_state) {
-	shot->set_state(p_state.get("shot", Dictionary()));
-	orbit_target = p_state.get("orbit_target", Vector3());
-	orbit_yaw = p_state.get("orbit_yaw", 0.6);
-	orbit_pitch = p_state.get("orbit_pitch", -0.2);
-	orbit_distance = p_state.get("orbit_distance", 4.0);
-	framed = p_state.get("framed", false);
-	shot->set_meta(SNAME("__base_node_relative"), _get_scene_root());
-	if (active) {
-		if (!framed) {
-			_frame_subject();
-		}
-		_update_studio();
-		_apply_time(0.0);
-	}
-}
-
-void RenderEditor::_notification(int p_what) {
+void AsosdotRenderEditor::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_PREDELETE: {
+			_flush_frame_writes();
+		} break;
+
+		case NOTIFICATION_RESIZED: {
+			_update_workspace_layout();
+		} break;
+
 		case NOTIFICATION_THEME_CHANGED: {
+			_update_workspace_theme();
 			frame_button->set_button_icon(get_editor_theme_icon(SNAME("ZoomReset")));
 			render_image_button->set_button_icon(get_editor_theme_icon(SNAME("Image")));
 			render_animation_button->set_button_icon(get_editor_theme_icon(SNAME("Animation")));
 			play_button->set_button_icon(get_editor_theme_icon(playing ? SNAME("Pause") : SNAME("Play")));
+			pose_button->set_button_icon(get_editor_theme_icon(SNAME("Skeleton3D")));
+			pose_tool_buttons[POSE_TOOL_ROTATE]->set_button_icon(get_editor_theme_icon(SNAME("ToolRotate")));
+			pose_tool_buttons[POSE_TOOL_MOVE]->set_button_icon(get_editor_theme_icon(SNAME("ToolMove")));
+			pose_tool_buttons[POSE_TOOL_REACH]->set_button_icon(get_editor_theme_icon(SNAME("SkeletonIK3D")));
+			parent_button->set_button_icon(get_editor_theme_icon(SNAME("ArrowUp")));
+			reset_pose_button->set_button_icon(get_editor_theme_icon(SNAME("Reload")));
+			new_clip_button->set_button_icon(get_editor_theme_icon(SNAME("New")));
+			auto_key_button->set_button_icon(get_editor_theme_icon(SNAME("AutoKey")));
+			key_button->set_button_icon(get_editor_theme_icon(SNAME("Key")));
+			key_menu->set_button_icon(get_editor_theme_icon(SNAME("GuiDropdown")));
+			previous_key_button->set_button_icon(get_editor_theme_icon(SNAME("PagePrevious")));
+			next_key_button->set_button_icon(get_editor_theme_icon(SNAME("PageNext")));
 		} break;
 
 		case NOTIFICATION_EXIT_TREE: {
 			// The scene goes too when the editor closes; stop looking into it.
 			inspector->edit(nullptr);
-			shot->remove_meta(SNAME("__base_node_relative"));
+			_stop_audio();
+			for (const SequenceShot &entry : shots) {
+				entry.settings->remove_meta(SNAME("__base_node_relative"));
+			}
 		} break;
 
 		case NOTIFICATION_ENTER_TREE: {
-			inspector->edit(shot.ptr());
+			_settings_selected(settings_selector->get_current_tab());
 		} break;
 
 		case NOTIFICATION_PROCESS: {
@@ -1197,21 +1686,27 @@ void RenderEditor::_notification(int p_what) {
 			}
 			if (repose_pending && active) {
 				repose_pending = false;
-				_apply_time(time);
+				_apply_sequence_time(sequence_time);
 			}
 			if (playing && active) {
-				const float duration = MAX(float(shot->get_value("duration")), 0.01f);
-				float t = time + get_process_delta_time();
-				if (t > duration) {
+				const double duration = _sequence_duration();
+				double t = sequence_time + get_process_delta_time();
+				const bool looped = t >= duration;
+				if (looped) {
 					t = Math::fmod(t, duration);
 				}
-				_apply_time(t);
+				_apply_sequence_time(t);
+				_update_preview_audio(looped);
+			}
+			if (pose_mode && active) {
+				// Bones follow the animation and undo.
+				preview_surface->queue_redraw();
 			}
 		} break;
 	}
 }
 
-void RenderEditor::_draw_checker() {
+void AsosdotRenderEditor::_draw_checker() {
 	if (!bool(shot->get_value("transparent_background"))) {
 		return;
 	}
@@ -1226,107 +1721,20 @@ void RenderEditor::_draw_checker() {
 	}
 }
 
-RenderEditor::RenderEditor() {
+AsosdotRenderEditor::AsosdotRenderEditor() {
 	shot.instantiate();
-	shot->connect_changed(callable_mp(this, &RenderEditor::_shot_changed));
+	SequenceShot first;
+	first.settings = shot;
+	first.id = String::num_uint64(shot->get_instance_id());
+	shots.push_back(first);
+	sequence_output.instantiate();
+	sequence_output->set_sequence_output(true);
+	sequence_output->connect_changed(callable_mp(this, &AsosdotRenderEditor::_sequence_output_changed));
+	shot->connect_changed(callable_mp(this, &AsosdotRenderEditor::_shot_changed));
 
 	set_v_size_flags(SIZE_EXPAND_FILL);
 
-	// Toolbar.
-	HBoxContainer *toolbar = memnew(HBoxContainer);
-	add_child(toolbar);
-	frame_button = memnew(Button);
-	frame_button->set_text(TTR("Frame Subject"));
-	frame_button->set_theme_type_variation(SceneStringName(FlatButton));
-	frame_button->set_tooltip_text(TTR("Point the studio camera at everything in the scene, filling the picture."));
-	frame_button->connect(SceneStringName(pressed), callable_mp(this, &RenderEditor::_frame_subject));
-	toolbar->add_child(frame_button);
-	Control *spacer = memnew(Control);
-	spacer->set_h_size_flags(SIZE_EXPAND_FILL);
-	toolbar->add_child(spacer);
-	size_label = memnew(Label);
-	size_label->set_modulate(Color(1, 1, 1, 0.7));
-	toolbar->add_child(size_label);
-	render_image_button = memnew(Button);
-	render_image_button->set_text(TTR("Render Image"));
-	render_image_button->set_tooltip_text(TTR("Render the current frame to a PNG, JPEG or WebP image."));
-	render_image_button->connect(SceneStringName(pressed), callable_mp(this, &RenderEditor::_render_image_pressed));
-	toolbar->add_child(render_image_button);
-	render_animation_button = memnew(Button);
-	render_animation_button->set_text(TTR("Render Animation"));
-	render_animation_button->set_tooltip_text(TTR("Render every frame of the animation to a video (.avi or .ogv) or a numbered PNG sequence, which keeps a transparent background."));
-	render_animation_button->connect(SceneStringName(pressed), callable_mp(this, &RenderEditor::_render_animation_pressed));
-	toolbar->add_child(render_animation_button);
-
-	HSplitContainer *split = memnew(HSplitContainer);
-	split->set_v_size_flags(SIZE_EXPAND_FILL);
-	add_child(split);
-
-	VBoxContainer *view = memnew(VBoxContainer);
-	view->set_h_size_flags(SIZE_EXPAND_FILL);
-	split->add_child(view);
-
-	// The picture, at the output's shape.
-	aspect = memnew(AspectRatioContainer);
-	aspect->set_v_size_flags(SIZE_EXPAND_FILL);
-	aspect->set_stretch_mode(AspectRatioContainer::STRETCH_FIT);
-	view->add_child(aspect);
-	preview_holder = memnew(Control);
-	preview_holder->set_clip_contents(true);
-	preview_holder->connect(SceneStringName(draw), callable_mp(this, &RenderEditor::_draw_checker));
-	aspect->add_child(preview_holder);
-	preview_container = memnew(SubViewportContainer);
-	preview_container->set_stretch(true);
-	preview_container->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	preview_holder->add_child(preview_container);
-	preview = memnew(SubViewport);
-	preview->set_disable_input(true);
-	preview->set_update_mode(SubViewport::UPDATE_DISABLED);
-	preview->set_msaa_3d(Viewport::MSAA_4X);
-	preview->set_positional_shadow_atlas_size(4096);
-	preview_container->add_child(preview);
-	preview_camera = memnew(Camera3D);
-	// The scene's layers only: no gizmos, grid or selection outlines.
-	preview_camera->set_cull_mask((1 << 20) - 1);
-	preview->add_child(preview_camera);
-	preview_camera->make_current();
-	preview_surface = memnew(Control);
-	preview_surface->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	preview_surface->set_mouse_filter(Control::MOUSE_FILTER_STOP);
-	preview_surface->connect(SceneStringName(gui_input), callable_mp(this, &RenderEditor::_preview_input));
-	preview_holder->add_child(preview_surface);
-
-	HBoxContainer *transport = memnew(HBoxContainer);
-	view->add_child(transport);
-	play_button = memnew(Button);
-	play_button->set_theme_type_variation(SceneStringName(FlatButton));
-	play_button->set_tooltip_text(TTR("Play the animation in the preview."));
-	play_button->connect(SceneStringName(pressed), callable_mp(this, &RenderEditor::_play_pressed));
-	transport->add_child(play_button);
-	timeline = memnew(HSlider);
-	timeline->set_h_size_flags(SIZE_EXPAND_FILL);
-	timeline->set_v_size_flags(SIZE_SHRINK_CENTER);
-	timeline->connect(SceneStringName(value_changed), callable_mp(this, &RenderEditor::_timeline_changed));
-	transport->add_child(timeline);
-	time_label = memnew(Label);
-	time_label->set_custom_minimum_size(Size2(110, 0) * EDSCALE);
-	time_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_RIGHT);
-	transport->add_child(time_label);
-	hint_label = memnew(Label);
-	hint_label->set_modulate(Color(1, 1, 1, 0.6));
-	hint_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
-	view->add_child(hint_label);
-
-	// The shot's settings.
-	inspector = memnew(EditorInspector);
-	inspector->set_custom_minimum_size(Size2(360, 0) * EDSCALE);
-	inspector->set_v_size_flags(SIZE_EXPAND_FILL);
-	inspector->set_hide_script(true);
-	inspector->set_hide_metadata(true);
-	inspector->set_mark_unsaved(false);
-	inspector->set_use_folding(false);
-	split->add_child(inspector);
-	inspector->edit(shot.ptr());
+	_build_workspace();
 
 	// The studio, in the scene's world but not in the scene.
 	studio = memnew(Node3D);
@@ -1375,23 +1783,23 @@ RenderEditor::RenderEditor() {
 	image_dialog->add_filter("*.png", TTR("PNG Image"));
 	image_dialog->add_filter("*.jpg,*.jpeg", TTR("JPEG Image"));
 	image_dialog->add_filter("*.webp", TTR("WebP Image"));
-	image_dialog->connect("file_selected", callable_mp(this, &RenderEditor::_image_path_selected));
+	image_dialog->connect("file_selected", callable_mp(this, &AsosdotRenderEditor::_image_path_selected));
 	add_child(image_dialog);
 	animation_dialog = memnew(EditorFileDialog);
-	animation_dialog->set_title(TTR("Render Animation"));
+	animation_dialog->set_title(TTR("Render Sequence"));
 	animation_dialog->set_file_mode(EditorFileDialog::FILE_MODE_SAVE_FILE);
 	animation_dialog->set_access(EditorFileDialog::ACCESS_FILESYSTEM);
-	animation_dialog->add_filter("*.avi", TTR("AVI Video (Motion JPEG)"));
-	animation_dialog->add_filter("*.ogv", TTR("Ogg Theora Video"));
+	animation_dialog->add_filter("*.ogv", TTR("Ogg Theora Video (plays in Godot)"));
+	animation_dialog->add_filter("*.avi", TTR("AVI Video (Motion JPEG, for video editors)"));
 	animation_dialog->add_filter("*.png", TTR("PNG Image Sequence"));
-	animation_dialog->connect("file_selected", callable_mp(this, &RenderEditor::_animation_path_selected));
+	animation_dialog->connect("file_selected", callable_mp(this, &AsosdotRenderEditor::_animation_path_selected));
 	add_child(animation_dialog);
 
 	progress_dialog = memnew(ConfirmationDialog);
 	progress_dialog->set_title(TTR("Rendering"));
 	progress_dialog->get_ok_button()->hide();
 	progress_dialog->set_cancel_button_text(TTR("Cancel"));
-	progress_dialog->connect("canceled", callable_mp(this, &RenderEditor::_cancel_job));
+	progress_dialog->connect("canceled", callable_mp(this, &AsosdotRenderEditor::_cancel_job));
 	VBoxContainer *progress_box = memnew(VBoxContainer);
 	progress_dialog->add_child(progress_box);
 	progress_label = memnew(Label);
@@ -1400,10 +1808,29 @@ RenderEditor::RenderEditor() {
 	progress_box->add_child(progress_bar);
 	add_child(progress_dialog);
 
+	music_player = memnew(AudioStreamPlayer);
+	music_player->set_playback_type(AudioServer::PLAYBACK_TYPE_STREAM);
+	add_child(music_player);
+	dialogue_player = memnew(AudioStreamPlayer);
+	dialogue_player->set_playback_type(AudioServer::PLAYBACK_TYPE_STREAM);
+	add_child(dialogue_player);
+	_update_sequence_ui();
 	_update_timeline();
 }
 
-RenderEditor::~RenderEditor() {
+void AsosdotRenderEditor::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("get_state"), &AsosdotRenderEditor::get_state);
+	ClassDB::bind_method(D_METHOD("set_state", "state"), &AsosdotRenderEditor::set_state);
+	ClassDB::bind_method(D_METHOD("seek_sequence", "time"), &AsosdotRenderEditor::_apply_sequence_time);
+	ClassDB::bind_method(D_METHOD("render_sequence", "path"), &AsosdotRenderEditor::_render_sequence);
+	ClassDB::bind_method(D_METHOD("is_rendering"), &AsosdotRenderEditor::is_rendering);
+	ClassDB::bind_method(D_METHOD("cancel_render"), &AsosdotRenderEditor::_cancel_job);
+	// Called by undo and redo.
+	ClassDB::bind_method(D_METHOD("_set_clip_state", "clip", "state"), &AsosdotRenderEditor::_set_clip_state);
+	ClassDB::bind_method(D_METHOD("_clip_changed"), &AsosdotRenderEditor::_clip_changed);
+}
+
+AsosdotRenderEditor::~AsosdotRenderEditor() {
 	if (job.writer) {
 		job.writer->end_frames();
 	}
@@ -1413,38 +1840,39 @@ RenderEditor::~RenderEditor() {
 /*                                   Plugin                                   */
 /* -------------------------------------------------------------------------- */
 
-void RenderEditorPlugin::make_visible(bool p_visible) {
+void AsosdotRenderEditorPlugin::make_visible(bool p_visible) {
 	render_editor->set_visible(p_visible);
 	render_editor->set_active(p_visible);
 }
 
-Dictionary RenderEditorPlugin::get_state() const {
+Dictionary AsosdotRenderEditorPlugin::get_state() const {
 	return render_editor->get_state();
 }
 
-void RenderEditorPlugin::set_state(const Dictionary &p_state) {
+void AsosdotRenderEditorPlugin::set_state(const Dictionary &p_state) {
 	render_editor->set_state(p_state);
 }
 
-void RenderEditorPlugin::clear() {
+void AsosdotRenderEditorPlugin::clear() {
 	render_editor->set_state(Dictionary());
 }
 
-void RenderEditorPlugin::edited_scene_changed() {
+void AsosdotRenderEditorPlugin::edited_scene_changed() {
 	render_editor->scene_changed();
 }
 
-void RenderEditorPlugin::apply_changes() {
+void AsosdotRenderEditorPlugin::apply_changes() {
 	// Called before the scene is saved: a pose from the preview must not be
 	// saved with it.
+	render_editor->_cancel_pose_drag();
 	if (render_editor->posed) {
 		render_editor->_restore_pose();
 		render_editor->repose_pending = true;
 	}
 }
 
-RenderEditorPlugin::RenderEditorPlugin() {
-	render_editor = memnew(RenderEditor);
+AsosdotRenderEditorPlugin::AsosdotRenderEditorPlugin() {
+	render_editor = memnew(AsosdotRenderEditor);
 	EditorInterface::get_singleton()->get_editor_main_screen()->add_child(render_editor);
 	render_editor->hide();
 }

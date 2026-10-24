@@ -10,7 +10,7 @@
 
 #include "scene/3d/camera_3d.h"
 
-bool VoxelTerrain3DGizmo::intersect_ray(Camera3D *p_camera, const Point2 &p_point, Vector3 &r_pos, Vector3 &r_normal) {
+bool AsosdotVoxelTerrain3DGizmo::intersect_ray(Camera3D *p_camera, const Point2 &p_point, Vector3 &r_pos, Vector3 &r_normal) {
 	const VoxelTerrain3D *terrain = Object::cast_to<VoxelTerrain3D>(get_node_3d());
 	if (!terrain || !terrain->is_visible_in_tree()) {
 		return false;
@@ -24,22 +24,22 @@ bool VoxelTerrain3DGizmo::intersect_ray(Camera3D *p_camera, const Point2 &p_poin
 	return true;
 }
 
-bool VoxelTerrain3DGizmoPlugin::has_gizmo(Node3D *p_spatial) {
+bool AsosdotVoxelTerrain3DGizmoPlugin::has_gizmo(Node3D *p_spatial) {
 	return Object::cast_to<VoxelTerrain3D>(p_spatial) != nullptr;
 }
 
-Ref<EditorNode3DGizmo> VoxelTerrain3DGizmoPlugin::create_gizmo(Node3D *p_spatial) {
-	Ref<VoxelTerrain3DGizmo> gizmo;
+Ref<EditorNode3DGizmo> AsosdotVoxelTerrain3DGizmoPlugin::create_gizmo(Node3D *p_spatial) {
+	Ref<AsosdotVoxelTerrain3DGizmo> gizmo;
 	if (has_gizmo(p_spatial)) {
 		gizmo.instantiate();
 	}
 	return gizmo;
 }
 
-String VoxelTerrain3DGizmoPlugin::get_gizmo_name() const {
+String AsosdotVoxelTerrain3DGizmoPlugin::get_gizmo_name() const {
 	return "VoxelTerrain3D";
 }
 
-int VoxelTerrain3DGizmoPlugin::get_priority() const {
+int AsosdotVoxelTerrain3DGizmoPlugin::get_priority() const {
 	return -1;
 }

@@ -691,6 +691,10 @@ bool EditorFileSystem::_test_for_reimport(const String &p_path, const String &p_
 		return true; // The importer has possibly changed, try to reimport.
 	}
 
+	if (meta.get_type() == Variant::DICTIONARY && Dictionary(meta).get("asosdot_only", false)) {
+		// Written as -1 for Godot 4.7's sake; the real version is in the metadata.
+		version = Dictionary(meta).get("asosdot_importer_version", 0);
+	}
 	if (importer->get_format_version() > version) {
 		return true; // Version changed, reimport.
 	}
@@ -2953,7 +2957,11 @@ Error EditorFileSystem::_reimport_file(const String &p_file, const HashMap<Strin
 		f->store_line("");
 		f->store_line("importer=\"" + importer->get_importer_name() + "\"");
 		int version = importer->get_format_version();
-		if (version > 0) {
+		if (meta.get_type() == Variant::DICTIONARY && Dictionary(meta).get("asosdot_only", false)) {
+			// Asosdot: an older version than any, so Godot 4.7 imports the file again itself instead of
+			// loading a result with Asosdot's classes. Asosdot reads its version from the metadata.
+			f->store_line("importer_version=-1");
+		} else if (version > 0) {
 			f->store_line("importer_version=" + itos(version));
 		}
 		if (!importer->get_resource_type().is_empty()) {

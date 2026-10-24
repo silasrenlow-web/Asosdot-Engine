@@ -219,9 +219,14 @@ private:
 		Ref<Resource> stream;
 		real_t start_offset = 0.0; // Offset from start.
 		real_t end_offset = 0.0; // Offset from end, if 0 then full length or infinite.
+		real_t volume_db = 0.0; // Asosdot: added to the player's volume for this key's sound.
+		real_t pitch_scale = 1.0; // Asosdot: multiplies the player's pitch for this key's sound.
 		AudioKey() {
 		}
 	};
+
+	// Reads the optional volume and pitch of an audio key's dictionary.
+	static void _read_audio_key_shape(const Dictionary &p_key, AudioKey &r_key);
 
 	struct AudioTrack : public Track {
 		LocalVector<TKey<AudioKey>> values;
@@ -502,6 +507,10 @@ public:
 	Ref<Resource> audio_track_get_key_stream(int p_track, int p_key) const;
 	real_t audio_track_get_key_start_offset(int p_track, int p_key) const;
 	real_t audio_track_get_key_end_offset(int p_track, int p_key) const;
+	void audio_track_set_key_volume_db(int p_track, int p_key, real_t p_volume_db);
+	real_t audio_track_get_key_volume_db(int p_track, int p_key) const;
+	void audio_track_set_key_pitch_scale(int p_track, int p_key, real_t p_pitch_scale);
+	real_t audio_track_get_key_pitch_scale(int p_track, int p_key) const;
 	void audio_track_set_use_blend(int p_track, bool p_enable);
 	bool audio_track_is_use_blend(int p_track) const;
 

@@ -137,6 +137,7 @@
 			<description>
 				Plays the animation with key [param name] in reverse.
 				This method is a shorthand for [method play] with [code]custom_speed = -1.0[/code] and [code]from_end = true[/code], so see its description for more information.
+				Audio tracks, and value tracks switching an [AudioStreamPlayer], [AudioStreamPlayer2D] or [AudioStreamPlayer3D]'s [code]playing[/code] property, play their sounds backwards in step with the animation, as long as each stream has a known length (see [method AudioStream.get_length]). Seeking resumes such a stream partway, from where it would be by then.
 			</description>
 		</method>
 		<method name="play_section">

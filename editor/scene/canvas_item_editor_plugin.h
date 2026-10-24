@@ -287,6 +287,8 @@ private:
 public:
 	struct SelectResult {
 		CanvasItem *item = nullptr;
+		// The node actually under the cursor, before it was turned into a node the scene can edit.
+		ObjectID hit;
 		real_t z_index = 0;
 		bool has_z = true;
 		_FORCE_INLINE_ bool operator<(const SelectResult &p_rr) const {
@@ -381,6 +383,9 @@ private:
 	Control *left_ruler = nullptr;
 
 	Point2 drag_start_origin;
+	// A click on the selected instance, which goes on to a node its scene exposes if it doesn't drag.
+	ObjectID click_hit;
+	ObjectID click_selected;
 	DragType drag_type = DRAG_NONE;
 	Point2 drag_from;
 	Point2 drag_to;

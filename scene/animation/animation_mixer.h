@@ -35,6 +35,7 @@
 #include "scene/main/node.h"
 #include "scene/resources/animation.h"
 #include "scene/resources/animation_library.h"
+#include "scene/audio/audio_stream_scrub.h"
 #include "scene/resources/audio_stream_polyphonic.h"
 
 class AnimatedValuesBackup;
@@ -232,6 +233,19 @@ protected:
 		bool is_using_angle = false;
 		bool is_variant_interpolatable = true;
 
+		// Asosdot: a track switching an audio player's `playing` on and off. Its keys mark where the
+		// player's own stream starts and stops, so seeks resume the stream partway and scrubbing or
+		// playing backwards follows the playhead, as audio tracks do.
+		bool is_audio_playing = false;
+		int64_t playhead_sound = -1; // ID from the player's play_layered() while following the playhead.
+		Ref<AudioStreamScrub> playhead_stream;
+		int playhead_key = -1;
+
+		// Asosdot: a Camera3D's `current` track, the way camera cuts are keyed. The latest key at or
+		// before the playhead decides, whether it got there by playing, seeking or scrubbing.
+		bool is_camera_cut = false;
+		Variant camera_cut_value;
+
 		Variant element_size;
 
 		TrackCacheValue(const TrackCacheValue &p_other) :
@@ -244,6 +258,8 @@ protected:
 				use_discrete(p_other.use_discrete),
 				is_using_angle(p_other.is_using_angle),
 				is_variant_interpolatable(p_other.is_variant_interpolatable),
+				is_audio_playing(p_other.is_audio_playing),
+				is_camera_cut(p_other.is_camera_cut),
 				element_size(p_other.element_size) {}
 
 		TrackCacheValue() { type = Animation::TYPE_VALUE; }
@@ -260,14 +276,26 @@ protected:
 
 	// Audio stream information for each audio stream placed on the track.
 	struct PlayingAudioStreamInfo {
-		AudioStreamPlaybackPolyphonic::ID index = -1; // ID retrieved from AudioStreamPlaybackPolyphonic.
+		int64_t index = -1; // ID retrieved from the player's play_layered().
 		double start = 0.0;
 		double len = 0.0;
+		real_t volume_db = 0.0; // The key's own volume, before blending.
+	};
+
+	// A key's sound while it follows the playhead (scrubbing in the editor, or playing backwards):
+	// it's placed under the playhead rather than played at its own pace.
+	struct ScrubbedAudioInfo {
+		int64_t index = -1; // ID retrieved from the player's play_layered().
+		Ref<AudioStreamScrub> stream;
+		real_t volume_db = 0.0;
 	};
 
 	// Audio track information for mixng and ending.
 	struct PlayingAudioTrackInfo {
-		AHashMap<int, PlayingAudioStreamInfo> stream_info;
+		// Key is the order sounds started in: a key that plays again while it still sounds gets
+		// another voice, and audio_max_polyphony stops the oldest first.
+		AHashMap<uint64_t, PlayingAudioStreamInfo> stream_info;
+		AHashMap<int, ScrubbedAudioInfo> scrubbed; // Key is the key index.
 		double length = 0.0;
 		double time = 0.0;
 		real_t volume = 0.0;
@@ -276,19 +304,17 @@ protected:
 		bool use_blend = false;
 	};
 
+	// Asosdot: sounds play as layered sounds of the player (play_layered()), so its own stream is
+	// left alone and every key, on any number of tracks, gets its own voice.
 	struct TrackCacheAudio : public TrackCache {
-		Ref<AudioStreamPolyphonic> audio_stream;
-		Ref<AudioStreamPlaybackPolyphonic> audio_stream_playback;
-		HashMap<ObjectID, PlayingAudioTrackInfo> playing_streams; // Key is Animation resource ObjectID.
-		AudioServer::PlaybackType playback_type;
-		StringName bus;
+		// Key is the Animation resource ObjectID and the track index, as several audio tracks can share a player.
+		HashMap<Pair<ObjectID, int>, PlayingAudioTrackInfo> playing_streams;
+		uint64_t started = 0; // Sounds started so far, to order them.
 
 		TrackCacheAudio(const TrackCacheAudio &p_other) :
 				TrackCache(p_other),
-				audio_stream(p_other.audio_stream),
-				audio_stream_playback(p_other.audio_stream_playback),
 				playing_streams(p_other.playing_streams),
-				playback_type(p_other.playback_type) {}
+				started(p_other.started) {}
 
 		TrackCacheAudio() {
 			type = Animation::TYPE_AUDIO;
@@ -307,11 +333,23 @@ protected:
 	AHashMap<Animation::TrackCacheID, TrackCache *, HashHasher> track_cache;
 	AHashMap<Ref<Animation>, LocalVector<TrackCache *>> animation_track_num_to_track_cache;
 	HashSet<TrackCache *> playing_caches;
-	Vector<Node *> playing_audio_stream_players;
+	// Every sound audio tracks started and haven't let go, by player, so stopping reaches them even
+	// after caches were swapped for a backup's (as onion skinning does).
+	HashSet<Pair<ObjectID, int64_t>> audio_sounds;
 
 	// Helpers.
 	void _clear_caches();
 	void _clear_audio_streams();
+	void _stop_audio_sound(Object *p_player, int64_t p_index);
+	void _follow_audio_playhead(Object *p_player, PlayingAudioTrackInfo &r_track_info, const Ref<Animation> &p_animation, int p_track, double p_time);
+	void _stop_scrubbed_audio(Object *p_player, PlayingAudioTrackInfo &r_track_info);
+	void _process_audio_playing_track(TrackCacheValue *p_cache, const Ref<Animation> &p_animation, int p_track, double p_time, double p_delta, double p_start, double p_end, Animation::LoopedFlag p_looped_flag, bool p_seeked, bool p_backward, bool p_update_only);
+	bool _audio_playing_position(TrackCacheValue *p_cache, Object *p_player, const Ref<Animation> &p_animation, int p_track, double p_time, int &r_key, double &r_position);
+	void _stop_audio_playing_follow(TrackCacheValue *p_cache, Object *p_player);
+	bool _is_editor_preview_stopped() const;
+	void _process_camera_cut_track(TrackCacheValue *p_cache, const Ref<Animation> &p_animation, int p_track, double p_time, double p_delta, double p_start, double p_end, Animation::LoopedFlag p_looped_flag, bool p_seeked);
+	bool audio_scrubbing = false;
+	void _play_audio_key(TrackCacheAudio *p_cache, Object *p_player, PlayingAudioTrackInfo &r_track_info, const Ref<Animation> &p_animation, int p_track, int p_key, double p_time, bool p_resume, bool p_latest);
 	void _clear_playing_caches();
 	void _init_root_motion_cache();
 	bool _update_caches();
@@ -438,6 +476,11 @@ public:
 	/* ---- Audio ---- */
 	void set_audio_max_polyphony(int p_audio_max_polyphony);
 	int get_audio_max_polyphony() const;
+
+	// Asosdot: set by the editor around a seek made by dragging the timeline, so audio tracks are
+	// heard under the playhead the way a video editor scrubs them.
+	void set_audio_scrubbing(bool p_scrubbing) { audio_scrubbing = p_scrubbing; }
+	bool is_audio_scrubbing() const { return audio_scrubbing; }
 
 	/* ---- Root motion accumulator for Skeleton3D ---- */
 	void set_root_motion_track(const NodePath &p_track);

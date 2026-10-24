@@ -194,6 +194,10 @@ public:
 	static HashMap<StringName, ClassInfo> classes;
 	static HashMap<StringName, StringName> resource_base_extensions;
 	static HashMap<StringName, StringName> compat_classes;
+	static HashMap<StringName, StringName> asosdot_class_groups;
+	static HashMap<StringName, Vector<StringName>> asosdot_group_classes;
+	static HashSet<StringName> asosdot_yielded_groups;
+	static bool asosdot_yielding_open;
 
 #ifdef TOOLS_ENABLED
 	static HashMap<StringName, ObjectGDExtension> placeholder_extensions;
@@ -303,6 +307,16 @@ public:
 
 	static void register_extension_class(ObjectGDExtension *p_extension);
 	static void unregister_extension_class(const StringName &p_class, bool p_free_method_binds = true);
+
+	// Asosdot: groups of classes that Asosdot adds to Godot 4.7, one group per feature. A project's own
+	// extension or script class with one of their names takes the name, as it would in Godot 4.7,
+	// and Asosdot leaves the whole group out of that project. This is decided while the engine
+	// starts, before anything uses the group.
+	static void add_asosdot_class_group(const StringName &p_group, const Vector<StringName> &p_classes);
+	static StringName get_asosdot_class_group(const StringName &p_class);
+	static bool yield_asosdot_class_group(const StringName &p_group, const String &p_claimed_by);
+	static bool is_asosdot_class_group_yielded(const StringName &p_group);
+	static void close_asosdot_class_yielding();
 
 	template <typename T>
 	static Object *_create_ptr_func(bool p_notify_postinitialize) {

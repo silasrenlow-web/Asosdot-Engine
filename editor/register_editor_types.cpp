@@ -168,7 +168,8 @@ void register_editor_types() {
 	GDREGISTER_ABSTRACT_CLASS(EditorResourcePreview);
 	GDREGISTER_CLASS(EditorResourcePreviewGenerator);
 	GDREGISTER_CLASS(EditorResourceTooltipPlugin);
-	GDREGISTER_INTERNAL_CLASS(RenderShot);
+	GDREGISTER_INTERNAL_CLASS(AsosdotRenderShot);
+	GDREGISTER_INTERNAL_CLASS(AsosdotRenderEditor);
 	GDREGISTER_ABSTRACT_CLASS(EditorFileSystem);
 	GDREGISTER_CLASS(EditorFileSystemDirectory);
 	GDREGISTER_CLASS(EditorVCSInterface);

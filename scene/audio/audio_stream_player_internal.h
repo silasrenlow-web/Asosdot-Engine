@@ -32,6 +32,7 @@
 
 #include "core/object/ref_counted.h"
 #include "core/templates/safe_refcount.h"
+#include "scene/resources/audio_stream_polyphonic.h"
 #include "servers/audio/audio_server.h"
 
 class AudioStream;
@@ -65,9 +66,33 @@ private:
 		return (AudioServer::get_singleton()->get_default_playback_type() == AudioServer::PlaybackType::PLAYBACK_TYPE_SAMPLE && get_playback_type() == AudioServer::PlaybackType::PLAYBACK_TYPE_DEFAULT) || get_playback_type() == AudioServer::PlaybackType::PLAYBACK_TYPE_SAMPLE;
 	}
 
+	// Asosdot: sounds played with play_layered() beside the player's own stream. One polyphonic
+	// playback mixes them all; it sits in stream_playbacks so the player's volume, panning,
+	// pitch, bus and pause reach it like any other playback, but it never counts as the player's
+	// own stream playing.
+	static constexpr int MAX_LAYERED = 128;
+	Ref<AudioStreamPolyphonic> layer_stream;
+	// The IDs handed out are the player's own and never reused, as the polyphonic playback's
+	// restart with each new layer.
+	struct LayeredSound {
+		int64_t id = 0;
+		int64_t voice = 0; // The polyphonic playback's ID.
+	};
+	LocalVector<LayeredSound> layered;
+	int64_t next_layered_id = 1;
+	const LayeredSound *_find_layered(int64_t p_id) const;
+
+	_FORCE_INLINE_ bool _is_layer(const Ref<AudioStreamPlayback> &p_playback) const {
+		return layer_playback.is_valid() && p_playback.ptr() == layer_playback.ptr();
+	}
+	bool _process_layered();
+
 public:
 	Vector<Ref<AudioStreamPlayback>> stream_playbacks;
 	Ref<AudioStream> stream;
+	Ref<AudioStreamPlaybackPolyphonic> layer_playback;
+	// The player node starts the layer's playback, as only it knows the bus, volumes and panning.
+	bool layer_needs_start = false;
 
 	SafeFlag active;
 
@@ -106,6 +131,14 @@ public:
 
 	bool has_stream_playback();
 	Ref<AudioStreamPlayback> get_stream_playback();
+
+	int64_t play_layered(const Ref<AudioStream> &p_stream, float p_from_pos, float p_volume_db, float p_pitch_scale);
+	void stop_layered(int64_t p_id);
+	void stop_all_layered();
+	bool is_layered_playing(int64_t p_id) const;
+	void set_layered_volume_db(int64_t p_id, float p_volume_db);
+	void set_layered_pitch_scale(int64_t p_id, float p_pitch_scale);
+	int get_layered_count() const;
 
 	void set_playback_type(AudioServer::PlaybackType p_playback_type);
 	AudioServer::PlaybackType get_playback_type() const;

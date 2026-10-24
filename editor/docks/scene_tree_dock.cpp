@@ -250,6 +250,8 @@ void SceneTreeDock::shortcut_input(const Ref<InputEvent> &p_event) {
 		_tool_selected(TOOL_TOGGLE_SCENE_UNIQUE_NAME);
 	} else if (ED_IS_SHORTCUT("scene_tree/toggle_editable_children", p_event)) {
 		_tool_selected(TOOL_SCENE_EDITABLE_CHILDREN);
+	} else if (ED_IS_SHORTCUT("scene_tree/toggle_exposed_in_instances", p_event)) {
+		_tool_selected(TOOL_TOGGLE_EXPOSED_IN_INSTANCES);
 	} else if (ED_IS_SHORTCUT("scene_tree/open_scene_in_editor", p_event)) {
 		_tool_selected(TOOL_SCENE_OPEN);
 	} else if (ED_IS_SHORTCUT("scene_tree/delete", p_event)) {
@@ -1366,7 +1368,7 @@ void SceneTreeDock::_tool_selected(int p_tool, bool p_confirm_override) {
 					bool editable = EditorNode::get_singleton()->get_edited_scene()->is_editable_instance(node);
 
 					if (editable) {
-						editable_instance_remove_dialog->set_text(TTR("Disabling \"Editable Children\" will cause all properties of this subscene's descendant nodes to be reverted to their default."));
+						editable_instance_remove_dialog->set_text(TTR("Disabling \"Editable Children\" will cause all properties of this subscene's descendant nodes to be reverted to their default, except the nodes its scene exposes in instances."));
 						editable_instance_remove_dialog->popup_centered();
 						break;
 					}
@@ -1438,6 +1440,20 @@ void SceneTreeDock::_tool_selected(int p_tool, bool p_confirm_override) {
 					undo_redo->create_action(TTR("Make Local"));
 					undo_redo->add_do_method(node, "set_scene_file_path", "");
 					undo_redo->add_undo_method(node, "set_scene_file_path", node->get_scene_file_path());
+					// The instance's scene chose what it exposes. Once local, these nodes are this scene's,
+					// exposed only if this scene exposes them.
+					List<Node *> made_local;
+					node->get_owned_by(node, &made_local);
+					for (Node *local_node : made_local) {
+						if (local_node->is_exposed_in_instances()) {
+							undo_redo->add_do_method(local_node, "set_exposed_in_instances", false);
+							undo_redo->add_undo_method(local_node, "set_exposed_in_instances", true);
+						}
+						if (local_node->is_instance_changes_kept()) {
+							undo_redo->add_do_method(local_node, "set_instance_changes_kept", false);
+							undo_redo->add_undo_method(local_node, "set_instance_changes_kept", true);
+						}
+					}
 					_node_replace_owner(node, node, root);
 					_node_strip_signal_inheritance(node);
 					SignalsDock::get_singleton()->set_object(node); // Refresh.
@@ -1581,6 +1597,34 @@ void SceneTreeDock::_tool_selected(int p_tool, bool p_confirm_override) {
 				}
 				undo_redo->commit_action();
 			}
+		} break;
+		case TOOL_TOGGLE_EXPOSED_IN_INSTANCES: {
+			// Scenes that instance this one can edit an exposed node without Editable Children.
+			Node *edited_root = get_tree()->get_edited_scene_root();
+			List<Node *> exposable;
+			for (Node *node : editor_selection->get_full_selected_node_list()) {
+				if (node != edited_root && node->get_owner() == edited_root) {
+					exposable.push_back(node);
+				}
+			}
+			if (exposable.is_empty()) {
+				accept->set_text(TTR("Only this scene's own nodes, other than its root, can be exposed in instances."));
+				accept->popup_centered();
+				break;
+			}
+			// Follow the first node, as the menu's check does.
+			const bool exposing = !exposable.front()->get()->is_exposed_in_instances();
+			EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+			undo_redo->create_action(exposing ? TTR("Expose Node(s) in Instances") : TTR("Stop Exposing Node(s) in Instances"));
+			for (Node *node : exposable) {
+				if (node->is_exposed_in_instances() != exposing) {
+					undo_redo->add_do_method(node, "set_exposed_in_instances", exposing);
+					undo_redo->add_undo_method(node, "set_exposed_in_instances", !exposing);
+				}
+			}
+			undo_redo->add_do_method(scene_tree, "update_tree");
+			undo_redo->add_undo_method(scene_tree, "update_tree");
+			undo_redo->commit_action();
 		} break;
 		case TOOL_CREATE_2D_SCENE:
 		case TOOL_CREATE_3D_SCENE:
@@ -2850,8 +2894,21 @@ void SceneTreeDock::_toggle_editable_children(Node *p_node) {
 		Array transform_array;
 		Array name_array;
 
+		// The instance's nodes that stay editable without its children: those its scene exposes.
+		List<Node *> instance_nodes;
+		p_node->get_owned_by(p_node, &instance_nodes);
+		HashSet<Node *> staying;
+		for (Node *instance_node : instance_nodes) {
+			if (instance_node->is_exposed_in_instances()) {
+				staying.insert(instance_node);
+			} else if (instance_node->is_instance_changes_kept()) {
+				undo_redo->add_do_method(instance_node, "set_instance_changes_kept", false);
+				undo_redo->add_undo_method(instance_node, "set_instance_changes_kept", true);
+			}
+		}
+
 		for (Node *owned_node : owned) {
-			if (owned_node != p_node && owned_node != edited_scene && owned_node->get_owner() == edited_scene && owned_node->get_parent()->get_owner() != edited_scene) {
+			if (owned_node != p_node && owned_node != edited_scene && owned_node->get_owner() == edited_scene && owned_node->get_parent()->get_owner() != edited_scene && !staying.has(owned_node->get_parent())) {
 				owned_nodes_array.push_back(owned_node);
 				paths_array.push_back(p_node->get_path_to(owned_node->get_parent()));
 				name_array.push_back(owned_node->get_name());
@@ -3619,11 +3676,7 @@ static bool _is_node_visible(Node *p_node) {
 	if (!p_node->get_owner()) {
 		return false;
 	}
-	if (p_node->get_owner() != EditorNode::get_singleton()->get_edited_scene() && !EditorNode::get_singleton()->get_edited_scene()->is_editable_instance(p_node->get_owner())) {
-		return false;
-	}
-
-	return true;
+	return EditorNode::get_singleton()->get_edited_scene()->is_node_editable(p_node);
 }
 
 void SceneTreeDock::_normalize_drop(Node *&to_node, int &to_pos, int p_type) {
@@ -4134,6 +4187,21 @@ void SceneTreeDock::_tree_rmb(const Vector2 &p_menu_pos) {
 			menu->add_icon_check_item(get_editor_theme_icon(SNAME("SceneUniqueName")), TTRC("Access as Unique Name"), TOOL_TOGGLE_SCENE_UNIQUE_NAME);
 			menu->set_item_shortcut(menu->get_item_index(TOOL_TOGGLE_SCENE_UNIQUE_NAME), ED_GET_SHORTCUT("scene_tree/toggle_unique_name"));
 			menu->set_item_checked(menu->get_item_index(TOOL_TOGGLE_SCENE_UNIQUE_NAME), node->is_unique_name_in_owner());
+
+			Node *first_exposable = nullptr;
+			for (Node *E : full_selection) {
+				if (E != EditorNode::get_singleton()->get_edited_scene()) {
+					first_exposable = E;
+					break;
+				}
+			}
+			if (first_exposable) {
+				menu->add_icon_check_item(get_editor_theme_icon(SNAME("ExposedNode")), TTRC("Expose in Instances"), TOOL_TOGGLE_EXPOSED_IN_INSTANCES);
+				const int index = menu->get_item_index(TOOL_TOGGLE_EXPOSED_IN_INSTANCES);
+				menu->set_item_shortcut(index, ED_GET_SHORTCUT("scene_tree/toggle_exposed_in_instances"));
+				menu->set_item_checked(index, first_exposable->is_exposed_in_instances());
+				menu->set_item_tooltip(index, TTR("Let scenes that instance this one see and edit this node, without Editable Children."));
+			}
 		}
 		END_SECTION()
 	}
@@ -5039,6 +5107,7 @@ SceneTreeDock::SceneTreeDock(Node *p_scene_root, EditorSelection *p_editor_selec
 	ED_SHORTCUT("scene_tree/show_in_file_system", TTRC("Show in FileSystem"));
 	ED_SHORTCUT("scene_tree/toggle_unique_name", TTRC("Toggle Access as Unique Name"));
 	ED_SHORTCUT("scene_tree/toggle_editable_children", TTRC("Toggle Editable Children"));
+	ED_SHORTCUT("scene_tree/toggle_exposed_in_instances", TTRC("Toggle Expose in Instances"));
 	ED_SHORTCUT_ARRAY("scene_tree/open_scene_in_editor", TTRC("Open Scene in Editor"), { int32_t(Key::SLASH), int32_t(KeyModifierMask::SHIFT | Key::COLON) });
 	ED_SHORTCUT("scene_tree/delete_no_confirm", TTRC("Delete (No Confirm)"), KeyModifierMask::SHIFT | Key::KEY_DELETE);
 	ED_SHORTCUT("scene_tree/delete", TTRC("Delete"), Key::KEY_DELETE);

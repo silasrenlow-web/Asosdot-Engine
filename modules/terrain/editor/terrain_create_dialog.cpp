@@ -38,7 +38,7 @@ SpinBox *make_spin(double p_min, double p_max, double p_step, double p_value, co
 
 } // namespace
 
-Control *TerrainCreateDialog::_add_row(GridContainer *p_grid, const String &p_label, Control *p_control, LocalVector<Control *> *p_group) {
+Control *AsosdotTerrainCreateDialog::_add_row(GridContainer *p_grid, const String &p_label, Control *p_control, LocalVector<Control *> *p_group) {
 	Label *label = memnew(Label(p_label));
 	p_grid->add_child(label);
 	p_grid->add_child(p_control);
@@ -49,7 +49,7 @@ Control *TerrainCreateDialog::_add_row(GridContainer *p_grid, const String &p_la
 	return p_control;
 }
 
-void TerrainCreateDialog::_source_changed(int p_index) {
+void AsosdotTerrainCreateDialog::_source_changed(int p_index) {
 	for (Control *c : size_rows) {
 		c->set_visible(p_index != SOURCE_FILE);
 	}
@@ -62,11 +62,11 @@ void TerrainCreateDialog::_source_changed(int p_index) {
 	reset_size();
 }
 
-void TerrainCreateDialog::_browse() {
+void AsosdotTerrainCreateDialog::_browse() {
 	file_dialog->popup_file_dialog();
 }
 
-void TerrainCreateDialog::_file_selected(const String &p_path) {
+void AsosdotTerrainCreateDialog::_file_selected(const String &p_path) {
 	file_path->set_text(p_path);
 	TerrainHeightmapIO::Loaded loaded;
 	String error;
@@ -84,16 +84,16 @@ void TerrainCreateDialog::_file_selected(const String &p_path) {
 	reset_size();
 }
 
-void TerrainCreateDialog::_browse_data() {
+void AsosdotTerrainCreateDialog::_browse_data() {
 	data_dialog->set_current_path(get_data_path());
 	data_dialog->popup_file_dialog();
 }
 
-void TerrainCreateDialog::_data_path_selected(const String &p_path) {
+void AsosdotTerrainCreateDialog::_data_path_selected(const String &p_path) {
 	data_path->set_text(p_path);
 }
 
-String TerrainCreateDialog::get_data_path() const {
+String AsosdotTerrainCreateDialog::get_data_path() const {
 	String path = data_path->get_text().strip_edges();
 	if (!path.ends_with(".res")) {
 		path += ".terrain.res";
@@ -101,7 +101,7 @@ String TerrainCreateDialog::get_data_path() const {
 	return path;
 }
 
-void TerrainCreateDialog::popup_for(Mode p_mode, const Ref<TerrainData> &p_existing, float p_spacing, const String &p_data_path) {
+void AsosdotTerrainCreateDialog::popup_for(Mode p_mode, const Ref<TerrainData> &p_existing, float p_spacing, const String &p_data_path) {
 	mode = p_mode;
 	data_path->set_text(p_data_path);
 	set_title(mode == MODE_NEW ? TTR("New Terrain") : TTR("Import Heightmap"));
@@ -127,7 +127,7 @@ void TerrainCreateDialog::popup_for(Mode p_mode, const Ref<TerrainData> &p_exist
 	popup_centered(Size2(460, 0) * EDSCALE);
 }
 
-Ref<TerrainData> TerrainCreateDialog::build(const Ref<TerrainData> &p_existing, float &r_spacing, String &r_error) const {
+Ref<TerrainData> AsosdotTerrainCreateDialog::build(const Ref<TerrainData> &p_existing, float &r_spacing, String &r_error) const {
 	r_spacing = spacing->get_value();
 	const int src = source->get_selected();
 
@@ -262,7 +262,7 @@ Ref<TerrainData> TerrainCreateDialog::build(const Ref<TerrainData> &p_existing, 
 	return tdata;
 }
 
-TerrainCreateDialog::TerrainCreateDialog() {
+AsosdotTerrainCreateDialog::AsosdotTerrainCreateDialog() {
 	set_title(TTR("New Terrain"));
 	VBoxContainer *vbox = memnew(VBoxContainer);
 	add_child(vbox);
@@ -275,7 +275,7 @@ TerrainCreateDialog::TerrainCreateDialog() {
 	source->add_item(TTR("Flat"), SOURCE_FLAT);
 	source->add_item(TTR("Noise"), SOURCE_NOISE);
 	source->add_item(TTR("Heightmap File"), SOURCE_FILE);
-	source->connect(SceneStringName(item_selected), callable_mp(this, &TerrainCreateDialog::_source_changed));
+	source->connect(SceneStringName(item_selected), callable_mp(this, &AsosdotTerrainCreateDialog::_source_changed));
 	_add_row(grid, TTR("Heights:"), source);
 
 	width = make_spin(8, 16384, 1, 512, "m");
@@ -313,11 +313,11 @@ TerrainCreateDialog::TerrainCreateDialog() {
 	file_path = memnew(LineEdit);
 	file_path->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	file_path->set_placeholder(TTR("PNG (8 or 16-bit), EXR, HDR or R16"));
-	file_path->connect(SceneStringName(text_submitted), callable_mp(this, &TerrainCreateDialog::_file_selected));
+	file_path->connect(SceneStringName(text_submitted), callable_mp(this, &AsosdotTerrainCreateDialog::_file_selected));
 	file_row->add_child(file_path);
 	Button *browse = memnew(Button);
 	browse->set_text("...");
-	browse->connect(SceneStringName(pressed), callable_mp(this, &TerrainCreateDialog::_browse));
+	browse->connect(SceneStringName(pressed), callable_mp(this, &AsosdotTerrainCreateDialog::_browse));
 	file_row->add_child(browse);
 	_add_row(grid, TTR("File:"), file_row, &file_rows);
 	file_min = make_spin(-10000, 10000, 0.01, 0.0, "m");
@@ -361,16 +361,16 @@ TerrainCreateDialog::TerrainCreateDialog() {
 	file_dialog->add_filter("*.hdr", TTR("Radiance HDR"));
 	file_dialog->add_filter("*.r16,*.raw", TTR("Raw 16-bit"));
 	file_dialog->add_filter("*.jpg,*.jpeg,*.webp,*.tga,*.bmp", TTR("8-bit images"));
-	file_dialog->connect("file_selected", callable_mp(this, &TerrainCreateDialog::_file_selected));
+	file_dialog->connect("file_selected", callable_mp(this, &AsosdotTerrainCreateDialog::_file_selected));
 	add_child(file_dialog);
 
 	data_dialog = memnew(EditorFileDialog);
 	data_dialog->set_file_mode(EditorFileDialog::FILE_MODE_SAVE_FILE);
 	data_dialog->set_access(EditorFileDialog::ACCESS_RESOURCES);
 	data_dialog->add_filter("*.res", TTR("Binary Resource"));
-	data_dialog->connect("file_selected", callable_mp(this, &TerrainCreateDialog::_data_path_selected));
+	data_dialog->connect("file_selected", callable_mp(this, &AsosdotTerrainCreateDialog::_data_path_selected));
 	add_child(data_dialog);
-	data_browse->connect(SceneStringName(pressed), callable_mp(this, &TerrainCreateDialog::_browse_data));
+	data_browse->connect(SceneStringName(pressed), callable_mp(this, &AsosdotTerrainCreateDialog::_browse_data));
 
 	_source_changed(SOURCE_FLAT);
 }

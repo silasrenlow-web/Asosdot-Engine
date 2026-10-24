@@ -50,6 +50,7 @@
 #include "core/string/translation_server.h"
 #include "core/version.h"
 #include "editor/animation/animation_player_editor_plugin.h"
+#include "editor/animation/animation_workspace.h"
 #include "editor/asset_library/asset_library_editor_plugin.h"
 #include "editor/audio/audio_stream_preview.h"
 #include "editor/audio/editor_audio_buses.h"
@@ -86,6 +87,7 @@
 #include "editor/gui/editor_file_dialog.h"
 #include "editor/gui/editor_quick_open_dialog.h"
 #include "editor/gui/editor_title_bar.h"
+#include "editor/editor_freeze_watchdog.h"
 #include "editor/gui/editor_toaster.h"
 #include "editor/gui/progress_dialog.h"
 #include "editor/gui/window_wrapper.h"
@@ -884,6 +886,7 @@ void EditorNode::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_PROCESS: {
+			_update_freeze_watchdog();
 			if (editor_data.is_scene_changed(-1)) {
 				scene_tabs->update_scene_tabs();
 			}
@@ -3299,6 +3302,9 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 
 					main_plugin->edit(current_script);
 				}
+			} else if (main_plugin != editor_plugin_screen && editor_plugin_screen && editor_plugin_screen->hosts_main_screen_of(main_plugin)) {
+				// Asosdot: the screen shown holds main_plugin's editor, so it edits there.
+				main_plugin->edit(current_obj);
 			} else if (main_plugin != editor_plugin_screen) {
 				// Unedit previous plugin.
 				editor_plugin_screen->edit(nullptr);
@@ -4654,8 +4660,11 @@ void EditorNode::_set_main_scene_state(const Dictionary &p_state) {
 			if (!selected_node) {
 				selected_node = get_edited_scene();
 			}
-			const int plugin_index = editor_main_screen->get_plugin_index(editor_data.get_handling_main_editor(selected_node));
-			if (plugin_index >= 0) {
+			EditorPlugin *handling = editor_data.get_handling_main_editor(selected_node);
+			const int plugin_index = editor_main_screen->get_plugin_index(handling);
+			EditorPlugin *shown = editor_main_screen->get_selected_plugin();
+			// Asosdot: a screen holding the handling editor already shows the scene.
+			if (plugin_index >= 0 && !(shown && shown->hosts_main_screen_of(handling))) {
 				editor_main_screen->select(plugin_index);
 			}
 		}
@@ -5292,6 +5301,7 @@ void EditorNode::get_preload_scene_modification_table(
 			modification_node_entry.connections_to = valid_connections_to;
 			modification_node_entry.connections_from = valid_connections_from;
 			modification_node_entry.groups = groups;
+			modification_node_entry.was_editable = p_edited_scene->is_node_editable(p_node);
 
 			p_instance_modifications.modifications[p_reimported_root->get_path_to(p_node)] = modification_node_entry;
 		}
@@ -5921,6 +5931,7 @@ static int last_progress_step = 0;
 static double last_progress_time = 0;
 
 void EditorNode::progress_add_task(const String &p_task, const String &p_label, int p_steps, bool p_can_cancel) {
+	EditorFreezeWatchdog::set_activity(p_label);
 	if (!singleton) {
 		return;
 	} else if (singleton->cmdline_mode) {
@@ -5932,6 +5943,11 @@ void EditorNode::progress_add_task(const String &p_task, const String &p_label, 
 }
 
 bool EditorNode::progress_task_step(const String &p_task, const String &p_state, int p_step, bool p_force_refresh) {
+	// A long task that still reports its progress isn't a freeze.
+	if (EditorFreezeWatchdog *watchdog = EditorFreezeWatchdog::get_singleton()) {
+		watchdog->tick();
+	}
+	EditorFreezeWatchdog::set_activity(vformat("%s: %s", p_task, p_state));
 	if (!singleton) {
 		return false;
 	} else if (singleton->cmdline_mode) {
@@ -5956,6 +5972,7 @@ bool EditorNode::progress_task_step(const String &p_task, const String &p_state,
 }
 
 void EditorNode::progress_end_task(const String &p_task) {
+	EditorFreezeWatchdog::set_activity(String());
 	if (!singleton) {
 		return;
 	} else if (singleton->cmdline_mode) {
@@ -7576,6 +7593,11 @@ void EditorNode::reload_instances_with_path_in_edited_scenes() {
 				Node *modifiable_node = instantiated_node->get_node_or_null(new_current_path);
 
 				update_node_from_node_modification_entry(modifiable_node, E.value);
+				// If the instance's scene stopped exposing a node the edited scene changes, the node
+				// stays editable, so the changes aren't lost on save.
+				if (modifiable_node && E.value.was_editable && !current_edited_scene->is_node_editable(modifiable_node)) {
+					modifiable_node->set_instance_changes_kept(true);
+				}
 			}
 			// Add the newly instantiated node to the edited scene's replaced node list.
 			replaced_nodes.push_back(instantiated_node);
@@ -9390,7 +9412,7 @@ EditorNode::EditorNode() {
 
 	add_editor_plugin(memnew(CanvasItemEditorPlugin));
 	add_editor_plugin(memnew(Node3DEditorPlugin));
-	add_editor_plugin(memnew(RenderEditorPlugin));
+	add_editor_plugin(memnew(AsosdotRenderEditorPlugin));
 	add_editor_plugin(memnew(ScriptEditorPlugin));
 
 	if (!Engine::get_singleton()->is_recovery_mode_hint()) {
@@ -9408,6 +9430,11 @@ EditorNode::EditorNode() {
 	} else {
 		print_verbose("Asset Store not available (due to using Web editor, or SSL support disabled).");
 	}
+
+	// Asosdot: added after Godot's own screens so their saved numbers stay as Godot 4.7 has them,
+	// with its button shown beside 3D's, whose editor it holds.
+	add_editor_plugin(memnew(AsosdotAnimationWorkspacePlugin));
+	editor_main_screen->move_button_after("Animation", "3D");
 
 	// More visually meaningful to have this later.
 	add_editor_plugin(memnew(AnimationPlayerEditorPlugin));
@@ -9631,7 +9658,58 @@ EditorNode::EditorNode() {
 	use_system_accent_color = EDITOR_GET("interface/theme/use_system_accent_color");
 }
 
+void EditorNode::_update_freeze_watchdog() {
+	if (!freeze_watchdog) {
+		if (cmdline_mode || DisplayServer::get_singleton()->get_name() == "headless") {
+			return;
+		}
+		freeze_watchdog = memnew(EditorFreezeWatchdog);
+	}
+	freeze_watchdog->tick();
+
+	Node *scene = get_edited_scene();
+	const ObjectID scene_id = scene ? scene->get_instance_id() : ObjectID();
+	if (scene_id != freeze_watched_scene) {
+		freeze_watched_scene = scene_id;
+		freeze_watchdog->set_scene(scene ? scene->get_scene_file_path() : String());
+	}
+
+	const String report = freeze_watchdog->take_finished_report();
+	if (!report.is_empty()) {
+		const String message = vformat(TTR("The editor stopped responding for a while. Asosdot recorded where it was stuck in %s."), report);
+		print_line(message);
+		EditorToaster::get_singleton()->popup_str(message, EditorToaster::SEVERITY_WARNING);
+	}
+
+	if (!freeze_checked_previous) {
+		// A freeze that ended with the editor being closed: its report says so, once.
+		freeze_checked_previous = true;
+		const String folder = OS::get_singleton()->get_user_data_dir().path_join("logs").path_join("freezes");
+		Ref<DirAccess> dir = DirAccess::open(folder);
+		if (dir.is_valid()) {
+			for (const String &report_file : dir->get_files()) {
+				const String path = folder.path_join(report_file);
+				const String text = FileAccess::get_file_as_string(path);
+				if (!text.contains("responded again") && !text.contains("closed while it was frozen")) {
+					Ref<FileAccess> f = FileAccess::open(path, FileAccess::READ_WRITE);
+					if (f.is_valid()) {
+						f->seek_end();
+						f->store_string("\nThe editor was closed while it was frozen.\n");
+					}
+					const String message = vformat(TTR("Last time, the editor was closed while it wasn't responding. Asosdot recorded where it was stuck in %s."), path);
+					print_line(message);
+					EditorToaster::get_singleton()->popup_str(message, EditorToaster::SEVERITY_WARNING);
+				}
+			}
+		}
+	}
+}
+
 EditorNode::~EditorNode() {
+	if (freeze_watchdog) {
+		memdelete(freeze_watchdog);
+		freeze_watchdog = nullptr;
+	}
 	EditorInspector::cleanup_plugins();
 	EditorTranslationParser::get_singleton()->clean_parsers();
 	ResourceImporterScene::clean_up_importer_plugins();

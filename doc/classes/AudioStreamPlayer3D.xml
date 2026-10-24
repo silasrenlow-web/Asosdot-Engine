@@ -13,6 +13,12 @@
 		<link title="Audio streams">$DOCS_URL/tutorials/audio/audio_streams.html</link>
 	</tutorials>
 	<methods>
+		<method name="get_layered_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns how many sounds started with [method play_layered] are still playing.
+			</description>
+		</method>
 		<method name="get_playback_position">
 			<return type="float" />
 			<description>
@@ -31,11 +37,34 @@
 				Returns whether the [AudioStreamPlayer] can return the [AudioStreamPlayback] object or not.
 			</description>
 		</method>
+		<method name="is_layered_playing" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="id" type="int" />
+			<description>
+				Returns [code]true[/code] if the sound [method play_layered] returned [param id] for is still playing.
+			</description>
+		</method>
 		<method name="play">
 			<return type="void" />
 			<param index="0" name="from_position" type="float" default="0.0" />
 			<description>
 				Queues the audio to play on the next physics frame, from the given position [param from_position], in seconds.
+			</description>
+		</method>
+		<method name="play_layered">
+			<return type="int" />
+			<param index="0" name="stream" type="AudioStream" />
+			<param index="1" name="from_position" type="float" default="0.0" />
+			<param index="2" name="volume_db" type="float" default="0.0" />
+			<param index="3" name="pitch_scale" type="float" default="1.0" />
+			<description>
+				Plays [param stream] on top of whatever this node already plays, and returns an ID for that sound. Any number of sounds can be layered at once (up to 128), each one from its own stream, and [member stream] is left as it is.
+				Layered sounds go through this node's [member bus], [member volume_db] and [member pitch_scale], and are panned and attenuated from its position like its own stream, and pause with it. [param from_position] is where to start in [param stream], in seconds. [param volume_db] is added to this node's volume and [param pitch_scale] multiplies its pitch, for this sound alone.
+				Returns [code]-1[/code] if the sound couldn't start. [AnimationPlayer] audio tracks play their keys this way, so their sounds never replace [member stream].
+				[codeblock]
+				var step = preload("res://sounds/step.wav")
+				var id = $Footsteps.play_layered(step, 0.0, -6.0, randf_range(0.9, 1.1))
+				[/codeblock]
 			</description>
 		</method>
 		<method name="seek">
@@ -45,10 +74,33 @@
 				Sets the position from which audio will be played, in seconds.
 			</description>
 		</method>
+		<method name="set_layered_pitch_scale">
+			<return type="void" />
+			<param index="0" name="id" type="int" />
+			<param index="1" name="pitch_scale" type="float" />
+			<description>
+				Changes the pitch of a sound started with [method play_layered] while it plays. It multiplies this node's [member pitch_scale].
+			</description>
+		</method>
+		<method name="set_layered_volume_db">
+			<return type="void" />
+			<param index="0" name="id" type="int" />
+			<param index="1" name="volume_db" type="float" />
+			<description>
+				Changes the volume of a sound started with [method play_layered] while it plays, in decibels added to this node's [member volume_db].
+			</description>
+		</method>
 		<method name="stop">
 			<return type="void" />
 			<description>
-				Stops the audio.
+				Stops the audio. This includes sounds started with [method play_layered].
+			</description>
+		</method>
+		<method name="stop_layered">
+			<return type="void" />
+			<param index="0" name="id" type="int" />
+			<description>
+				Stops the sound [method play_layered] returned [param id] for. [signal layered_finished] isn't emitted for it.
 			</description>
 		</method>
 	</methods>
@@ -106,10 +158,10 @@
 			The playback type of the stream player. If set other than to the default value, it will force that playback type.
 		</member>
 		<member name="playing" type="bool" setter="set_playing" getter="is_playing" default="false">
-			If [code]true[/code], audio is playing or is queued to be played (see [method play]).
+			If [code]true[/code], audio is playing or is queued to be played (see [method play]). Sounds started with [method play_layered] don't count (see [method get_layered_count]), and setting this to [code]false[/code] leaves them playing.
 		</member>
 		<member name="stream" type="AudioStream" setter="set_stream" getter="get_stream">
-			The [AudioStream] resource to be played.
+			The [AudioStream] resource to be played. Setting this property stops the sounds playing from the previous stream; sounds started with [method play_layered] go on.
 		</member>
 		<member name="stream_paused" type="bool" setter="set_stream_paused" getter="get_stream_paused" default="false">
 			If [code]true[/code], the playback is paused. You can resume it by setting [member stream_paused] to [code]false[/code].
@@ -129,6 +181,12 @@
 		<signal name="finished">
 			<description>
 				Emitted when the audio stops playing.
+			</description>
+		</signal>
+		<signal name="layered_finished">
+			<param index="0" name="id" type="int" />
+			<description>
+				Emitted when a sound started with [method play_layered] finishes by itself. It isn't emitted for sounds stopped with [method stop_layered] or [method stop].
 			</description>
 		</signal>
 	</signals>

@@ -152,6 +152,8 @@ int AudioStreamPlaybackPolyphonic::mix(AudioFrame *p_buffer, float p_rate_scale,
 
 		float volume_db = s.volume_db; // Copy because it can be overridden at any time.
 		float next_volume = Math::db_to_linear(volume_db);
+		// Asosdot: read before it's replaced, so a volume change ramps over this mix instead of clicking.
+		float prev_volume = Math::db_to_linear(s.prev_volume_db);
 		s.prev_volume_db = volume_db;
 
 		if (s.finish_request.is_set()) {
@@ -167,7 +169,6 @@ int AudioStreamPlaybackPolyphonic::mix(AudioFrame *p_buffer, float p_rate_scale,
 			s.stream_playback->start(s.play_offset);
 			s.pending_play.clear();
 		}
-		float prev_volume = Math::db_to_linear(s.prev_volume_db);
 
 		float volume_inc = (next_volume - prev_volume) / float(p_frames);
 
@@ -317,7 +318,16 @@ void AudioStreamPlaybackPolyphonic::set_stream_pitch_scale(ID p_stream_id, float
 }
 
 bool AudioStreamPlaybackPolyphonic::is_stream_playing(ID p_stream_id) const {
-	return _find_stream(p_stream_id) != nullptr;
+	const Stream *s = _find_stream(p_stream_id);
+	if (!s) {
+		return false;
+	}
+	// Asosdot: a sample plays outside the mix, so only the audio server knows when it ended.
+	if (s->stream_playback.is_valid() && s->stream_playback->get_is_sample()) {
+		Ref<AudioSamplePlayback> stream_sample = s->stream_playback->get_sample_playback();
+		return stream_sample.is_valid() && AudioServer::get_singleton()->is_sample_playback_active(stream_sample);
+	}
+	return true;
 }
 
 void AudioStreamPlaybackPolyphonic::stop_stream(ID p_stream_id) {

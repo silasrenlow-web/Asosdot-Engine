@@ -2309,9 +2309,11 @@ void ThemeClassic::populate_editor_styles(const Ref<EditorTheme> &p_theme, Edito
 
 		Ref<StyleBoxFlat> style_animation_track_odd = EditorThemeManager::make_flat_stylebox(Color(0.5, 0.5, 0.5, 0.05), 0, 0, 0, 0, p_config.corner_radius);
 		Ref<StyleBoxFlat> style_animation_track_hover = EditorThemeManager::make_flat_stylebox(Color(0.5, 0.5, 0.5, 0.1), 0, 0, 0, 0, p_config.corner_radius);
+		Ref<StyleBoxFlat> style_animation_track_selected = EditorThemeManager::make_flat_stylebox(Color(p_config.accent_color, 0.25), 0, 0, 0, 0, p_config.corner_radius);
 
 		p_theme->set_stylebox("odd", "AnimationTrackEdit", style_animation_track_odd);
 		p_theme->set_stylebox(SceneStringName(hover), "AnimationTrackEdit", style_animation_track_hover);
+		p_theme->set_stylebox("selected", "AnimationTrackEdit", style_animation_track_selected);
 		p_theme->set_stylebox("focus", "AnimationTrackEdit", p_config.button_style_focus);
 
 		p_theme->set_color("h_line_color", "AnimationTrackEdit", p_config.font_color * Color(1, 1, 1, 0.2));

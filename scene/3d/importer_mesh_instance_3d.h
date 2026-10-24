@@ -43,6 +43,7 @@ class ImporterMeshInstance3D : public Node3D {
 	Ref<Skin> skin;
 	NodePath skeleton_path;
 	Vector<Ref<Material>> surface_materials;
+	Vector<float> blend_shape_weights;
 	uint32_t layer_mask = 1;
 	GeometryInstance3D::ShadowCastingSetting shadow_casting_setting = GeometryInstance3D::SHADOW_CASTING_SETTING_ON;
 	float visibility_range_begin = 0.0;
@@ -57,6 +58,9 @@ protected:
 public:
 	void set_mesh(const Ref<ImporterMesh> &p_mesh);
 	Ref<ImporterMesh> get_mesh() const;
+
+	void set_blend_shape_weights(const Vector<float> &p_weights) { blend_shape_weights = p_weights; }
+	const Vector<float> &get_blend_shape_weights() const { return blend_shape_weights; }
 
 	void set_skin(const Ref<Skin> &p_skin);
 	Ref<Skin> get_skin() const;

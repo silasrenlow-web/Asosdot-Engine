@@ -1439,7 +1439,10 @@ void RenderForwardClustered::setup_added_decal(const Transform3D &p_transform, c
 /* Render scene */
 
 void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_render_buffers, RenderDataRD *p_render_data) {
-	ERR_FAIL_NULL(asos_rtao);
+	if (asos_rtao == nullptr) {
+		WARN_PRINT_ONCE("Asos Lighting needs ray tracing, which this GPU or rendering driver doesn't have (it works with Vulkan on ray tracing GPUs). The scene is lit without it.");
+		return;
+	}
 	ERR_FAIL_COND(p_render_buffers.is_null());
 
 	const RID tlas = raytracing_get_tlas();
@@ -5556,7 +5559,11 @@ RenderForwardClustered::RenderForwardClustered() {
 	taa = memnew(RendererRD::TAA);
 	fsr2_effect = memnew(RendererRD::FSR2Effect);
 	ss_effects = memnew(RendererRD::SSEffects);
-	asos_rtao = memnew(RendererRD::AsosRTAO);
+	// Its shaders use ray queries, which only Vulkan on ray tracing GPUs has: compiling them
+	// anywhere else (Direct3D 12, older GPUs) would fail at every start.
+	if (RD::get_singleton()->has_feature(RD::SUPPORTS_RAY_QUERY)) {
+		asos_rtao = memnew(RendererRD::AsosRTAO);
+	}
 #ifdef METAL_MFXTEMPORAL_ENABLED
 	motion_vectors_store = memnew(RendererRD::MotionVectorsStore);
 	mfx_temporal_effect = memnew(RendererRD::MFXTemporalEffect);

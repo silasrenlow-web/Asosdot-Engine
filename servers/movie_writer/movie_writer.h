@@ -40,6 +40,8 @@ class MovieWriter : public Object {
 	uint64_t fps = 0;
 	uint64_t mix_rate = 0;
 	uint32_t audio_channels = 0;
+	uint64_t offline_frame = 0;
+	bool variable_audio_frames = false;
 
 	// The output resolution, which can differ from the window size.
 	// Used as a base for resizing all subsequent frames if their resolution differs.
@@ -60,6 +62,9 @@ class MovieWriter : public Object {
 	static uint32_t writer_count;
 
 protected:
+	// Native encoders opt in to distributing fractional samples across
+	// offline frames. Existing extension writers retain fixed block sizes.
+	virtual bool supports_variable_audio_frames() const { return false; }
 	virtual uint32_t get_audio_mix_rate() const;
 	virtual AudioServer::SpeakerMode get_audio_speaker_mode() const;
 
@@ -94,8 +99,13 @@ public:
 	void end();
 
 	// Writes frames rendered elsewhere, such as offscreen by the editor's
-	// Render tab, rather than the window's. The audio track is silence.
+	// Render tab, rather than the window's. Omitted audio produces silence.
 	Error begin_frames(const Size2i &p_movie_size, uint32_t p_fps, const String &p_path);
-	Error write_frame_image(const Ref<Image> &p_image);
+	Error write_frame_image(const Ref<Image> &p_image, const Vector<int32_t> &p_audio = Vector<int32_t>());
+	int get_frame_audio_sample_count() const { return fps ? (variable_audio_frames ? (offline_frame + 1) * mix_rate / fps - offline_frame * mix_rate / fps : mix_rate / fps) : 0; }
+	uint64_t get_frame_audio_sample_offset() const { return fps ? (variable_audio_frames ? offline_frame * mix_rate / fps : offline_frame * (mix_rate / fps)) : 0; }
+	uint64_t get_frame_audio_sample_offset_at(uint64_t p_frame) const { return fps ? (variable_audio_frames ? p_frame * mix_rate / fps : p_frame * (mix_rate / fps)) : 0; }
+	int get_frame_audio_channels() const { return audio_channels; }
+	int get_frame_audio_mix_rate() const { return mix_rate; }
 	void end_frames();
 };

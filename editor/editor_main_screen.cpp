@@ -90,14 +90,46 @@ void EditorMainScreen::save_layout_to_config(Ref<ConfigFile> p_config_file, cons
 		}
 	}
 	if (selected_main_editor_idx != -1) {
-		p_config_file->set_value(p_section, "selected_main_editor_idx", selected_main_editor_idx);
+		// Godot 4.7 has no Render screen, so the index is saved as Godot numbers its screens, with
+		// Render as 3D, and the screen's name for Asosdot.
+		int godot_index = selected_main_editor_idx;
+		const bool animation_workspace = selected_main_editor_idx < editor_table.size() && editor_table[selected_main_editor_idx]->get_plugin_name() == "Animation" && editor_table[selected_main_editor_idx]->has_main_screen();
+		if (godot_index == EDITOR_RENDER || animation_workspace) {
+			// Both show the 3D scene, which is where Godot 4.7 opens instead.
+			godot_index = EDITOR_3D;
+		} else if (godot_index > EDITOR_RENDER) {
+			godot_index--;
+		}
+		p_config_file->set_value(p_section, "selected_main_editor_idx", godot_index);
+		// Godot 4.7 keeps these when it saves the layout itself, so the index saved with the name tells
+		// whether the name is still current.
+		p_config_file->set_value(p_section, "asosdot_main_editor", selected_main_editor_idx < editor_table.size() ? editor_table[selected_main_editor_idx]->get_plugin_name() : String());
+		p_config_file->set_value(p_section, "asosdot_main_editor_idx", godot_index);
 	} else {
 		p_config_file->set_value(p_section, "selected_main_editor_idx", Variant());
+		p_config_file->set_value(p_section, "asosdot_main_editor", Variant());
+		p_config_file->set_value(p_section, "asosdot_main_editor_idx", Variant());
 	}
 }
 
 void EditorMainScreen::load_layout_from_config(Ref<ConfigFile> p_config_file, const String &p_section) {
 	int selected_main_editor_idx = p_config_file->get_value(p_section, "selected_main_editor_idx", -1);
+	String asosdot_main_editor = p_config_file->get_value(p_section, "asosdot_main_editor", String());
+	if (int(p_config_file->get_value(p_section, "asosdot_main_editor_idx", -1)) != selected_main_editor_idx) {
+		// Godot 4.7 saved the layout since; its index is the current one.
+		asosdot_main_editor = String();
+	}
+	if (!asosdot_main_editor.is_empty()) {
+		for (int i = 0; i < editor_table.size(); i++) {
+			if (editor_table[i]->get_plugin_name() == asosdot_main_editor) {
+				selected_main_editor_idx = i;
+				break;
+			}
+		}
+	} else if (selected_main_editor_idx >= EDITOR_RENDER) {
+		// Saved by Godot 4.7, which numbers its screens without Render.
+		selected_main_editor_idx++;
+	}
 	if (selected_main_editor_idx >= 0 && selected_main_editor_idx < buttons.size()) {
 		callable_mp(this, &EditorMainScreen::select).call_deferred(selected_main_editor_idx);
 	}
@@ -257,6 +289,21 @@ bool EditorMainScreen::can_auto_switch_screens() const {
 
 VBoxContainer *EditorMainScreen::get_control() const {
 	return main_screen_vbox;
+}
+
+void EditorMainScreen::move_button_after(const String &p_name, const String &p_after) {
+	Button *moved = nullptr;
+	Button *anchor = nullptr;
+	for (Button *button : buttons) {
+		// Named after their plugins; their text may be translated.
+		if (String(button->get_name()) == p_name) {
+			moved = button;
+		} else if (String(button->get_name()) == p_after) {
+			anchor = button;
+		}
+	}
+	ERR_FAIL_COND(!moved || !anchor);
+	button_hb->move_child(moved, anchor->get_index() + 1);
 }
 
 void EditorMainScreen::add_main_plugin(EditorPlugin *p_editor) {

@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="BlenderConstraint3D" inherits="SkeletonModifier3D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		A Blender bone or object constraint, evaluated with Blender's own math.
+	</brief_description>
+	<description>
+		[BlenderConstraint3D] acts like one constraint in Blender's constraint stack. Its owner is a bone of the parent [Skeleton3D] or, when [member owner_node] is set, another [Node3D] such as a prop that follows a hand. Its target is a bone of the same skeleton or any [Node3D].
+		The constraint is evaluated the way Blender evaluates it: in the owner and target spaces Blender offers, with Blender's mix modes, Euler rotation orders, offsets, limits and influence. Settings use the names they have in Blender's Python API, such as [code]use_offset[/code] or [code]mix_mode[/code], and appear in the Inspector under the constraint type's settings. Use [method set_setting] and [method get_setting] to change them from a script.
+		Coordinates follow a [Skeleton3D] imported from Blender: its armature space is Blender's armature space turned from Z up to Y up, with the bones' own axes kept. Limits, offsets and matrices are in Blender's axes.
+		Importing a [code].blend[/code] file with [b]Blender &gt; Rigs &gt; Rebuild Constraints[/b] on adds one [BlenderConstraint3D] for each Copy Location, Copy Rotation, Copy Scale, Copy Transforms, Limit Location, Limit Rotation, Limit Scale, Child Of, Damped Track, Track To, Locked Track, Stretch To, Transformation and Maintain Volume constraint, in the order Blender evaluates them. The import mutes the constraints it rebuilds exactly, so the imported animations carry the poses before them and each constraint acts once, here. A constraint that stays baked into the animation, for example one whose influence is animated, is added switched off with [member SkeletonModifier3D.active], and the import says why.
+		Several [BlenderConstraint3D] nodes on one bone act in their order under the [Skeleton3D], as a stack does in Blender. For a bone owner, the skeleton blends the result by [member SkeletonModifier3D.influence]; for a node owner, the constraint blends it.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_setting" qualifiers="const">
+			<return type="Variant" />
+			<param index="0" name="name" type="StringName" />
+			<description>
+				Returns the setting with Blender's name [param name], such as [code]"use_offset"[/code], or its default if it was never set.
+			</description>
+		</method>
+		<method name="get_settings" qualifiers="const">
+			<return type="Dictionary" />
+			<description>
+				Returns every setting of the [member constraint_type], by Blender's names, with their current values.
+			</description>
+		</method>
+		<method name="needs_target" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] if the [member constraint_type] reads a target. Limit Location, Limit Rotation, Limit Scale and Maintain Volume don't.
+			</description>
+		</method>
+		<method name="set_setting">
+			<return type="void" />
+			<param index="0" name="name" type="StringName" />
+			<param index="1" name="value" type="Variant" />
+			<description>
+				Sets the setting with Blender's name [param name]. Enumerations take Blender's identifiers as strings, such as [code]"TRACK_NEGATIVE_Z"[/code]; angles are in radians.
+			</description>
+		</method>
+		<method name="set_settings">
+			<return type="void" />
+			<param index="0" name="settings" type="Dictionary" />
+			<description>
+				Replaces all settings with [param settings], by Blender's names. Settings left out take their defaults.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="bone" type="int" setter="set_bone" getter="get_bone" default="-1">
+			The index of the owner bone.
+		</member>
+		<member name="bone_name" type="String" setter="set_bone_name" getter="get_bone_name" default="&quot;&quot;">
+			The name of the owner bone. Not used when [member owner_node] is set.
+		</member>
+		<member name="constraint_type" type="int" setter="set_constraint_type" getter="get_constraint_type" enum="BlenderConstraint3D.ConstraintType" default="0">
+			The Blender constraint this node evaluates. Each type has its own settings.
+		</member>
+		<member name="head_tail" type="float" setter="set_head_tail" getter="get_head_tail" default="0.0">
+			Where along the target bone the target is, from its head ([code]0.0[/code]) to its tail ([code]1.0[/code]), as Blender's [b]Head/Tail[/b].
+		</member>
+		<member name="owner_node" type="NodePath" setter="set_owner_node" getter="get_owner_node" default="NodePath(&quot;&quot;)">
+			A [Node3D] that this constraint moves instead of a bone, as an object constraint does in Blender. The node's own transform is the constraint's input, and its world transform the output.
+		</member>
+		<member name="owner_rotation_order" type="String" setter="set_owner_rotation_order" getter="get_owner_rotation_order" default="&quot;XYZ&quot;">
+			The Euler rotation order of the owner in Blender, which settings set to [code]"AUTO"[/code] use. A quaternion or axis-angle owner uses [code]"XYZ"[/code], as in Blender.
+		</member>
+		<member name="owner_space" type="int" setter="set_owner_space" getter="get_owner_space" enum="BlenderConstraint3D.Space" default="0">
+			The space the owner is evaluated in. A node owner uses [constant SPACE_WORLD].
+		</member>
+		<member name="target_bone_length" type="float" setter="set_target_bone_length" getter="get_target_bone_length" default="0.0">
+			The length of the target bone in Blender, which [member head_tail] measures along.
+		</member>
+		<member name="target_bone_name" type="String" setter="set_target_bone_name" getter="get_target_bone_name" default="&quot;&quot;">
+			The target bone, in the same [Skeleton3D]. Takes precedence over [member target_node].
+		</member>
+		<member name="target_node" type="NodePath" setter="set_target_node" getter="get_target_node" default="NodePath(&quot;&quot;)">
+			A [Node3D] target, as an object target in Blender.
+		</member>
+		<member name="target_rotation_order" type="String" setter="set_target_rotation_order" getter="get_target_rotation_order" default="&quot;XYZ&quot;">
+			The Euler rotation order of the target in Blender, which Child Of uses when it copies some rotation axes only.
+		</member>
+		<member name="target_space" type="int" setter="set_target_space" getter="get_target_space" enum="BlenderConstraint3D.Space" default="0">
+			The space the target is read in. A node target uses [constant SPACE_WORLD].
+		</member>
+	</members>
+	<constants>
+		<constant name="TYPE_COPY_LOCATION" value="0" enum="ConstraintType">
+			Copies the target's location, per axis, with offset and inversion.
+		</constant>
+		<constant name="TYPE_COPY_ROTATION" value="1" enum="ConstraintType">
+			Copies the target's rotation as Euler angles, per axis, with Blender's mix modes.
+		</constant>
+		<constant name="TYPE_COPY_SCALE" value="2" enum="ConstraintType">
+			Copies the target's scale, per axis or uniformly, with power and offset.
+		</constant>
+		<constant name="TYPE_COPY_TRANSFORMS" value="3" enum="ConstraintType">
+			Copies the target's whole transform, or combines it with the owner's by a mix mode.
+		</constant>
+		<constant name="TYPE_LIMIT_LOCATION" value="4" enum="ConstraintType">
+			Holds the owner's location within limits.
+		</constant>
+		<constant name="TYPE_LIMIT_ROTATION" value="5" enum="ConstraintType">
+			Holds the owner's Euler angles within limits.
+		</constant>
+		<constant name="TYPE_LIMIT_SCALE" value="6" enum="ConstraintType">
+			Holds the owner's scale within limits.
+		</constant>
+		<constant name="TYPE_CHILD_OF" value="7" enum="ConstraintType">
+			Moves the owner with the target as a child does with its parent, using the inverse matrix Blender set.
+		</constant>
+		<constant name="TYPE_DAMPED_TRACK" value="8" enum="ConstraintType">
+			Turns one axis of the owner toward the target by the least turn.
+		</constant>
+		<constant name="TYPE_TRACK_TO" value="9" enum="ConstraintType">
+			Points one axis of the owner at the target, keeping another axis up.
+		</constant>
+		<constant name="TYPE_LOCKED_TRACK" value="10" enum="ConstraintType">
+			Points one axis of the owner toward the target, turning only about a locked axis.
+		</constant>
+		<constant name="TYPE_STRETCH_TO" value="11" enum="ConstraintType">
+			Points the owner's Y axis at the target and stretches it to reach, with volume preservation.
+		</constant>
+		<constant name="TYPE_TRANSFORMATION" value="12" enum="ConstraintType">
+			Maps a range of the target's location, rotation or scale to a range of the owner's.
+		</constant>
+		<constant name="TYPE_MAINTAIN_VOLUME" value="13" enum="ConstraintType">
+			Scales the owner's other axes to keep its volume as one axis scales.
+		</constant>
+		<constant name="TYPE_MAX" value="14" enum="ConstraintType">
+			Represents the size of the [enum ConstraintType] enum.
+		</constant>
+		<constant name="SPACE_WORLD" value="0" enum="Space">
+			Blender's World Space.
+		</constant>
+		<constant name="SPACE_POSE" value="1" enum="Space">
+			Blender's Pose Space: the armature's space.
+		</constant>
+		<constant name="SPACE_LOCAL_WITH_PARENT" value="2" enum="Space">
+			Blender's Local With Parent space: relative to the bone's rest pose in the armature.
+		</constant>
+		<constant name="SPACE_LOCAL" value="3" enum="Space">
+			Blender's Local Space: relative to the bone's rest pose under its posed parent.
+		</constant>
+	</constants>
+</class>

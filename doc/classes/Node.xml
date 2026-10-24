@@ -655,10 +655,23 @@
 				Returns [code]true[/code] if this node is currently inside a [SceneTree]. See also [method get_tree].
 			</description>
 		</method>
+		<method name="is_instance_changes_kept" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] if the scene being edited keeps changes it made to this node of an instance, although the instance's scene no longer exposes it. See [method set_instance_changes_kept]. This method is intended to be used in editor plugins and tools.
+			</description>
+		</method>
 		<method name="is_multiplayer_authority" qualifiers="const">
 			<return type="bool" />
 			<description>
 				Returns [code]true[/code] if the local system is the multiplayer authority of this node.
+			</description>
+		</method>
+		<method name="is_node_editable" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="node" type="Node" />
+			<description>
+				Returns [code]true[/code] if [param node] can be edited in the scene whose root is this node. That is when [param node] is this node, or belongs to this scene below a node that can be edited, or belongs to an instance that can be edited and either has editable children (see [method set_editable_instance]) or is exposed by its own scene (see [member exposed_in_instances]). This is what decides which nodes the Scene dock shows and the scene saves changes for. This method is intended to be used in editor plugins and tools.
 			</description>
 		</method>
 		<method name="is_node_ready" qualifiers="const">
@@ -933,6 +946,13 @@
 				Set to [code]true[/code] to allow all nodes owned by [param node] to be available, and editable, in the Scene dock, even if their [member owner] is not the scene root. This method is intended to be used in editor plugins and tools, but it also works in release builds. See also [method is_editable_instance].
 			</description>
 		</method>
+		<method name="set_instance_changes_kept">
+			<return type="void" />
+			<param index="0" name="kept" type="bool" />
+			<description>
+				Sets whether the scene being edited keeps changes it made to this node of an instance, although the instance's scene no longer exposes it. The editor sets this when it loads such a scene, so the node stays in the Scene dock and its changes are saved until they are reverted. This method is intended to be used in editor plugins and tools.
+			</description>
+		</method>
 		<method name="set_multiplayer_authority">
 			<return type="void" />
 			<param index="0" name="id" type="int" />
@@ -1044,6 +1064,10 @@
 		</member>
 		<member name="editor_description" type="String" setter="set_editor_description" getter="get_editor_description" default="&quot;&quot;">
 			An optional description to the node. It will be displayed as a tooltip when hovering over the node in the editor's Scene dock.
+		</member>
+		<member name="exposed_in_instances" type="bool" setter="set_exposed_in_instances" getter="is_exposed_in_instances" default="false">
+			If [code]true[/code], scenes that instance this node's scene can see and edit this node without enabling Editable Children for the instance. The Scene dock shows an exposed node under its instance, and the instancing scene saves the changes it makes to it, including nodes added below it and signal connections. Other nodes of the instance stay hidden. Set it on a node of the scene it belongs to, in the Scene dock with [b]Expose in Instances[/b].
+			Exposing a node changes nothing at runtime; the node can always be reached with [method get_node]. If its scene later stops exposing a node that an instancing scene changed, the editor keeps showing the node there and keeps the changes until they are reverted. See also [method is_node_editable].
 		</member>
 		<member name="multiplayer" type="MultiplayerAPI" setter="" getter="get_multiplayer">
 			The [MultiplayerAPI] instance associated with this node. See [method SceneTree.get_multiplayer].

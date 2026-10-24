@@ -89,6 +89,21 @@
 				Returns the root bone name.
 			</description>
 		</method>
+		<method name="get_root_pole_direction" qualifiers="const">
+			<return type="int" enum="SkeletonModifier3D.SecondaryDirection" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Returns the root bone's pole direction. See [method set_root_pole_direction].
+			</description>
+		</method>
+		<method name="get_root_pole_direction_vector" qualifiers="const">
+			<return type="Vector3" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Returns the root bone's pole direction vector.
+				If [method get_root_pole_direction] is [constant SkeletonModifier3D.SECONDARY_DIRECTION_NONE], this method returns [code]Vector3(0, 0, 0)[/code].
+			</description>
+		</method>
 		<method name="get_target_node" qualifiers="const">
 			<return type="NodePath" />
 			<param index="0" name="index" type="int" />
@@ -211,6 +226,24 @@
 			<param index="1" name="bone_name" type="String" />
 			<description>
 				Sets the root bone name.
+			</description>
+		</method>
+		<method name="set_root_pole_direction">
+			<return type="void" />
+			<param index="0" name="index" type="int" />
+			<param index="1" name="direction" type="int" enum="SkeletonModifier3D.SecondaryDirection" />
+			<description>
+				Sets the axis of the root bone that is turned toward the pole, so the root bone twists in step with the chain. When it is [constant SkeletonModifier3D.SECONDARY_DIRECTION_NONE], the root bone rolls by the same angle as the middle bone, as set by [method set_pole_direction].
+				Set both to the directions that face the pole in a pose, and the chain bends as a hinge: each bone keeps the same side toward the pole, as Blender's IK constraint does with a pole target.
+			</description>
+		</method>
+		<method name="set_root_pole_direction_vector">
+			<return type="void" />
+			<param index="0" name="index" type="int" />
+			<param index="1" name="vector" type="Vector3" />
+			<description>
+				Sets the root bone's pole direction vector.
+				This vector is ignored unless [method get_root_pole_direction] is [constant SkeletonModifier3D.SECONDARY_DIRECTION_CUSTOM].
 			</description>
 		</method>
 		<method name="set_target_node">

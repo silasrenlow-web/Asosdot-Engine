@@ -34,24 +34,24 @@
 #include "editor/editor_string_names.h"
 #include "scene/3d/lens_flare_3d.h"
 
-LensFlare3DGizmoPlugin::LensFlare3DGizmoPlugin() {
+AsosdotLensFlare3DGizmoPlugin::AsosdotLensFlare3DGizmoPlugin() {
 	create_material("lens_flare_lines", Color(1, 1, 1), false, false, true);
 	create_icon_material("lens_flare_icon", EditorNode::get_singleton()->get_editor_theme()->get_icon(SNAME("GizmoLensFlare3D"), EditorStringName(EditorIcons)));
 }
 
-bool LensFlare3DGizmoPlugin::has_gizmo(Node3D *p_spatial) {
+bool AsosdotLensFlare3DGizmoPlugin::has_gizmo(Node3D *p_spatial) {
 	return Object::cast_to<LensFlare3D>(p_spatial) != nullptr;
 }
 
-String LensFlare3DGizmoPlugin::get_gizmo_name() const {
+String AsosdotLensFlare3DGizmoPlugin::get_gizmo_name() const {
 	return "LensFlare3D";
 }
 
-int LensFlare3DGizmoPlugin::get_priority() const {
+int AsosdotLensFlare3DGizmoPlugin::get_priority() const {
 	return -1;
 }
 
-void LensFlare3DGizmoPlugin::redraw(EditorNode3DGizmo *p_gizmo) {
+void AsosdotLensFlare3DGizmoPlugin::redraw(EditorNode3DGizmo *p_gizmo) {
 	LensFlare3D *flare = Object::cast_to<LensFlare3D>(p_gizmo->get_node_3d());
 	ERR_FAIL_NULL(flare);
 

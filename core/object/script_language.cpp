@@ -406,6 +406,11 @@ void ScriptServer::global_classes_clear() {
 }
 
 void ScriptServer::add_global_class(const StringName &p_class, const StringName &p_base, const StringName &p_language, const String &p_path, bool p_is_abstract, bool p_is_tool) {
+	// Asosdot: a class Asosdot adds to Godot 4.7 gives its name to the project's script class, as in Godot 4.7.
+	const StringName asosdot_group = ClassDB::get_asosdot_class_group(p_class);
+	if (asosdot_group != StringName() && ClassDB::class_exists(p_class)) {
+		ClassDB::yield_asosdot_class_group(asosdot_group, vformat("script class %s (%s)", p_class, p_path));
+	}
 	ERR_FAIL_COND_MSG(p_class == p_base || (global_classes.has(p_base) && get_global_class_native_base(p_base) == p_class), "Cyclic inheritance in script class.");
 	GlobalScriptClass *existing = global_classes.getptr(p_class);
 	if (existing) {

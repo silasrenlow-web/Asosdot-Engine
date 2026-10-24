@@ -57,6 +57,7 @@ class SceneTreeEditor : public Control {
 		BUTTON_GROUPS = 7,
 		BUTTON_PIN = 8,
 		BUTTON_UNIQUE = 9,
+		BUTTON_EXPOSED = 10,
 	};
 
 	struct CachedNode {
@@ -66,6 +67,8 @@ class SceneTreeEditor : public Control {
 		bool dirty = true;
 		bool has_moved_children = false;
 		bool removed = false;
+		// Shown under the nearest shown node above it, as a node an instance exposes is.
+		bool flattened = false;
 
 		// Store the iterator for faster removal. This is safe as
 		// HashMap never moves elements.
@@ -142,6 +145,7 @@ class SceneTreeEditor : public Control {
 
 	void _update_node_path(Node *p_node, bool p_recursive = true);
 	void _update_node_subtree(Node *p_node, TreeItem *p_parent, bool p_force = false);
+	bool _is_hidden_instance_part(Node *p_node) const;
 	void _update_node(Node *p_node, TreeItem *p_item, bool p_part_of_subscene);
 	void _update_if_clean();
 

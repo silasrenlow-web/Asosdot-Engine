@@ -28,6 +28,31 @@ built from the scene's meshes, denoised and accumulated over time. Behind the
 **Rope3D.** Verlet simulated rope that can pin either end to any `Node3D`, drawn
 either as a generated tube or as a mesh instanced per segment.
 
+## Godot 4.7 compatibility
+
+A Godot 4.7 project opens and runs in Asosdot as it does in Godot 4.7, and goes
+back the same way:
+
+- **Your class names come first.** When a project's own extension or script
+  class has the name of an Asosdot class, such as the Terrain3D extension or a
+  lens flare add-on's `LensFlare`, the project's class takes the name, as it
+  does in Godot 4.7. Asosdot then leaves that feature out of the project,
+  together with its editor tools, and says so in the Output panel. Asosdot's
+  internal editor classes all start with `Asosdot`, so they can't clash at all.
+- **Editor state means the same in both.** The 3D viewport's display mode and
+  the selected main screen are saved with the numbers Godot 4.7 uses.
+- **Imports go back cleanly.** A model Asosdot imported with its own nodes, such
+  as a rig's `BlenderConstraint3D`s, is imported again by Godot 4.7 instead of
+  loaded with nodes it doesn't have. A `.blend` that Godot 4.7 imported is
+  imported again by Asosdot, where Blender is set up, to add what Asosdot adds.
+
+Scenes you save with Asosdot's own nodes keep them, and Godot 4.7 keeps them
+too, as placeholders it can't run. Everything Asosdot adds to Godot's own
+classes is new, so nothing a Godot 4.7 project or GDExtension uses has changed.
+
+Run the check with `python misc/scripts/test_godot_compat.py --engine
+bin/asosdot.windows.editor.x86_64.exe --godot <Godot 4.7 editor>`.
+
 ## Licence
 
 Asosdot Engine is released under the [MIT licence](LICENSE.txt), the same terms
@@ -44,15 +69,43 @@ The bundled lens flare textures are CC0, by hc (hackcraft.de), from
 [thirdparty/lens_flare/README.md](thirdparty/lens_flare/README.md) for the
 changes made to them.
 
+## Exporting games
+
+Games export with Asosdot's own export templates, built from the same source as
+the editor. Godot's templates for the same base version would make games without
+Asosdot's nodes (such as `BlenderConstraint3D` and `Rope3D`) and fixes (such as
+layered audio and camera cuts), so Asosdot keeps its templates in a folder of
+their own, `export_templates/asosdot.1.0.stable`. It never downloads Godot's, and
+**Install from File** refuses a Godot `.tpz` with a message saying why.
+
+Build and package the Windows templates with:
+
+```
+scons platform=windows target=template_release arch=x86_64 d3d12=yes
+scons platform=windows target=template_debug arch=x86_64 d3d12=yes
+python misc/scripts/make_export_templates.py
+```
+
+That makes `bin/Asosdot-Export-Templates-1.0.stable.tpz`. Install it from
+**Editor > Manage Export Templates > Install from File**. The script packages
+whatever templates are in `bin/`: Linux and Web templates build the same way
+with `platform=linuxbsd` or `platform=web` (Web needs Emscripten), and macOS and
+iOS templates need building on a Mac, as Godot's build documentation describes.
+GDExtensions a project uses, such as GodotSteam or Terrain3D, export with it as
+they do with Godot's templates.
+
 ## Building
 
 ```
-scons platform=windows target=editor d3d12=no
+scons platform=windows target=editor d3d12=yes
 ```
 
-`d3d12=no` has to be on the command line: `platform/windows/detect.py` forces it
-on and only the command line can override a platform flag. The binary lands in
-`bin/` named after `short_name` in `version.py`.
+`d3d12=yes` needs the Direct3D 12 SDK files, which
+`python misc/scripts/install_d3d12_sdk_windows.py` downloads; `d3d12=no`
+builds without the Direct3D 12 renderer. Either way it goes on the command
+line: `platform/windows/detect.py` forces it on and only the command line can
+override a platform flag. The binary lands in `bin/` named after `short_name`
+in `version.py`.
 
 For everything else, Godot's own
 [build documentation](https://docs.godotengine.org/en/latest/contributing/development/compiling/)

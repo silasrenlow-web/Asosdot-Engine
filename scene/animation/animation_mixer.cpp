@@ -599,11 +599,316 @@ void AnimationMixer::_clear_caches() {
 }
 
 void AnimationMixer::_clear_audio_streams() {
-	for (int i = 0; i < playing_audio_stream_players.size(); i++) {
-		playing_audio_stream_players[i]->call(SNAME("stop"));
-		playing_audio_stream_players[i]->call(SNAME("set_stream"), Ref<AudioStream>());
+	// Stops the sounds animations started. The players' own streams play on.
+	for (const Pair<ObjectID, int64_t> &sound : audio_sounds) {
+		Object *player = ObjectDB::get_instance(sound.first);
+		if (player) {
+			player->call(SNAME("stop_layered"), sound.second);
+		}
 	}
-	playing_audio_stream_players.clear();
+	audio_sounds.clear();
+	for (KeyValue<Animation::TrackCacheID, TrackCache *> &K : track_cache) {
+		if (K.value->type == Animation::TYPE_AUDIO) {
+			static_cast<TrackCacheAudio *>(K.value)->playing_streams.clear();
+		}
+#ifdef TOOLS_ENABLED
+		// Stopping or pausing a preview in the editor also silences what its `playing` tracks
+		// started. A running game keeps them playing, as in Godot.
+		if (K.value->type == Animation::TYPE_VALUE && static_cast<TrackCacheValue *>(K.value)->is_audio_playing && Engine::get_singleton()->is_editor_hint()) {
+			Object *player = ObjectDB::get_instance(K.value->object_id);
+			if (player && player->call(SNAME("is_playing"))) {
+				player->set(SNAME("playing"), false);
+			}
+		}
+#endif // TOOLS_ENABLED
+	}
+}
+
+void AnimationMixer::_stop_audio_sound(Object *p_player, int64_t p_index) {
+	p_player->call(SNAME("stop_layered"), p_index);
+	audio_sounds.erase(Pair<ObjectID, int64_t>(p_player->get_instance_id(), p_index));
+}
+
+void AnimationMixer::_play_audio_key(TrackCacheAudio *p_cache, Object *p_player, PlayingAudioTrackInfo &r_track_info, const Ref<Animation> &p_animation, int p_track, int p_key, double p_time, bool p_resume, bool p_latest) {
+	Ref<AudioStream> stream = p_animation->audio_track_get_key_stream(p_track, p_key);
+	if (stream.is_null()) {
+		return;
+	}
+	double start_ofs = p_animation->audio_track_get_key_start_offset(p_track, p_key);
+	const double end_ofs = p_animation->audio_track_get_key_end_offset(p_track, p_key);
+	const real_t pitch_scale = p_animation->audio_track_get_key_pitch_scale(p_track, p_key);
+	const real_t volume_db = p_animation->audio_track_get_key_volume_db(p_track, p_key);
+	const double len = stream->get_length();
+
+	if (p_resume) {
+		// Resumed from where the key's sound has got to by now, if it still sounds; a stream that
+		// doesn't know its length is only resumed for the latest key.
+		const double since = MAX(0.0, p_time - p_animation->track_get_key_time(p_track, p_key));
+		if (len > 0 ? Animation::is_greater_approx(since * pitch_scale, len - start_ofs - end_ofs) : !p_latest) {
+			return;
+		}
+		start_ofs += since * pitch_scale;
+	}
+
+	// Past audio_max_polyphony, the oldest sound this player has from animations gives way.
+	int sounding = 0;
+	for (const KeyValue<Pair<ObjectID, int>, PlayingAudioTrackInfo> &L : p_cache->playing_streams) {
+		sounding += L.value.stream_info.size();
+	}
+	while (sounding >= audio_max_polyphony && sounding > 0) {
+		PlayingAudioTrackInfo *oldest_info = nullptr;
+		uint64_t oldest = UINT64_MAX;
+		for (KeyValue<Pair<ObjectID, int>, PlayingAudioTrackInfo> &L : p_cache->playing_streams) {
+			for (const KeyValue<uint64_t, PlayingAudioStreamInfo> &M : L.value.stream_info) {
+				if (M.key < oldest) {
+					oldest = M.key;
+					oldest_info = &L.value;
+				}
+			}
+		}
+		_stop_audio_sound(p_player, oldest_info->stream_info[oldest].index);
+		oldest_info->stream_info.erase(oldest);
+		sounding--;
+	}
+
+	const float blend_db = Math::linear_to_db(r_track_info.use_blend ? r_track_info.volume : 1.0);
+	PlayingAudioStreamInfo pasi;
+	pasi.index = p_player->call(SNAME("play_layered"), stream, start_ofs, volume_db + blend_db, pitch_scale);
+	if (pasi.index < 0) {
+		return;
+	}
+	audio_sounds.insert(Pair<ObjectID, int64_t>(p_player->get_instance_id(), pasi.index));
+	pasi.start = p_time;
+	pasi.volume_db = volume_db;
+	if (len && Animation::is_greater_approx(end_ofs, 0)) { // Force an end at a time.
+		pasi.len = (len - start_ofs - end_ofs) / pitch_scale;
+	} else {
+		pasi.len = 0;
+	}
+	r_track_info.stream_info[p_cache->started++] = pasi;
+}
+
+void AnimationMixer::_follow_audio_playhead(Object *p_player, PlayingAudioTrackInfo &r_track_info, const Ref<Animation> &p_animation, int p_track, double p_time) {
+	// Sounds playing at their own pace give way to ones that sit under the playhead.
+	for (const KeyValue<uint64_t, PlayingAudioStreamInfo> &M : r_track_info.stream_info) {
+		_stop_audio_sound(p_player, M.value.index);
+	}
+	r_track_info.stream_info.clear();
+
+	const float blend_db = Math::linear_to_db(r_track_info.use_blend ? r_track_info.volume : 1.0);
+	LocalVector<int> under;
+	const int key_count = p_animation->track_get_key_count(p_track);
+	for (int k = 0; k < key_count; k++) {
+		const double key_time = p_animation->track_get_key_time(p_track, k);
+		if (Animation::is_greater_approx(key_time, p_time)) {
+			break;
+		}
+		Ref<AudioStream> stream = p_animation->audio_track_get_key_stream(p_track, k);
+		if (stream.is_null()) {
+			continue;
+		}
+		const double len = stream->get_length();
+		if (len <= 0.0) {
+			continue; // A stream without a set length can't be laid out under the playhead.
+		}
+		const double start_ofs = p_animation->audio_track_get_key_start_offset(p_track, k);
+		const double end_ofs = p_animation->audio_track_get_key_end_offset(p_track, k);
+		const double position = start_ofs + MAX(0.0, p_time - key_time) * p_animation->audio_track_get_key_pitch_scale(p_track, k);
+		if (position >= len - end_ofs) {
+			continue; // Over by this point of the timeline.
+		}
+		under.push_back(k);
+
+		ScrubbedAudioInfo *sound = r_track_info.scrubbed.getptr(k);
+		if (sound && p_player->call(SNAME("is_layered_playing"), sound->index)) {
+			sound->stream->set_target(position);
+			continue;
+		}
+		Ref<AudioStreamScrub> scrub = AudioStreamScrub::create(stream);
+		if (scrub.is_null()) {
+			continue;
+		}
+		scrub->set_target(position);
+		const real_t volume_db = p_animation->audio_track_get_key_volume_db(p_track, k);
+		const int64_t index = p_player->call(SNAME("play_layered"), scrub, position, volume_db + blend_db, 1.0);
+		if (index < 0) {
+			continue;
+		}
+		audio_sounds.insert(Pair<ObjectID, int64_t>(p_player->get_instance_id(), index));
+		ScrubbedAudioInfo info;
+		info.index = index;
+		info.stream = scrub;
+		info.volume_db = volume_db;
+		r_track_info.scrubbed.insert(k, info);
+	}
+
+	// Keys the playhead has left fall silent.
+	LocalVector<int> left;
+	for (const KeyValue<int, ScrubbedAudioInfo> &S : r_track_info.scrubbed) {
+		if (!under.has(S.key)) {
+			left.push_back(S.key);
+		}
+	}
+	for (const int k : left) {
+		_stop_audio_sound(p_player, r_track_info.scrubbed[k].index);
+		r_track_info.scrubbed.erase(k);
+	}
+}
+
+void AnimationMixer::_stop_scrubbed_audio(Object *p_player, PlayingAudioTrackInfo &r_track_info) {
+	for (const KeyValue<int, ScrubbedAudioInfo> &S : r_track_info.scrubbed) {
+		_stop_audio_sound(p_player, S.value.index);
+	}
+	r_track_info.scrubbed.clear();
+}
+
+void AnimationMixer::_process_camera_cut_track(TrackCacheValue *p_cache, const Ref<Animation> &p_animation, int p_track, double p_time, double p_delta, double p_start, double p_end, Animation::LoopedFlag p_looped_flag, bool p_seeked) {
+	int key = -1;
+	const int key_count = p_animation->track_get_key_count(p_track);
+	while (key + 1 < key_count && !Animation::is_greater_approx(p_animation->track_get_key_time(p_track, key + 1), p_time)) {
+		key++;
+	}
+	if (key < 0) {
+		p_cache->camera_cut_value = Variant(); // Before the camera's first key, it's left as it is.
+		return;
+	}
+	const Variant value = post_process_key_value(p_animation, p_track, p_animation->track_get_key_value(p_track, key), p_cache->object_id);
+	// Applied when the shot changes, after a seek, and when a key is passed (so a key still takes the
+	// camera back if something else made another camera current meanwhile).
+	bool apply = p_seeked || value != p_cache->camera_cut_value;
+	if (!apply) {
+		LocalVector<int> passed;
+		p_animation->track_get_key_indices_in_range(p_track, p_time, p_delta, p_start, p_end, &passed, p_looped_flag);
+		apply = !passed.is_empty();
+	}
+	if (!apply) {
+		return;
+	}
+	p_cache->camera_cut_value = value;
+	Object *camera = ObjectDB::get_instance(p_cache->object_id);
+	if (camera) {
+		camera->set_indexed(p_cache->subpath, value);
+	}
+}
+
+// In the editor, a stopped or paused AnimationPlayer only places the scene when it updates (after a
+// key is edited, say); it never starts sounds.
+bool AnimationMixer::_is_editor_preview_stopped() const {
+#ifdef TOOLS_ENABLED
+	if (Engine::get_singleton()->is_editor_hint()) {
+		const AnimationPlayer *animation_player = Object::cast_to<AnimationPlayer>(this);
+		return animation_player && !animation_player->is_playing();
+	}
+#endif // TOOLS_ENABLED
+	return false;
+}
+
+// Whether the player's own stream sounds at p_time by its `playing` track, and where in the
+// stream it is by then. The latest key at or before p_time decides (not the nearest, which may lie
+// ahead), and an "on" key started the stream at its own time.
+bool AnimationMixer::_audio_playing_position(TrackCacheValue *p_cache, Object *p_player, const Ref<Animation> &p_animation, int p_track, double p_time, int &r_key, double &r_position) {
+	r_key = -1;
+	const int key_count = p_animation->track_get_key_count(p_track);
+	while (r_key + 1 < key_count && !Animation::is_greater_approx(p_animation->track_get_key_time(p_track, r_key + 1), p_time)) {
+		r_key++;
+	}
+	if (r_key < 0) {
+		return false; // Before the first key, the track hasn't started the stream.
+	}
+	if (!bool(post_process_key_value(p_animation, p_track, p_animation->track_get_key_value(p_track, r_key), p_cache->object_id))) {
+		return false;
+	}
+	Ref<AudioStream> stream = p_player->get(SNAME("stream"));
+	if (stream.is_null()) {
+		return false;
+	}
+	r_position = MAX(0.0, p_time - p_animation->track_get_key_time(p_track, r_key)) * double(p_player->get(SNAME("pitch_scale")));
+	const double length = stream->get_length();
+	if (length > 0.0 && r_position >= length) {
+		if (!stream->has_loop()) {
+			return false; // It has played to its end by now.
+		}
+		r_position = Math::fmod(r_position, length);
+	}
+	return true;
+}
+
+void AnimationMixer::_stop_audio_playing_follow(TrackCacheValue *p_cache, Object *p_player) {
+	if (p_cache->playhead_sound >= 0) {
+		_stop_audio_sound(p_player, p_cache->playhead_sound);
+	}
+	p_cache->playhead_sound = -1;
+	p_cache->playhead_stream.unref();
+	p_cache->playhead_key = -1;
+}
+
+void AnimationMixer::_process_audio_playing_track(TrackCacheValue *p_cache, const Ref<Animation> &p_animation, int p_track, double p_time, double p_delta, double p_start, double p_end, Animation::LoopedFlag p_looped_flag, bool p_seeked, bool p_backward, bool p_update_only) {
+	Object *player = ObjectDB::get_instance(p_cache->object_id);
+	if (!player) {
+		return;
+	}
+	int key = -1;
+	double position = 0.0;
+
+	// Scrubbing in the editor, and playing backwards: the stream sits under the playhead and moves
+	// with it, instead of the player restarting it each time a key is found.
+	if ((p_update_only && audio_scrubbing) || (p_backward && !p_seeked && !p_update_only)) {
+		if (player->call(SNAME("is_playing"))) {
+			player->set(SNAME("playing"), false);
+		}
+		Ref<AudioStream> stream = player->get(SNAME("stream"));
+		if (!_audio_playing_position(p_cache, player, p_animation, p_track, p_time, key, position) || stream->get_length() <= 0.0) {
+			_stop_audio_playing_follow(p_cache, player);
+			return;
+		}
+		if (p_cache->playhead_key == key && p_cache->playhead_stream.is_valid() && player->call(SNAME("is_layered_playing"), p_cache->playhead_sound)) {
+			p_cache->playhead_stream->set_target(position);
+			return;
+		}
+		_stop_audio_playing_follow(p_cache, player);
+		Ref<AudioStreamScrub> scrub = AudioStreamScrub::create(stream);
+		if (scrub.is_null()) {
+			return;
+		}
+		scrub->set_target(position);
+		const int64_t index = player->call(SNAME("play_layered"), scrub, position, 0.0, 1.0);
+		if (index < 0) {
+			return;
+		}
+		audio_sounds.insert(Pair<ObjectID, int64_t>(player->get_instance_id(), index));
+		p_cache->playhead_sound = index;
+		p_cache->playhead_stream = scrub;
+		p_cache->playhead_key = key;
+		return;
+	}
+
+	// Other seeks that only update the scene (onion skinning, stepping between keys) leave the
+	// sound alone, rather than starting it from whichever key is nearest.
+	if (p_update_only) {
+		return;
+	}
+
+	const bool was_following = p_cache->playhead_sound >= 0;
+	_stop_audio_playing_follow(p_cache, player);
+	if (_is_editor_preview_stopped()) {
+		return;
+	}
+	if (p_seeked || was_following) {
+		// Pick up what sounds at this point of the timeline, partway into the stream.
+		if (_audio_playing_position(p_cache, player, p_animation, p_track, p_time, key, position)) {
+			player->call(SNAME("play"), position);
+		} else if (player->call(SNAME("is_playing"))) {
+			player->set(SNAME("playing"), false);
+		}
+		return;
+	}
+
+	// Playing forwards: each key passed switches the player, as in Godot.
+	LocalVector<int> indices;
+	p_animation->track_get_key_indices_in_range(p_track, p_time, p_delta, p_start, p_end, &indices, p_looped_flag);
+	for (const int idx : indices) {
+		player->set(SNAME("playing"), post_process_key_value(p_animation, p_track, p_animation->track_get_key_value(p_track, idx), p_cache->object_id));
+	}
 }
 
 void AnimationMixer::_clear_playing_caches() {
@@ -748,6 +1053,8 @@ bool AnimationMixer::_update_caches() {
 						track_value->is_using_angle = anim->track_get_interpolation_type(i) == Animation::INTERPOLATION_LINEAR_ANGLE || anim->track_get_interpolation_type(i) == Animation::INTERPOLATION_CUBIC_ANGLE;
 
 						track_value->subpath = leftover_path;
+						track_value->is_audio_playing = track_src_type == Animation::TYPE_VALUE && resource.is_null() && leftover_path.size() == 1 && leftover_path[0] == SNAME("playing") && child->has_method(SNAME("play_layered"));
+						track_value->is_camera_cut = track_src_type == Animation::TYPE_VALUE && resource.is_null() && leftover_path.size() == 1 && leftover_path[0] == SNAME("current") && child->is_class("Camera3D");
 
 						track = track_value;
 
@@ -900,13 +1207,13 @@ bool AnimationMixer::_update_caches() {
 
 					} break;
 					case Animation::TYPE_AUDIO: {
+						if (!child->has_method(SNAME("play_layered"))) {
+							WARN_PRINT_ED(mixer_name + ": '" + String(E) + "', Audio Track:  '" + String(path) + "' needs an AudioStreamPlayer, AudioStreamPlayer2D or AudioStreamPlayer3D.");
+							continue;
+						}
 						TrackCacheAudio *track_audio = memnew(TrackCacheAudio);
 
 						track_audio->object_id = child->get_instance_id();
-						track_audio->audio_stream.instantiate();
-						track_audio->audio_stream->set_polyphony(audio_max_polyphony);
-						track_audio->playback_type = (AudioServer::PlaybackType)(int)(child->call(SNAME("get_playback_type")));
-						track_audio->bus = (StringName)(child->call(SNAME("get_bus")));
 
 						track = track_audio;
 
@@ -1103,7 +1410,7 @@ void AnimationMixer::_blend_init() {
 			} break;
 			case Animation::TYPE_AUDIO: {
 				TrackCacheAudio *t = static_cast<TrackCacheAudio *>(track);
-				for (KeyValue<ObjectID, PlayingAudioTrackInfo> &L : t->playing_streams) {
+				for (KeyValue<Pair<ObjectID, int>, PlayingAudioTrackInfo> &L : t->playing_streams) {
 					PlayingAudioTrackInfo &track_info = L.value;
 					track_info.volume = 0.0;
 				}
@@ -1619,6 +1926,14 @@ void AnimationMixer::_blend_process(double p_delta, bool p_update_only) {
 						continue; // Nothing to blend.
 					}
 					TrackCacheValue *t = static_cast<TrackCacheValue *>(track);
+					if (t->is_audio_playing) {
+						_process_audio_playing_track(t, a, i, time, delta, start, end, looped_flag, seeked, backward, p_update_only);
+						continue;
+					}
+					if (t->is_camera_cut) {
+						_process_camera_cut_track(t, a, i, time, delta, start, end, looped_flag, seeked);
+						continue;
+					}
 					bool is_value = ttype == Animation::TYPE_VALUE;
 					bool is_discrete = is_value && a->value_track_get_update_mode(i) == Animation::UPDATE_DISCRETE;
 					bool force_continuous = callback_mode_discrete == ANIMATION_CALLBACK_MODE_DISCRETE_FORCE_CONTINUOUS;
@@ -1729,95 +2044,54 @@ void AnimationMixer::_blend_process(double p_delta, bool p_update_only) {
 						t->playing_streams.clear();
 						continue;
 					}
-					ObjectID oid = a->get_instance_id();
-					if (!t->playing_streams.has(oid)) {
-						t->playing_streams[oid] = PlayingAudioTrackInfo();
-					}
-
-					PlayingAudioTrackInfo &track_info = t->playing_streams[oid];
+					PlayingAudioTrackInfo &track_info = t->playing_streams[Pair<ObjectID, int>(a->get_instance_id(), i)];
 					track_info.length = a_length;
 					track_info.time = time;
 					track_info.volume += blend;
 					track_info.loop = a->get_loop_mode() != Animation::LOOP_NONE;
 					track_info.backward = backward;
 					track_info.use_blend = a->audio_track_is_use_blend(i);
-					AHashMap<int, PlayingAudioStreamInfo> &map = track_info.stream_info;
+
+					// Asosdot: while the editor scrubs, and while playing backwards, sounds sit
+					// under the playhead and move with it, like audio in a video editor.
+					if ((p_update_only && audio_scrubbing) || (backward && !seeked && !p_update_only)) {
+						_follow_audio_playhead(t_obj, track_info, a, i, time);
+						continue;
+					}
 
 					// Main process to fire key is started from here.
 					if (p_update_only) {
 						continue;
 					}
-					// Find stream.
-					int idx = -1;
-					if (seeked) {
-						// Audio key may be playbacked from the middle, should use FIND_MODE_NEAREST.
-						// Then, check the current playing stream to prevent to playback doubly.
-						idx = a->track_find_key(i, time, Animation::FIND_MODE_NEAREST, true);
-						// Discard previous stream when seeking.
-						if (map.has(idx)) {
-							t->audio_stream_playback->stop_stream(map[idx].index);
-							map.erase(idx);
-						}
-					} else {
-						LocalVector<int> to_play;
-						a->track_get_key_indices_in_range(i, time, delta, start, end, &to_play, looped_flag);
-						if (to_play.size()) {
-							idx = to_play[to_play.size() - 1];
-						}
-					}
-					if (idx < 0) {
+					// Resume what sounds under the playhead after a seek, or after following the
+					// playhead, when sounds go back to playing forwards at their own pace.
+					const bool resume = seeked || !track_info.scrubbed.is_empty();
+					_stop_scrubbed_audio(t_obj, track_info);
+					if (_is_editor_preview_stopped()) {
 						continue;
 					}
-
-					// Play stream.
-					Ref<AudioStream> stream = a->audio_track_get_key_stream(i, idx);
-					if (stream.is_valid()) {
-						double start_ofs = a->audio_track_get_key_start_offset(i, idx);
-						double end_ofs = a->audio_track_get_key_end_offset(i, idx);
-						double len = stream->get_length();
-						if (seeked) {
-							start_ofs += time - a->track_get_key_time(i, idx);
+					if (resume) {
+						// Every key still sounding at the new time resumes from where it would be by now.
+						// What this track played before the seek is let go first, so nothing doubles up.
+						for (const KeyValue<uint64_t, PlayingAudioStreamInfo> &M : track_info.stream_info) {
+							_stop_audio_sound(t_obj, M.value.index);
 						}
-
-						if (t_obj->call(SNAME("get_stream")) != t->audio_stream) {
-							t_obj->call(SNAME("set_stream"), t->audio_stream);
-							t->audio_stream_playback.unref();
-							if (!playing_audio_stream_players.has(asp)) {
-								playing_audio_stream_players.push_back(asp);
-							}
+						track_info.stream_info.clear();
+						int latest = -1;
+						const int key_count = a->track_get_key_count(i);
+						while (latest + 1 < key_count && !Animation::is_greater_approx(a->track_get_key_time(i, latest + 1), time)) {
+							latest++;
 						}
-						if (!t_obj->call(SNAME("is_playing"))) {
-							t_obj->call(SNAME("play"));
+						for (int k = 0; k <= latest; k++) {
+							_play_audio_key(t, t_obj, track_info, a, i, k, time, true, k == latest);
 						}
-						if (!t_obj->call(SNAME("has_stream_playback"))) {
-							t->audio_stream_playback.unref();
-							continue;
+					} else {
+						// Every key passed since the last update plays, however many fall in one frame.
+						LocalVector<int> to_play;
+						a->track_get_key_indices_in_range(i, time, delta, start, end, &to_play, looped_flag);
+						for (const int idx : to_play) {
+							_play_audio_key(t, t_obj, track_info, a, i, idx, time, false, false);
 						}
-						if (t->audio_stream_playback.is_null()) {
-							t->audio_stream_playback = t_obj->call(SNAME("get_stream_playback"));
-						}
-
-						if (t_obj->call(SNAME("get_is_sample"))) {
-							if (t->audio_stream_playback->get_sample_playback().is_valid()) {
-								AudioServer::get_singleton()->stop_sample_playback(t->audio_stream_playback->get_sample_playback());
-							}
-							Ref<AudioSamplePlayback> sample_playback;
-							sample_playback.instantiate();
-							sample_playback->stream = stream;
-							t->audio_stream_playback->set_sample_playback(sample_playback);
-							AudioServer::get_singleton()->start_sample_playback(sample_playback);
-							continue;
-						}
-
-						PlayingAudioStreamInfo pasi;
-						pasi.index = t->audio_stream_playback->play_stream(stream, start_ofs, 0, 1.0, t->playback_type, t->bus);
-						pasi.start = time;
-						if (len && Animation::is_greater_approx(end_ofs, 0)) { // Force an end at a time.
-							pasi.len = len - start_ofs - end_ofs;
-						} else {
-							pasi.len = 0;
-						}
-						map[idx] = pasi;
 					}
 				} break;
 				case Animation::TYPE_ANIMATION: {
@@ -2012,19 +2286,24 @@ void AnimationMixer::_blend_apply() {
 			} break;
 			case Animation::TYPE_AUDIO: {
 				TrackCacheAudio *t = static_cast<TrackCacheAudio *>(track);
+				Object *t_obj = ObjectDB::get_instance(t->object_id);
+				if (!t_obj) {
+					t->playing_streams.clear();
+					break;
+				}
 
 				// Audio ending process.
-				LocalVector<ObjectID> erase_maps;
-				for (KeyValue<ObjectID, PlayingAudioTrackInfo> &L : t->playing_streams) {
+				LocalVector<Pair<ObjectID, int>> erase_maps;
+				for (KeyValue<Pair<ObjectID, int>, PlayingAudioTrackInfo> &L : t->playing_streams) {
 					PlayingAudioTrackInfo &track_info = L.value;
 					float db = Math::linear_to_db(track_info.use_blend ? track_info.volume : 1.0);
-					LocalVector<int> erase_streams;
-					AHashMap<int, PlayingAudioStreamInfo> &map = track_info.stream_info;
-					for (const KeyValue<int, PlayingAudioStreamInfo> &M : map) {
+					LocalVector<uint64_t> erase_streams;
+					AHashMap<uint64_t, PlayingAudioStreamInfo> &map = track_info.stream_info;
+					for (const KeyValue<uint64_t, PlayingAudioStreamInfo> &M : map) {
 						PlayingAudioStreamInfo pasi = M.value;
 
 						bool stop = false;
-						if (!t->audio_stream_playback->is_stream_playing(pasi.index)) {
+						if (!t_obj->call(SNAME("is_layered_playing"), pasi.index)) {
 							stop = true;
 						}
 						if (!track_info.loop) {
@@ -2051,16 +2330,32 @@ void AnimationMixer::_blend_apply() {
 						}
 						if (stop) {
 							// Time to stop.
-							t->audio_stream_playback->stop_stream(pasi.index);
+							_stop_audio_sound(t_obj, pasi.index);
 							erase_streams.push_back(M.key);
 						} else {
-							t->audio_stream_playback->set_stream_volume(pasi.index, db);
+							t_obj->call(SNAME("set_layered_volume_db"), pasi.index, pasi.volume_db + db);
 						}
 					}
 					for (uint32_t erase_idx = 0; erase_idx < erase_streams.size(); erase_idx++) {
 						map.erase(erase_streams[erase_idx]);
 					}
-					if (map.is_empty()) {
+
+					// Sounds under the playhead follow the blend too, and drop out once they end by
+					// themselves (they do after the playhead has been still a moment).
+					LocalVector<int> ended_scrubs;
+					for (const KeyValue<int, ScrubbedAudioInfo> &S : track_info.scrubbed) {
+						if (t_obj->call(SNAME("is_layered_playing"), S.value.index)) {
+							t_obj->call(SNAME("set_layered_volume_db"), S.value.index, S.value.volume_db + db);
+						} else {
+							_stop_audio_sound(t_obj, S.value.index);
+							ended_scrubs.push_back(S.key);
+						}
+					}
+					for (const int k : ended_scrubs) {
+						track_info.scrubbed.erase(k);
+					}
+
+					if (map.is_empty() && track_info.scrubbed.is_empty()) {
 						erase_maps.push_back(L.key);
 					}
 				}
@@ -2242,16 +2537,8 @@ void AnimationMixer::_build_backup_track_cache() {
 					t->element_size = (real_t)(t->value.operator Array()).size();
 				}
 			} break;
-			case Animation::TYPE_AUDIO: {
-				TrackCacheAudio *t = static_cast<TrackCacheAudio *>(track);
-				Object *t_obj = ObjectDB::get_instance(t->object_id);
-				if (t_obj) {
-					Node *asp = Object::cast_to<Node>(t_obj);
-					if (asp) {
-						asp->call(SNAME("set_stream"), Ref<AudioStream>());
-					}
-				}
-			} break;
+			// Audio tracks play layered sounds and never take over the player's own stream, so
+			// there's nothing of theirs to clear from a backup.
 			default: {
 			} // The rest don't matter.
 		}
@@ -2475,6 +2762,8 @@ void AnimationMixer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_callback_mode_discrete"), &AnimationMixer::get_callback_mode_discrete);
 
 	/* ---- Audio ---- */
+	// Hidden: the editor sets it around timeline drags; tests and tools can do the same.
+	ClassDB::bind_method(D_METHOD("_set_audio_scrubbing", "scrubbing"), &AnimationMixer::set_audio_scrubbing);
 	ClassDB::bind_method(D_METHOD("set_audio_max_polyphony", "max_polyphony"), &AnimationMixer::set_audio_max_polyphony);
 	ClassDB::bind_method(D_METHOD("get_audio_max_polyphony"), &AnimationMixer::get_audio_max_polyphony);
 

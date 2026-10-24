@@ -87,6 +87,8 @@ public:
 	VBoxContainer *get_control() const;
 
 	void add_main_plugin(EditorPlugin *p_editor);
+	// Asosdot: shows a screen's button elsewhere in the bar; the screens keep their numbers.
+	void move_button_after(const String &p_name, const String &p_after);
 	void remove_main_plugin(EditorPlugin *p_editor);
 
 	EditorMainScreen();

@@ -30,6 +30,7 @@
 
 #include "register_types.h"
 
+#include "extensions/gltf_document_extension_blender_rig.h"
 #include "extensions/gltf_document_extension_convert_importer_mesh.h"
 #include "extensions/gltf_document_extension_texture_ktx.h"
 #include "extensions/gltf_document_extension_texture_webp.h"
@@ -49,6 +50,7 @@
 
 #ifdef TOOLS_ENABLED
 #include "editor/editor_import_blend_runner.h"
+#include "editor/editor_scene_exporter_blend_plugin.h"
 #include "editor/editor_scene_exporter_gltf_plugin.h"
 #include "editor/editor_scene_importer_blend.h"
 #include "editor/editor_scene_importer_gltf.h"
@@ -118,6 +120,7 @@ void initialize_gltf_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(GLTFDocument);
 		GDREGISTER_CLASS(GLTFDocumentExtension);
 		GDREGISTER_CLASS(GLTFDocumentExtensionConvertImporterMesh);
+		GDREGISTER_INTERNAL_CLASS(AsosdotGLTFDocumentExtensionBlenderRig);
 		GDREGISTER_CLASS(GLTFLight);
 		GDREGISTER_CLASS(GLTFMesh);
 		GDREGISTER_CLASS(GLTFNode);
@@ -139,6 +142,8 @@ void initialize_gltf_module(ModuleInitializationLevel p_level) {
 #endif // PHYSICS_3D_DISABLED
 		GLTF_REGISTER_DOCUMENT_EXTENSION(GLTFDocumentExtensionTextureKTX);
 		GLTF_REGISTER_DOCUMENT_EXTENSION(GLTFDocumentExtensionTextureWebP);
+		// Asosdot: Blender bone constraints, rebuilt as IK and constraint modifiers.
+		GLTF_REGISTER_DOCUMENT_EXTENSION(AsosdotGLTFDocumentExtensionBlenderRig);
 		bool is_editor = Engine::get_singleton()->is_editor_hint();
 		if (!is_editor) {
 			GLTF_REGISTER_DOCUMENT_EXTENSION(GLTFDocumentExtensionConvertImporterMesh);
@@ -149,6 +154,7 @@ void initialize_gltf_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
 		GDREGISTER_CLASS(EditorSceneFormatImporterGLTF);
 		EditorPlugins::add_by_type<SceneExporterGLTFPlugin>();
+		EditorPlugins::add_by_type<AsosdotSceneExporterBlendPlugin>();
 
 		// Project settings defined here so doctool finds them.
 		GLOBAL_DEF_RST_BASIC("filesystem/import/blender/enabled", true);

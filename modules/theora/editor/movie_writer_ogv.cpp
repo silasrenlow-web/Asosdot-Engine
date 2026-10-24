@@ -38,6 +38,7 @@
 #include <cstdlib>
 
 void MovieWriterOGV::push_audio(const int32_t *p_audio_data) {
+	audio_frames = get_frame_audio_sample_count();
 	// Read and process more audio.
 	float **vorbis_buffer = vorbis_analysis_buffer(&vd, audio_frames);
 
@@ -112,6 +113,9 @@ void MovieWriterOGV::get_supported_extensions(List<String> *r_extensions) const 
 }
 
 Error MovieWriterOGV::write_begin(const Size2i &p_movie_size, uint32_t p_fps, const String &p_base_path) {
+	frame_count = 0;
+	audio_flag = false;
+	video_flag = false;
 	ERR_FAIL_COND_V_MSG((p_movie_size.width & 1) || (p_movie_size.height & 1), ERR_UNAVAILABLE, "Both video dimensions must be even.");
 	base_path = p_base_path.get_basename();
 	if (base_path.is_relative_path()) {
@@ -418,6 +422,8 @@ void MovieWriterOGV::write_end() {
 
 	if (backup_page_data != nullptr) {
 		memfree(backup_page_data);
+		backup_page_data = nullptr;
+		backup_page_size = 0;
 	}
 
 	if (f.is_valid()) {

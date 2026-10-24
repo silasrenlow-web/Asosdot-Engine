@@ -112,7 +112,11 @@ void EditorFolding::_fill_folds(const Node *p_root, const Node *p_node, Array &p
 		if (!p_node->get_owner()) {
 			return; //not owned, bye
 		}
-		if (p_node->get_owner() != p_root && !p_root->is_editable_instance(p_node->get_owner())) {
+		if (!p_root->is_node_editable(p_node)) {
+			// Nodes the instance's scene exposes may be further down.
+			for (int i = 0; i < p_node->get_child_count(); i++) {
+				_fill_folds(p_root, p_node->get_child(i), p_folds, resource_folds, nodes_folded, resources, animations, anim_groups_folded, r_external_anims);
+			}
 			return;
 		}
 	}
@@ -344,7 +348,11 @@ void EditorFolding::_do_node_unfolds(Node *p_root, Node *p_node, HashSet<Ref<Res
 		if (!p_node->get_owner()) {
 			return; //not owned, bye
 		}
-		if (p_node->get_owner() != p_root && !p_root->is_editable_instance(p_node)) {
+		if (p_node->get_owner() != p_root && !p_root->is_editable_instance(p_node) && !p_root->is_node_editable(p_node)) {
+			// Nodes the instance's scene exposes may be further down.
+			for (int i = 0; i < p_node->get_child_count(); i++) {
+				_do_node_unfolds(p_root, p_node->get_child(i), resources);
+			}
 			return;
 		}
 	}

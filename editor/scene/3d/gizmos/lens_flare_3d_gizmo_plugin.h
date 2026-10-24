@@ -32,8 +32,8 @@
 
 #include "editor/scene/3d/node_3d_editor_gizmos.h"
 
-class LensFlare3DGizmoPlugin : public EditorNode3DGizmoPlugin {
-	GDCLASS(LensFlare3DGizmoPlugin, EditorNode3DGizmoPlugin);
+class AsosdotLensFlare3DGizmoPlugin : public EditorNode3DGizmoPlugin {
+	GDCLASS(AsosdotLensFlare3DGizmoPlugin, EditorNode3DGizmoPlugin);
 
 public:
 	bool has_gizmo(Node3D *p_spatial) override;
@@ -42,5 +42,5 @@ public:
 
 	void redraw(EditorNode3DGizmo *p_gizmo) override;
 
-	LensFlare3DGizmoPlugin();
+	AsosdotLensFlare3DGizmoPlugin();
 };

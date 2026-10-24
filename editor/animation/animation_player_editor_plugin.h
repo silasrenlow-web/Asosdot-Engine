@@ -40,6 +40,7 @@
 #include "scene/gui/tree.h"
 #include "scene/resources/material.h"
 
+class AsosdotAnimationClipBrowser;
 class AnimationPlayerEditorPlugin;
 class ImageTexture;
 
@@ -47,6 +48,8 @@ class AnimationPlayerEditor : public EditorDock {
 	GDCLASS(AnimationPlayerEditor, EditorDock);
 
 	friend AnimationPlayerEditorPlugin;
+	// Asosdot: its library lists, picks and manages the animations shown here.
+	friend class AsosdotAnimationWorkspace;
 
 	AnimationPlayerEditorPlugin *plugin = nullptr;
 	AnimationMixer *original_node = nullptr; // For pinned mark in SceneTree.
@@ -89,6 +92,10 @@ class AnimationPlayerEditor : public EditorDock {
 	};
 
 	OptionButton *animation = nullptr;
+	// Asosdot: every clip in a searchable, grouped list.
+	Button *clip_browser_button = nullptr;
+	AsosdotAnimationClipBrowser *clip_browser = nullptr;
+	void _open_clip_browser();
 	Button *stop = nullptr;
 	Button *play = nullptr;
 	Button *play_from = nullptr;

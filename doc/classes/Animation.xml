@@ -85,6 +85,15 @@
 				End offset is the number of seconds cut off at the ending of the audio stream.
 			</description>
 		</method>
+		<method name="audio_track_get_key_pitch_scale" qualifiers="const">
+			<return type="float" />
+			<param index="0" name="track_idx" type="int" />
+			<param index="1" name="key_idx" type="int" />
+			<description>
+				Returns the pitch of the key identified by [param key_idx]. The [param track_idx] must be the index of an Audio Track.
+				It multiplies the player's [member AudioStreamPlayer.pitch_scale] for this key's sound, which also makes the sound last [code]1 / pitch_scale[/code] as long on the timeline.
+			</description>
+		</method>
 		<method name="audio_track_get_key_start_offset" qualifiers="const">
 			<return type="float" />
 			<param index="0" name="track_idx" type="int" />
@@ -100,6 +109,14 @@
 			<param index="1" name="key_idx" type="int" />
 			<description>
 				Returns the audio stream of the key identified by [param key_idx]. The [param track_idx] must be the index of an Audio Track.
+			</description>
+		</method>
+		<method name="audio_track_get_key_volume_db" qualifiers="const">
+			<return type="float" />
+			<param index="0" name="track_idx" type="int" />
+			<param index="1" name="key_idx" type="int" />
+			<description>
+				Returns the volume of the key identified by [param key_idx], in decibels added to the player's [member AudioStreamPlayer.volume_db] for this key's sound. The [param track_idx] must be the index of an Audio Track.
 			</description>
 		</method>
 		<method name="audio_track_insert_key">
@@ -130,6 +147,16 @@
 				Sets the end offset of the key identified by [param key_idx] to value [param offset]. The [param track_idx] must be the index of an Audio Track.
 			</description>
 		</method>
+		<method name="audio_track_set_key_pitch_scale">
+			<return type="void" />
+			<param index="0" name="track_idx" type="int" />
+			<param index="1" name="key_idx" type="int" />
+			<param index="2" name="pitch_scale" type="float" />
+			<description>
+				Sets the pitch of the key identified by [param key_idx] to [param pitch_scale]. The [param track_idx] must be the index of an Audio Track.
+				The key's start and end offsets stay in the stream's own seconds.
+			</description>
+		</method>
 		<method name="audio_track_set_key_start_offset">
 			<return type="void" />
 			<param index="0" name="track_idx" type="int" />
@@ -146,6 +173,15 @@
 			<param index="2" name="stream" type="Resource" />
 			<description>
 				Sets the stream of the key identified by [param key_idx] to value [param stream]. The [param track_idx] must be the index of an Audio Track.
+			</description>
+		</method>
+		<method name="audio_track_set_key_volume_db">
+			<return type="void" />
+			<param index="0" name="track_idx" type="int" />
+			<param index="1" name="key_idx" type="int" />
+			<param index="2" name="volume_db" type="float" />
+			<description>
+				Sets the volume of the key identified by [param key_idx] to [param volume_db], in decibels added to the player's volume. The [param track_idx] must be the index of an Audio Track.
 			</description>
 		</method>
 		<method name="audio_track_set_use_blend">

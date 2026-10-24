@@ -595,7 +595,7 @@ Ref<Texture2D> EditorExportPlatform::get_option_icon(int p_index) const {
 }
 
 String EditorExportPlatform::find_export_template(const String &template_file_name, String *err) const {
-	String current_version = GODOT_VERSION_FULL_CONFIG;
+	String current_version = ASOSDOT_EXPORT_TEMPLATES_VERSION;
 	String template_path = EditorPaths::get_singleton()->get_export_templates_dir().path_join(current_version).path_join(template_file_name);
 
 	if (FileAccess::exists(template_path)) {
@@ -995,7 +995,7 @@ bool EditorExportPlatform::_is_editable_ancestor(Node *p_root, Node *p_node) {
 bool EditorExportPlatform::_export_customize_scene_resources(Node *p_root, Node *p_node, LocalVector<Ref<EditorExportPlugin>> &customize_resources_plugins) {
 	bool changed = false;
 
-	if (p_root == p_node || p_node->get_owner() == p_root || _is_editable_ancestor(p_root, p_node)) {
+	if (p_root == p_node || p_node->get_owner() == p_root || _is_editable_ancestor(p_root, p_node) || p_root->is_node_editable(p_node)) {
 		if (_export_customize_object(p_node, customize_resources_plugins)) {
 			changed = true;
 		}
@@ -1209,7 +1209,7 @@ Dictionary EditorExportPlatform::get_internal_export_files(const Ref<EditorExpor
 						export_ok = true;
 					}
 				} else {
-					String current_version = GODOT_VERSION_FULL_CONFIG;
+					String current_version = ASOSDOT_EXPORT_TEMPLATES_VERSION;
 					String template_path = EditorPaths::get_singleton()->get_export_templates_dir().path_join(current_version);
 					if (p_debug && p_preset->has("custom_template/debug") && p_preset->get("custom_template/debug") != "") {
 						template_path = p_preset->get("custom_template/debug").operator String().get_base_dir();

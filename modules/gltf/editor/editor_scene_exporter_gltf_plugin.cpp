@@ -119,10 +119,12 @@ void SceneExporterGLTFPlugin::_export_scene_as_gltf() {
 	Error err = _gltf_document->append_from_scene(root, state, flags);
 	if (err != OK) {
 		ERR_PRINT(vformat("glTF2 save scene error %s.", itos(err)));
+		return;
 	}
 	err = _gltf_document->write_to_filesystem(state, export_path);
 	if (err != OK) {
 		ERR_PRINT(vformat("glTF2 save scene error %s.", itos(err)));
+		return;
 	}
 	EditorFileSystem::get_singleton()->scan_changes();
 }

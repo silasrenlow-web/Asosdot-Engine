@@ -92,6 +92,10 @@
 #define ASOSDOT_VERSION_FULL_CONFIG ASOSDOT_VERSION_NUMBER "." ASOSDOT_VERSION_STATUS
 // Example: "Asosdot Engine v1.0.stable"
 #define ASOSDOT_VERSION_FULL_NAME GODOT_VERSION_NAME " v" ASOSDOT_VERSION_FULL_CONFIG
+// The export templates folder (and .tpz version.txt) for this version: "asosdot.1.0.stable". Unlike
+// the rest, it isn't Godot's version, so Godot's own templates for the same base version, which
+// lack Asosdot's classes, are never picked up by mistake.
+#define ASOSDOT_EXPORT_TEMPLATES_VERSION "asosdot." ASOSDOT_VERSION_FULL_CONFIG
 
 // Git commit hash, generated at build time in `core/version_hash.gen.cpp`.
 extern const char *const GODOT_VERSION_HASH;

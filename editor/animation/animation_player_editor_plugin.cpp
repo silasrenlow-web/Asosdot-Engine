@@ -30,6 +30,7 @@
 
 #include "animation_player_editor_plugin.h"
 
+#include "editor/animation/animation_clip_browser.h"
 #include "core/config/project_settings.h"
 #include "core/input/input.h"
 #include "core/object/callable_mp.h"
@@ -184,6 +185,7 @@ void AnimationPlayerEditor::_notification(int p_what) {
 			}
 
 			autoplay->set_button_icon(get_editor_theme_icon(SNAME("AutoPlay")));
+			clip_browser_button->set_button_icon(get_editor_theme_icon(SNAME("Search")));
 			play->set_button_icon(get_editor_theme_icon(SNAME("PlayStart")));
 			play_from->set_button_icon(get_editor_theme_icon(SNAME("Play")));
 			play_bw->set_button_icon(get_editor_theme_icon(SNAME("PlayStartBackwards")));
@@ -596,6 +598,15 @@ void AnimationPlayerEditor::_animation_remove_confirmed() {
 		undo_redo->add_undo_method(this, "_start_onion_skinning");
 	}
 	undo_redo->commit_action();
+}
+
+void AnimationPlayerEditor::_open_clip_browser() {
+	if (!player) {
+		return;
+	}
+	const int selected = animation->get_selected();
+	const String current = selected >= 0 ? animation->get_item_text(selected) : String();
+	clip_browser->popup_for(player, current, Rect2i(clip_browser_button->get_screen_rect()));
 }
 
 void AnimationPlayerEditor::_select_anim_by_name(const String &p_anim) {
@@ -1130,6 +1141,7 @@ void AnimationPlayerEditor::_set_controls_disabled(bool p_disabled) {
 	play_bw_from->set_disabled(p_disabled);
 	play_from->set_disabled(p_disabled);
 	animation->set_disabled(p_disabled);
+	clip_browser_button->set_disabled(p_disabled);
 	autoplay->set_disabled(p_disabled);
 	onion_toggle->set_disabled(p_disabled);
 	onion_skinning->set_disabled(p_disabled);
@@ -1459,7 +1471,10 @@ void AnimationPlayerEditor::_seek_value_changed(float p_value, bool p_timeline_o
 	pos = CLAMP(pos, 0, (double)anim->get_length() - CMP_EPSILON2); // Hack: Avoid fposmod with LOOP_LINEAR.
 
 	if (!p_timeline_only && anim.is_valid() && (!player->is_valid() || !Math::is_equal_approx(pos, player->get_current_animation_position()))) {
+		// Asosdot: moving the playhead plays the audio tracks under it, forwards or backwards.
+		player->set_audio_scrubbing(!player->is_playing() && bool(EDITOR_GET("editors/animation/audio_scrubbing")));
 		player->seek_internal(pos, true, true, false);
+		player->set_audio_scrubbing(false);
 	}
 
 	track_editor->set_anim_pos(pos);
@@ -2161,6 +2176,16 @@ AnimationPlayerEditor::AnimationPlayerEditor(AnimationPlayerEditorPlugin *p_plug
 	animation->set_fit_to_longest_item(false);
 	animation->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
 
+	clip_browser_button = memnew(Button);
+	clip_browser_button->set_theme_type_variation(SceneStringName(FlatButton));
+	clip_browser_button->set_accessibility_name(TTRC("Browse Clips"));
+	clip_browser_button->set_tooltip_text(TTRC("Browse Clips: search every clip, grouped by name, and set the loop mode of several at once."));
+	clip_browser_button->connect(SceneStringName(pressed), callable_mp(this, &AnimationPlayerEditor::_open_clip_browser));
+	hb->add_child(clip_browser_button);
+	clip_browser = memnew(AsosdotAnimationClipBrowser);
+	clip_browser->connect("clip_chosen", callable_mp(this, &AnimationPlayerEditor::_select_anim_by_name));
+	add_child(clip_browser);
+
 	autoplay = memnew(Button);
 	autoplay->set_theme_type_variation(SceneStringName(FlatButton));
 	hb->add_child(autoplay);
@@ -2170,6 +2195,7 @@ AnimationPlayerEditor::AnimationPlayerEditor(AnimationPlayerEditorPlugin *p_plug
 
 	track_editor = memnew(AnimationTrackEditor);
 	hb->add_child(track_editor->get_edit_menu());
+	hb->add_child(track_editor->get_track_menu());
 
 	hb->add_child(memnew(VSeparator));
 

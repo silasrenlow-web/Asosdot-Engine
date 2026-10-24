@@ -102,6 +102,8 @@ private:
 
 	EditorDock *dock_tab_dragged = nullptr;
 	bool docks_visible = true;
+	bool side_docks_hidden = false;
+	ObjectID side_dock_kept;
 
 	DockContextPopup *dock_context_popup = nullptr;
 	PopupMenu *docks_menu = nullptr;
@@ -152,6 +154,11 @@ public:
 
 	void set_docks_visible(bool p_show);
 	bool are_docks_visible() const;
+	// Asosdot: hides the left and right docks but not the bottom panel, for workspaces that bring
+	// their own side panels, except the slot holding p_keep. Not saved with the layout.
+	void set_side_docks_hidden(bool p_hidden, EditorDock *p_keep = nullptr);
+	bool are_side_docks_hidden() const { return side_docks_hidden; }
+	bool is_side_dock_kept(const Control *p_slot) const;
 
 	void add_dock(EditorDock *p_dock);
 	void remove_dock(EditorDock *p_dock);

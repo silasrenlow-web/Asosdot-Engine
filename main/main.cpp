@@ -3041,6 +3041,39 @@ Error _parse_resource_dummy(void *p_data, VariantParser::Stream *p_stream, Ref<R
 	return OK;
 }
 
+// Asosdot: script classes, found by reading the scripts, whose names Asosdot classes give way to.
+static void _yield_asosdot_classes_to_scripts(const String &p_dir) {
+	Ref<DirAccess> dir = DirAccess::open(p_dir);
+	if (dir.is_null()) {
+		return;
+	}
+	dir->list_dir_begin();
+	for (String file = dir->get_next(); !file.is_empty(); file = dir->get_next()) {
+		if (file.begins_with(".")) {
+			continue;
+		}
+		const String path = p_dir.path_join(file);
+		if (dir->current_is_dir()) {
+			_yield_asosdot_classes_to_scripts(path);
+		} else if (file.get_extension() == "gd") {
+			for (const String &line : FileAccess::get_file_as_string(path).split("\n")) {
+				const Vector<String> words = line.replace("\t", " ").replace("\r", " ").split(" ", false);
+				const int keyword = words.find("class_name");
+				if (keyword < 0 || keyword + 1 >= words.size()) {
+					continue;
+				}
+				const String name = words[keyword + 1].trim_suffix(":");
+				const StringName group = ClassDB::get_asosdot_class_group(name);
+				if (group != StringName() && ClassDB::class_exists(name)) {
+					ClassDB::yield_asosdot_class_group(group, vformat("script class %s (%s)", name, path));
+				}
+				break;
+			}
+		}
+	}
+	dir->list_dir_end();
+}
+
 Error Main::setup2(bool p_show_boot_logo) {
 	GodotProfileZone("setup2");
 	OS::get_singleton()->benchmark_begin_measure("Startup", "Main::Setup2");
@@ -3877,6 +3910,12 @@ Error Main::setup2(bool p_show_boot_logo) {
 	// This loads global classes, so it must happen before custom loaders and savers are registered
 	ScriptServer::init_languages();
 
+	// Asosdot: without a global class cache, as in a fresh copy of a project, look in the project's
+	// scripts for classes that take the name of an Asosdot class.
+	if (!project_manager && !ProjectSettings::get_singleton()->get_resource_path().is_empty() && !FileAccess::exists(ProjectSettings::get_singleton()->get_global_class_list_path())) {
+		_yield_asosdot_classes_to_scripts("res://");
+	}
+
 #if TOOLS_ENABLED
 
 	// Setting up the callback to execute a scan for UIDs on disk when a UID
@@ -4024,6 +4063,10 @@ static MainTimerSync main_timer_sync;
 int Main::start() {
 	GodotProfileZone("start");
 	OS::get_singleton()->benchmark_begin_measure("Startup", "Main::Start");
+
+	// Asosdot: which of its features step aside for a project's own classes is settled before
+	// anything can use them.
+	ClassDB::close_asosdot_class_yielding();
 
 	ERR_FAIL_COND_V(!_start_success, EXIT_FAILURE);
 

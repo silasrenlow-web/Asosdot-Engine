@@ -94,6 +94,8 @@ class SceneTreeDock : public EditorDock {
 		TOOL_CENTER_PARENT,
 		TOOL_HIDE_FILTERED_OUT_PARENTS,
 		TOOL_ACCESSIBILITY_WARNINGS,
+		// Asosdot's own tools go last, after Godot's.
+		TOOL_TOGGLE_EXPOSED_IN_INSTANCES,
 	};
 
 	enum {

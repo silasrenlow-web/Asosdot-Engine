@@ -131,6 +131,41 @@ void AudioStreamPlayer::seek(float p_seconds) {
 
 void AudioStreamPlayer::stop() {
 	internal->stop_basic();
+	internal->stop_all_layered();
+}
+
+// Stops the player's own stream only, for changing the stream, seeking and restarting it.
+void AudioStreamPlayer::_stop_stream() {
+	internal->stop_basic();
+}
+
+int64_t AudioStreamPlayer::play_layered(const Ref<AudioStream> &p_stream, float p_from_pos, float p_volume_db, float p_pitch_scale) {
+	const int64_t id = internal->play_layered(p_stream, p_from_pos, p_volume_db, p_pitch_scale);
+	if (internal->layer_needs_start) {
+		internal->layer_needs_start = false;
+		AudioServer::get_singleton()->start_playback_stream(internal->layer_playback, internal->bus, _get_volume_vector(), 0.0, internal->pitch_scale);
+	}
+	return id;
+}
+
+void AudioStreamPlayer::stop_layered(int64_t p_id) {
+	internal->stop_layered(p_id);
+}
+
+bool AudioStreamPlayer::is_layered_playing(int64_t p_id) const {
+	return internal->is_layered_playing(p_id);
+}
+
+void AudioStreamPlayer::set_layered_volume_db(int64_t p_id, float p_volume_db) {
+	internal->set_layered_volume_db(p_id, p_volume_db);
+}
+
+void AudioStreamPlayer::set_layered_pitch_scale(int64_t p_id, float p_pitch_scale) {
+	internal->set_layered_pitch_scale(p_id, p_pitch_scale);
+}
+
+int AudioStreamPlayer::get_layered_count() const {
+	return internal->get_layered_count();
 }
 
 bool AudioStreamPlayer::is_playing() const {
@@ -280,6 +315,13 @@ void AudioStreamPlayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_playback_type", "playback_type"), &AudioStreamPlayer::set_playback_type);
 	ClassDB::bind_method(D_METHOD("get_playback_type"), &AudioStreamPlayer::get_playback_type);
 
+	ClassDB::bind_method(D_METHOD("play_layered", "stream", "from_position", "volume_db", "pitch_scale"), &AudioStreamPlayer::play_layered, DEFVAL(0.0), DEFVAL(0.0), DEFVAL(1.0));
+	ClassDB::bind_method(D_METHOD("stop_layered", "id"), &AudioStreamPlayer::stop_layered);
+	ClassDB::bind_method(D_METHOD("is_layered_playing", "id"), &AudioStreamPlayer::is_layered_playing);
+	ClassDB::bind_method(D_METHOD("set_layered_volume_db", "id", "volume_db"), &AudioStreamPlayer::set_layered_volume_db);
+	ClassDB::bind_method(D_METHOD("set_layered_pitch_scale", "id", "pitch_scale"), &AudioStreamPlayer::set_layered_pitch_scale);
+	ClassDB::bind_method(D_METHOD("get_layered_count"), &AudioStreamPlayer::get_layered_count);
+
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "stream", PROPERTY_HINT_RESOURCE_TYPE, AudioStream::get_class_static()), "set_stream", "get_stream");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "volume_db", PROPERTY_HINT_RANGE, "-80,24,suffix:dB"), "set_volume_db", "get_volume_db");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "volume_linear", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "set_volume_linear", "get_volume_linear");
@@ -293,6 +335,7 @@ void AudioStreamPlayer::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "playback_type", PROPERTY_HINT_ENUM, "Default,Stream,Sample"), "set_playback_type", "get_playback_type");
 
 	ADD_SIGNAL(MethodInfo("finished"));
+	ADD_SIGNAL(MethodInfo("layered_finished", PropertyInfo(Variant::INT, "id")));
 
 	BIND_ENUM_CONSTANT(MIX_TARGET_STEREO);
 	BIND_ENUM_CONSTANT(MIX_TARGET_SURROUND);
@@ -300,7 +343,7 @@ void AudioStreamPlayer::_bind_methods() {
 }
 
 AudioStreamPlayer::AudioStreamPlayer() {
-	internal = memnew(AudioStreamPlayerInternal(this, callable_mp(this, &AudioStreamPlayer::play), callable_mp(this, &AudioStreamPlayer::stop), false));
+	internal = memnew(AudioStreamPlayerInternal(this, callable_mp(this, &AudioStreamPlayer::play), callable_mp(this, &AudioStreamPlayer::_stop_stream), false));
 }
 
 AudioStreamPlayer::~AudioStreamPlayer() {

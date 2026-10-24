@@ -46,6 +46,7 @@ class MovieWriterMJPEG : public MovieWriter {
 	uint32_t audio_block_size = 0;
 
 	Vector<uint32_t> jpg_frame_sizes;
+	Vector<uint32_t> audio_frame_sizes;
 
 	uint64_t total_frames_ofs = 0;
 	uint64_t total_frames_ofs2 = 0;
@@ -56,6 +57,7 @@ class MovieWriterMJPEG : public MovieWriter {
 	Ref<FileAccess> f;
 
 protected:
+	virtual bool supports_variable_audio_frames() const override { return true; }
 	virtual uint32_t get_audio_mix_rate() const override;
 	virtual AudioServer::SpeakerMode get_audio_speaker_mode() const override;
 	virtual void get_supported_extensions(List<String> *r_extensions) const override;

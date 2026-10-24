@@ -44,8 +44,8 @@ class OptionButton;
 // DirectionalLight3D gets a flare at infinity, a SpotLight3D one that only shows
 // from inside its cone, and both inherit the light's colour and rotation without
 // the user matching anything by hand.
-class LensFlareGeneratorDialog : public ConfirmationDialog {
-	GDCLASS(LensFlareGeneratorDialog, ConfirmationDialog);
+class AsosdotLensFlareGeneratorDialog : public ConfirmationDialog {
+	GDCLASS(AsosdotLensFlareGeneratorDialog, ConfirmationDialog);
 
 public:
 	enum Preset {
@@ -81,5 +81,5 @@ public:
 	void popup_for_selection();
 	virtual void ok_pressed() override;
 
-	LensFlareGeneratorDialog();
+	AsosdotLensFlareGeneratorDialog();
 };

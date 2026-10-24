@@ -111,36 +111,36 @@ String foliage_display_name(const Ref<FoliageType> &p_type, int p_index) {
 /*                                   Editing                                  */
 /* -------------------------------------------------------------------------- */
 
-Terrain3D *TerrainEditor::_get_terrain() const {
+Terrain3D *AsosdotTerrainEditor::_get_terrain() const {
 	return ObjectDB::get_instance<Terrain3D>(terrain_id);
 }
 
-Foliage3D *TerrainEditor::_get_foliage() const {
+Foliage3D *AsosdotTerrainEditor::_get_foliage() const {
 	return ObjectDB::get_instance<Foliage3D>(foliage_id);
 }
 
-Ref<TerrainData> TerrainEditor::_get_data() const {
+Ref<TerrainData> AsosdotTerrainEditor::_get_data() const {
 	const Terrain3D *terrain = _get_terrain();
 	return terrain ? terrain->get_data() : Ref<TerrainData>();
 }
 
-VoxelTerrain3D *TerrainEditor::_get_voxel() const {
+VoxelTerrain3D *AsosdotTerrainEditor::_get_voxel() const {
 	return ObjectDB::get_instance<VoxelTerrain3D>(voxel_id);
 }
 
-Ref<VoxelTerrainData> TerrainEditor::_get_voxel_data() const {
+Ref<VoxelTerrainData> AsosdotTerrainEditor::_get_voxel_data() const {
 	const VoxelTerrain3D *voxel = _get_voxel();
 	return voxel ? voxel->get_data() : Ref<VoxelTerrainData>();
 }
 
-Node3D *TerrainEditor::_get_edited_node() const {
+Node3D *AsosdotTerrainEditor::_get_edited_node() const {
 	if (_is_voxel()) {
 		return _get_voxel();
 	}
 	return _get_terrain();
 }
 
-int TerrainEditor::LayerOwner::count() const {
+int AsosdotTerrainEditor::LayerOwner::count() const {
 	if (const TerrainData *t = Object::cast_to<TerrainData>(resource)) {
 		return t->get_layer_count();
 	}
@@ -150,7 +150,7 @@ int TerrainEditor::LayerOwner::count() const {
 	return 0;
 }
 
-Ref<TerrainLayer> TerrainEditor::LayerOwner::get(int p_index) const {
+Ref<TerrainLayer> AsosdotTerrainEditor::LayerOwner::get(int p_index) const {
 	if (const TerrainData *t = Object::cast_to<TerrainData>(resource)) {
 		return t->get_layer(p_index);
 	}
@@ -160,7 +160,7 @@ Ref<TerrainLayer> TerrainEditor::LayerOwner::get(int p_index) const {
 	return Ref<TerrainLayer>();
 }
 
-TerrainEditor::LayerOwner TerrainEditor::_get_layer_owner() const {
+AsosdotTerrainEditor::LayerOwner AsosdotTerrainEditor::_get_layer_owner() const {
 	LayerOwner owner;
 	if (_is_voxel()) {
 		VoxelTerrain3D *voxel = _get_voxel();
@@ -178,7 +178,7 @@ TerrainEditor::LayerOwner TerrainEditor::_get_layer_owner() const {
 	return owner;
 }
 
-void TerrainEditor::edit(Object *p_object) {
+void AsosdotTerrainEditor::edit(Object *p_object) {
 	if (stroking) {
 		_end_stroke();
 	}
@@ -229,11 +229,11 @@ void TerrainEditor::edit(Object *p_object) {
 	_update_tool_ui();
 }
 
-void TerrainEditor::_watch() {
+void AsosdotTerrainEditor::_watch() {
 	const LayerOwner owner = _get_layer_owner();
 	const ObjectID data_id = owner.resource ? owner.resource->get_instance_id() : ObjectID();
 	if (data_id != watched_data) {
-		const Callable changed = callable_mp(this, &TerrainEditor::_data_changed);
+		const Callable changed = callable_mp(this, &AsosdotTerrainEditor::_data_changed);
 		Object *old = ObjectDB::get_instance(watched_data);
 		if (old) {
 			for (const StringName &signal : { SNAME("layers_changed"), SNAME("regions_changed") }) {
@@ -258,24 +258,24 @@ void TerrainEditor::_watch() {
 	if (fd_id != watched_foliage_data) {
 		FoliageData *old = ObjectDB::get_instance<FoliageData>(watched_foliage_data);
 		if (old) {
-			old->disconnect(SNAME("types_changed"), callable_mp(this, &TerrainEditor::_refresh_foliage));
-			old->disconnect(SNAME("type_changed"), callable_mp(this, &TerrainEditor::_foliage_selected).bind(-2).unbind(1));
+			old->disconnect(SNAME("types_changed"), callable_mp(this, &AsosdotTerrainEditor::_refresh_foliage));
+			old->disconnect(SNAME("type_changed"), callable_mp(this, &AsosdotTerrainEditor::_foliage_selected).bind(-2).unbind(1));
 		}
 		watched_foliage_data = fd_id;
 		if (fd.is_valid()) {
-			fd->connect(SNAME("types_changed"), callable_mp(this, &TerrainEditor::_refresh_foliage));
-			fd->connect(SNAME("type_changed"), callable_mp(this, &TerrainEditor::_foliage_selected).bind(-2).unbind(1));
+			fd->connect(SNAME("types_changed"), callable_mp(this, &AsosdotTerrainEditor::_refresh_foliage));
+			fd->connect(SNAME("type_changed"), callable_mp(this, &AsosdotTerrainEditor::_foliage_selected).bind(-2).unbind(1));
 		}
 		_refresh_foliage();
 	}
 }
 
-void TerrainEditor::_data_changed() {
+void AsosdotTerrainEditor::_data_changed() {
 	_refresh_layers();
 	_update_info();
 }
 
-void TerrainEditor::set_active(bool p_active) {
+void AsosdotTerrainEditor::set_active(bool p_active) {
 	active = p_active;
 	if (!p_active) {
 		if (stroking) {
@@ -296,7 +296,7 @@ void TerrainEditor::set_active(bool p_active) {
 	}
 }
 
-void TerrainEditor::_show_transform_gizmo(bool p_show) {
+void AsosdotTerrainEditor::_show_transform_gizmo(bool p_show) {
 	// While a brush is out, the move gizmo in the middle of the terrain would
 	// catch clicks meant for the ground.
 	Dictionary state;
@@ -310,7 +310,7 @@ void TerrainEditor::_show_transform_gizmo(bool p_show) {
 /*                                     UI                                     */
 /* -------------------------------------------------------------------------- */
 
-void TerrainEditor::_tool_toggled(bool p_pressed, int p_tool) {
+void AsosdotTerrainEditor::_tool_toggled(bool p_pressed, int p_tool) {
 	if (stroking) {
 		_end_stroke();
 	}
@@ -332,7 +332,7 @@ void TerrainEditor::_tool_toggled(bool p_pressed, int p_tool) {
 	_update_brush_preview();
 }
 
-void TerrainEditor::_update_tool_ui() {
+void AsosdotTerrainEditor::_update_tool_ui() {
 	flatten_row->set_visible(tool == TerrainBrush::TOOL_FLATTEN || tool == TerrainBrush::TOOL_REGIONS);
 	noise_slider->set_visible(tool == TerrainBrush::TOOL_NOISE);
 	terrace_slider->set_visible(tool == TerrainBrush::TOOL_TERRACE);
@@ -386,7 +386,7 @@ void TerrainEditor::_update_tool_ui() {
 	}
 }
 
-void TerrainEditor::_update_info() {
+void AsosdotTerrainEditor::_update_info() {
 	if (_is_voxel()) {
 		const Ref<VoxelTerrainData> vdata = _get_voxel_data();
 		if (vdata.is_null()) {
@@ -416,7 +416,7 @@ void TerrainEditor::_update_info() {
 	info_label->set_tooltip_text(tdata->is_built_in() ? TTR("The data is inside the scene file. The first edit moves it to its own file beside the scene, or use Terrain > Move Data to File.") : tdata->get_path());
 }
 
-void TerrainEditor::_settings_changed(double p_value) {
+void AsosdotTerrainEditor::_settings_changed(double p_value) {
 	settings.radius = size_slider->get_value();
 	settings.strength = strength_slider->get_value();
 	settings.hardness = hardness_slider->get_value();
@@ -426,16 +426,16 @@ void TerrainEditor::_settings_changed(double p_value) {
 	_update_brush_preview();
 }
 
-void TerrainEditor::_color_changed(const Color &p_color) {
+void AsosdotTerrainEditor::_color_changed(const Color &p_color) {
 	settings.color = p_color;
 	_update_brush_preview();
 }
 
-void TerrainEditor::_flatten_fixed_toggled(bool p_pressed) {
+void AsosdotTerrainEditor::_flatten_fixed_toggled(bool p_pressed) {
 	flatten_height->set_editable(p_pressed);
 }
 
-Color TerrainEditor::_tool_color() const {
+Color AsosdotTerrainEditor::_tool_color() const {
 	const bool invert = Input::get_singleton()->is_key_pressed(Key::SHIFT);
 	switch (tool) {
 		case TerrainBrush::TOOL_RAISE:
@@ -471,7 +471,7 @@ Color TerrainEditor::_tool_color() const {
 	}
 }
 
-void TerrainEditor::_update_brush_preview() {
+void AsosdotTerrainEditor::_update_brush_preview() {
 	const bool show = active && cursor_valid && tool != TerrainBrush::TOOL_NONE;
 	VoxelTerrain3D *voxel = _get_voxel();
 	if (voxel) {
@@ -491,12 +491,12 @@ void TerrainEditor::_update_brush_preview() {
 	terrain->set_brush_preview(show, cursor, radius, hardness, _tool_color());
 }
 
-void TerrainEditor::_show_message(const String &p_text) {
+void AsosdotTerrainEditor::_show_message(const String &p_text) {
 	message_dialog->set_text(p_text);
 	message_dialog->popup_centered();
 }
 
-void TerrainEditor::_update_menus() {
+void AsosdotTerrainEditor::_update_menus() {
 	// The two kinds of terrain have different things to do and to look at.
 	const bool voxel = _is_voxel();
 	PopupMenu *menu = terrain_menu->get_popup();
@@ -545,7 +545,7 @@ void TerrainEditor::_update_menus() {
 	}
 }
 
-void TerrainEditor::_menu_option(int p_option) {
+void AsosdotTerrainEditor::_menu_option(int p_option) {
 	VoxelTerrain3D *voxel = _get_voxel();
 	if (voxel) {
 		switch (p_option) {
@@ -579,10 +579,10 @@ void TerrainEditor::_menu_option(int p_option) {
 	}
 	switch (p_option) {
 		case MENU_NEW: {
-			create_dialog->popup_for(TerrainCreateDialog::MODE_NEW, terrain->get_data(), terrain->get_vertex_spacing(), _default_data_path(terrain, ".terrain.res"));
+			create_dialog->popup_for(AsosdotTerrainCreateDialog::MODE_NEW, terrain->get_data(), terrain->get_vertex_spacing(), _default_data_path(terrain, ".terrain.res"));
 		} break;
 		case MENU_IMPORT: {
-			create_dialog->popup_for(TerrainCreateDialog::MODE_IMPORT, terrain->get_data(), terrain->get_vertex_spacing(), _default_data_path(terrain, ".terrain.res"));
+			create_dialog->popup_for(AsosdotTerrainCreateDialog::MODE_IMPORT, terrain->get_data(), terrain->get_vertex_spacing(), _default_data_path(terrain, ".terrain.res"));
 		} break;
 		case MENU_EXPORT: {
 			if (_get_data().is_null() || _get_data()->get_region_count() == 0) {
@@ -614,7 +614,7 @@ void TerrainEditor::_menu_option(int p_option) {
 	}
 }
 
-void TerrainEditor::_new_voxel_data() {
+void AsosdotTerrainEditor::_new_voxel_data() {
 	VoxelTerrain3D *voxel = _get_voxel();
 	if (!voxel) {
 		return;
@@ -641,7 +641,7 @@ void TerrainEditor::_new_voxel_data() {
 	edit(voxel);
 }
 
-void TerrainEditor::_convert_to_voxel() {
+void AsosdotTerrainEditor::_convert_to_voxel() {
 	Terrain3D *terrain = _get_terrain();
 	const Ref<TerrainData> tdata = _get_data();
 	Node *scene_root = EditorNode::get_singleton()->get_edited_scene();
@@ -720,7 +720,7 @@ void TerrainEditor::_convert_to_voxel() {
 	EditorInterface::get_singleton()->edit_node(voxel);
 }
 
-void TerrainEditor::_view_option(int p_option) {
+void AsosdotTerrainEditor::_view_option(int p_option) {
 	PopupMenu *popup = view_menu->get_popup();
 	for (int i = 0; i < popup->get_item_count(); i++) {
 		popup->set_item_checked(i, popup->get_item_id(i) == p_option);
@@ -732,7 +732,7 @@ void TerrainEditor::_view_option(int p_option) {
 	}
 }
 
-void TerrainEditor::_create_confirmed() {
+void AsosdotTerrainEditor::_create_confirmed() {
 	Terrain3D *terrain = _get_terrain();
 	if (!terrain) {
 		return;
@@ -766,7 +766,7 @@ void TerrainEditor::_create_confirmed() {
 	edit(terrain);
 }
 
-void TerrainEditor::_export_selected(const String &p_path) {
+void AsosdotTerrainEditor::_export_selected(const String &p_path) {
 	const Ref<TerrainData> tdata = _get_data();
 	if (tdata.is_null()) {
 		return;
@@ -785,7 +785,7 @@ void TerrainEditor::_export_selected(const String &p_path) {
 	}
 }
 
-String TerrainEditor::_default_data_path(Node *p_node, const String &p_suffix) const {
+String AsosdotTerrainEditor::_default_data_path(Node *p_node, const String &p_suffix) const {
 	Node *scene_root = EditorNode::get_singleton()->get_edited_scene();
 	const String scene_path = scene_root ? scene_root->get_scene_file_path() : String();
 	const String node_name = String(p_node->get_name()).validate_filename().to_snake_case();
@@ -801,7 +801,7 @@ String TerrainEditor::_default_data_path(Node *p_node, const String &p_suffix) c
 	return path;
 }
 
-bool TerrainEditor::_store_external(const Ref<Resource> &p_res, const String &p_path) {
+bool AsosdotTerrainEditor::_store_external(const Ref<Resource> &p_res, const String &p_path) {
 	if (p_res.is_null() || p_path.is_empty()) {
 		return false;
 	}
@@ -816,7 +816,7 @@ bool TerrainEditor::_store_external(const Ref<Resource> &p_res, const String &p_
 	return true;
 }
 
-void TerrainEditor::_ensure_external(const Ref<Resource> &p_res, Node *p_node, const String &p_suffix) {
+void AsosdotTerrainEditor::_ensure_external(const Ref<Resource> &p_res, Node *p_node, const String &p_suffix) {
 	if (p_res.is_null() || !p_res->is_built_in() || !p_node) {
 		return;
 	}
@@ -833,7 +833,7 @@ void TerrainEditor::_ensure_external(const Ref<Resource> &p_res, Node *p_node, c
 /*                                   Layers                                   */
 /* -------------------------------------------------------------------------- */
 
-void TerrainEditor::_refresh_layers() {
+void AsosdotTerrainEditor::_refresh_layers() {
 	layer_list->clear();
 	const LayerOwner owner = _get_layer_owner();
 	const int count = owner.count();
@@ -868,7 +868,7 @@ void TerrainEditor::_refresh_layers() {
 	_update_layer_buttons();
 }
 
-void TerrainEditor::_update_layer_buttons() {
+void AsosdotTerrainEditor::_update_layer_buttons() {
 	const int count = _get_layer_owner().count();
 	const bool selected = count > 0 && settings.layer >= 0 && settings.layer < count;
 	layer_duplicate_button->set_disabled(!selected || count >= TerrainData::MAX_LAYERS);
@@ -878,7 +878,7 @@ void TerrainEditor::_update_layer_buttons() {
 	layer_remove_button->set_disabled(!selected);
 }
 
-void TerrainEditor::_inspect_selected_layer() {
+void AsosdotTerrainEditor::_inspect_selected_layer() {
 	const LayerOwner owner = _get_layer_owner();
 	TerrainLayer *layer = nullptr;
 	if (settings.layer >= 0 && settings.layer < owner.count()) {
@@ -889,7 +889,7 @@ void TerrainEditor::_inspect_selected_layer() {
 	layer_inspector->edit(layer);
 }
 
-void TerrainEditor::_layer_selected(int p_index) {
+void AsosdotTerrainEditor::_layer_selected(int p_index) {
 	settings.layer = p_index;
 	_inspect_selected_layer();
 	_update_layer_buttons();
@@ -899,7 +899,7 @@ void TerrainEditor::_layer_selected(int p_index) {
 	}
 }
 
-void TerrainEditor::_layer_add_option(int p_option) {
+void AsosdotTerrainEditor::_layer_add_option(int p_option) {
 	if (_is_voxel() && _get_voxel() && _get_voxel_data().is_null()) {
 		_new_voxel_data();
 	}
@@ -922,7 +922,7 @@ void TerrainEditor::_layer_add_option(int p_option) {
 	}
 }
 
-void TerrainEditor::_add_layers(const Vector<Ref<TerrainLayer>> &p_layers) {
+void AsosdotTerrainEditor::_add_layers(const Vector<Ref<TerrainLayer>> &p_layers) {
 	const LayerOwner owner = _get_layer_owner();
 	if (!owner.resource || p_layers.is_empty()) {
 		return;
@@ -1032,7 +1032,7 @@ TextureRole texture_role(const String &p_path, String &r_base) {
 
 } // namespace
 
-void TerrainEditor::_add_layers_from_files(const Vector<String> &p_paths) {
+void AsosdotTerrainEditor::_add_layers_from_files(const Vector<String> &p_paths) {
 	// Group by material name first, so dropping a whole texture set makes one
 	// layer with its colour and normal map rather than one layer per file.
 	HashMap<String, String> albedo_for;
@@ -1082,11 +1082,11 @@ void TerrainEditor::_add_layers_from_files(const Vector<String> &p_paths) {
 	}
 }
 
-void TerrainEditor::_layer_load_selected(const Vector<String> &p_paths) {
+void AsosdotTerrainEditor::_layer_load_selected(const Vector<String> &p_paths) {
 	_add_layers_from_files(p_paths);
 }
 
-void TerrainEditor::_duplicate_layer() {
+void AsosdotTerrainEditor::_duplicate_layer() {
 	const LayerOwner owner = _get_layer_owner();
 	if (settings.layer < 0 || settings.layer >= owner.count()) {
 		return;
@@ -1095,7 +1095,7 @@ void TerrainEditor::_duplicate_layer() {
 	_add_layers({ copy });
 }
 
-void TerrainEditor::_move_layer(int p_direction) {
+void AsosdotTerrainEditor::_move_layer(int p_direction) {
 	const LayerOwner owner = _get_layer_owner();
 	if (!owner.resource) {
 		return;
@@ -1116,7 +1116,7 @@ void TerrainEditor::_move_layer(int p_direction) {
 	_refresh_layers();
 }
 
-void TerrainEditor::_remove_layer() {
+void AsosdotTerrainEditor::_remove_layer() {
 	const LayerOwner owner = _get_layer_owner();
 	if (!owner.resource || settings.layer < 0 || settings.layer >= owner.count()) {
 		return;
@@ -1133,7 +1133,7 @@ void TerrainEditor::_remove_layer() {
 	_refresh_layers();
 }
 
-void TerrainEditor::_save_selected(bool p_foliage) {
+void AsosdotTerrainEditor::_save_selected(bool p_foliage) {
 	saving_resource.unref();
 	if (p_foliage) {
 		const Foliage3D *foliage = _get_foliage();
@@ -1160,7 +1160,7 @@ void TerrainEditor::_save_selected(bool p_foliage) {
 	resource_save_dialog->popup_file_dialog();
 }
 
-void TerrainEditor::_resource_save_selected(const String &p_path) {
+void AsosdotTerrainEditor::_resource_save_selected(const String &p_path) {
 	if (saving_resource.is_null()) {
 		return;
 	}
@@ -1186,7 +1186,7 @@ void TerrainEditor::_resource_save_selected(const String &p_path) {
 	_refresh_foliage();
 }
 
-bool TerrainEditor::_can_drop_layer(const Point2 &p_point, const Variant &p_data) const {
+bool AsosdotTerrainEditor::_can_drop_layer(const Point2 &p_point, const Variant &p_data) const {
 	const Dictionary d = p_data;
 	if (String(d.get("type", "")) != "files" || !_get_layer_owner().resource) {
 		return false;
@@ -1201,7 +1201,7 @@ bool TerrainEditor::_can_drop_layer(const Point2 &p_point, const Variant &p_data
 	return false;
 }
 
-void TerrainEditor::_drop_layer(const Point2 &p_point, const Variant &p_data) {
+void AsosdotTerrainEditor::_drop_layer(const Point2 &p_point, const Variant &p_data) {
 	const Dictionary d = p_data;
 	_add_layers_from_files(d["files"]);
 }
@@ -1210,7 +1210,7 @@ void TerrainEditor::_drop_layer(const Point2 &p_point, const Variant &p_data) {
 /*                                   Foliage                                  */
 /* -------------------------------------------------------------------------- */
 
-bool TerrainEditor::_check_ground() {
+bool AsosdotTerrainEditor::_check_ground() {
 	if (_is_voxel()) {
 		if (_get_voxel() && _get_voxel_data().is_null()) {
 			_new_voxel_data();
@@ -1224,7 +1224,7 @@ bool TerrainEditor::_check_ground() {
 	return true;
 }
 
-Foliage3D *TerrainEditor::_ensure_foliage() {
+Foliage3D *AsosdotTerrainEditor::_ensure_foliage() {
 	Foliage3D *foliage = _get_foliage();
 	Node3D *terrain = _get_edited_node();
 	if (foliage || !terrain) {
@@ -1261,7 +1261,7 @@ Foliage3D *TerrainEditor::_ensure_foliage() {
 	return foliage;
 }
 
-void TerrainEditor::_refresh_foliage() {
+void AsosdotTerrainEditor::_refresh_foliage() {
 	foliage_list->clear();
 	const Foliage3D *foliage = _get_foliage();
 	const Ref<FoliageData> fd = foliage ? foliage->get_data() : Ref<FoliageData>();
@@ -1283,7 +1283,7 @@ void TerrainEditor::_refresh_foliage() {
 		if (type.is_valid()) {
 			Ref<Resource> preview_source = type->get_scene().is_valid() ? Ref<Resource>(type->get_scene()) : Ref<Resource>(type->get_mesh());
 			if (preview_source.is_valid()) {
-				EditorResourcePreview::get_singleton()->queue_edited_resource_preview(preview_source, callable_mp(this, &TerrainEditor::_foliage_preview_ready).bind(i));
+				EditorResourcePreview::get_singleton()->queue_edited_resource_preview(preview_source, callable_mp(this, &AsosdotTerrainEditor::_foliage_preview_ready).bind(i));
 			}
 		}
 	}
@@ -1294,7 +1294,7 @@ void TerrainEditor::_refresh_foliage() {
 	_inspect_selected_foliage();
 }
 
-void TerrainEditor::_inspect_selected_foliage() {
+void AsosdotTerrainEditor::_inspect_selected_foliage() {
 	const Foliage3D *foliage = _get_foliage();
 	const Ref<FoliageData> fd = foliage ? foliage->get_data() : Ref<FoliageData>();
 	FoliageType *type = nullptr;
@@ -1304,7 +1304,7 @@ void TerrainEditor::_inspect_selected_foliage() {
 	foliage_inspector->edit(type);
 }
 
-void TerrainEditor::_duplicate_foliage_type() {
+void AsosdotTerrainEditor::_duplicate_foliage_type() {
 	const Foliage3D *foliage = _get_foliage();
 	const Ref<FoliageData> fd = foliage ? foliage->get_data() : Ref<FoliageData>();
 	if (fd.is_null() || settings.foliage_type < 0 || settings.foliage_type >= fd->get_type_count()) {
@@ -1313,13 +1313,13 @@ void TerrainEditor::_duplicate_foliage_type() {
 	_add_foliage_type(fd->get_type(settings.foliage_type)->duplicate());
 }
 
-void TerrainEditor::_foliage_preview_ready(const String &p_path, const Ref<Texture2D> &p_preview, const Ref<Texture2D> &p_small, int p_index) {
+void AsosdotTerrainEditor::_foliage_preview_ready(const String &p_path, const Ref<Texture2D> &p_preview, const Ref<Texture2D> &p_small, int p_index) {
 	if (p_preview.is_valid() && p_index < foliage_list->get_item_count()) {
 		foliage_list->set_item_icon(p_index, p_preview);
 	}
 }
 
-void TerrainEditor::_foliage_selected(int p_index) {
+void AsosdotTerrainEditor::_foliage_selected(int p_index) {
 	if (p_index == -2) {
 		// A type's settings changed; its name or preview may have too.
 		_refresh_foliage();
@@ -1339,7 +1339,7 @@ void TerrainEditor::_foliage_selected(int p_index) {
 	}
 }
 
-void TerrainEditor::_add_foliage_type(const Ref<FoliageType> &p_type) {
+void AsosdotTerrainEditor::_add_foliage_type(const Ref<FoliageType> &p_type) {
 	if (!_check_ground()) {
 		return;
 	}
@@ -1359,7 +1359,7 @@ void TerrainEditor::_add_foliage_type(const Ref<FoliageType> &p_type) {
 	_foliage_selected(settings.foliage_type);
 }
 
-Ref<FoliageType> TerrainEditor::_make_foliage_type(const Ref<Resource> &p_resource, FoliageType::Kind p_kind, String &r_error) const {
+Ref<FoliageType> AsosdotTerrainEditor::_make_foliage_type(const Ref<Resource> &p_resource, FoliageType::Kind p_kind, String &r_error) const {
 	// A saved type already says what it is.
 	const Ref<FoliageType> saved = p_resource;
 	if (saved.is_valid()) {
@@ -1412,14 +1412,14 @@ Ref<FoliageType> TerrainEditor::_make_foliage_type(const Ref<Resource> &p_resour
 	return type;
 }
 
-void TerrainEditor::_add_foliage_pressed() {
+void AsosdotTerrainEditor::_add_foliage_pressed() {
 	if (!_check_ground()) {
 		return;
 	}
 	foliage_add_dialog->popup_file_dialog();
 }
 
-void TerrainEditor::_foliage_files_selected(const Vector<String> &p_paths) {
+void AsosdotTerrainEditor::_foliage_files_selected(const Vector<String> &p_paths) {
 	const Dictionary options = foliage_add_dialog->get_selected_options();
 	const FoliageType::Kind kind = int(options.get(TTR("Paint As"), 0)) == 1 ? FoliageType::KIND_GRASS : FoliageType::KIND_OBJECT;
 	PackedStringArray errors;
@@ -1439,7 +1439,7 @@ void TerrainEditor::_foliage_files_selected(const Vector<String> &p_paths) {
 	}
 }
 
-void TerrainEditor::_remove_foliage_type() {
+void AsosdotTerrainEditor::_remove_foliage_type() {
 	Foliage3D *foliage = _get_foliage();
 	const Ref<FoliageData> fd = foliage ? foliage->get_data() : Ref<FoliageData>();
 	const Vector<int> selected = foliage_list->get_selected_items();
@@ -1456,7 +1456,7 @@ void TerrainEditor::_remove_foliage_type() {
 	_refresh_foliage();
 }
 
-bool TerrainEditor::_can_drop_foliage(const Point2 &p_point, const Variant &p_data) const {
+bool AsosdotTerrainEditor::_can_drop_foliage(const Point2 &p_point, const Variant &p_data) const {
 	const Dictionary d = p_data;
 	if (String(d.get("type", "")) != "files" || !_get_edited_node()) {
 		return false;
@@ -1471,7 +1471,7 @@ bool TerrainEditor::_can_drop_foliage(const Point2 &p_point, const Variant &p_da
 	return !files.is_empty();
 }
 
-void TerrainEditor::_drop_foliage(const Point2 &p_point, const Variant &p_data) {
+void AsosdotTerrainEditor::_drop_foliage(const Point2 &p_point, const Variant &p_data) {
 	const Dictionary d = p_data;
 	const Vector<String> files = d["files"];
 	for (const String &file : files) {
@@ -1492,7 +1492,7 @@ void TerrainEditor::_drop_foliage(const Point2 &p_point, const Variant &p_data) 
 /*                                   Strokes                                  */
 /* -------------------------------------------------------------------------- */
 
-bool TerrainEditor::_pick(Camera3D *p_camera, const Point2 &p_point, Vector3 &r_hit) const {
+bool AsosdotTerrainEditor::_pick(Camera3D *p_camera, const Point2 &p_point, Vector3 &r_hit) const {
 	const Vector3 from = p_camera->project_ray_origin(p_point);
 	const Vector3 dir = p_camera->project_ray_normal(p_point);
 	if (const VoxelTerrain3D *voxel = _get_voxel()) {
@@ -1518,7 +1518,7 @@ bool TerrainEditor::_pick(Camera3D *p_camera, const Point2 &p_point, Vector3 &r_
 	return false;
 }
 
-void TerrainEditor::_snapshot(const Rect2i &p_rect, uint32_t p_maps) {
+void AsosdotTerrainEditor::_snapshot(const Rect2i &p_rect, uint32_t p_maps) {
 	const Ref<TerrainData> tdata = _get_data();
 	if (tdata.is_null()) {
 		return;
@@ -1537,7 +1537,7 @@ void TerrainEditor::_snapshot(const Rect2i &p_rect, uint32_t p_maps) {
 	stroke_maps |= p_maps;
 }
 
-void TerrainEditor::_begin_stroke() {
+void AsosdotTerrainEditor::_begin_stroke() {
 	if (_is_voxel()) {
 		VoxelTerrain3D *voxel = _get_voxel();
 		if (!voxel) {
@@ -1618,7 +1618,7 @@ void TerrainEditor::_begin_stroke() {
 	_dab(cursor, 1.0 / 60.0);
 }
 
-void TerrainEditor::_dab(const Vector3 &p_at, float p_delta) {
+void AsosdotTerrainEditor::_dab(const Vector3 &p_at, float p_delta) {
 	if (_is_voxel()) {
 		_voxel_dab(p_at, p_delta);
 		return;
@@ -1649,7 +1649,7 @@ void TerrainEditor::_dab(const Vector3 &p_at, float p_delta) {
 	TerrainBrush::apply(terrain, foliage, tool, local, settings, p_delta, stroke_seed + dab_counter++ * 7919);
 }
 
-void TerrainEditor::_end_stroke(bool p_cancel) {
+void AsosdotTerrainEditor::_end_stroke(bool p_cancel) {
 	if (!stroking) {
 		return;
 	}
@@ -1704,7 +1704,7 @@ void TerrainEditor::_end_stroke(bool p_cancel) {
 	_update_info();
 }
 
-void TerrainEditor::_voxel_snapshot(const AABB &p_voxel_box) {
+void AsosdotTerrainEditor::_voxel_snapshot(const AABB &p_voxel_box) {
 	const Ref<VoxelTerrainData> vdata = _get_voxel_data();
 	if (vdata.is_null()) {
 		return;
@@ -1723,7 +1723,7 @@ void TerrainEditor::_voxel_snapshot(const AABB &p_voxel_box) {
 	}
 }
 
-void TerrainEditor::_voxel_dab(const Vector3 &p_at, float p_delta) {
+void AsosdotTerrainEditor::_voxel_dab(const Vector3 &p_at, float p_delta) {
 	VoxelTerrain3D *voxel = _get_voxel();
 	const Ref<VoxelTerrainData> vdata = _get_voxel_data();
 	if (!voxel || vdata.is_null()) {
@@ -1789,7 +1789,7 @@ void TerrainEditor::_voxel_dab(const Vector3 &p_at, float p_delta) {
 	(void)vdata->edit_sphere(operation, center, radius, amount, settings.hardness, use_layer, height, stroke_seed + dab_counter++ * 7919);
 }
 
-void TerrainEditor::_end_voxel_stroke(bool p_cancel) {
+void AsosdotTerrainEditor::_end_voxel_stroke(bool p_cancel) {
 	VoxelTerrain3D *voxel = _get_voxel();
 	const Ref<VoxelTerrainData> vdata = _get_voxel_data();
 	if (voxel && vdata.is_valid() && !voxel_stroke_before.is_empty()) {
@@ -1815,7 +1815,7 @@ void TerrainEditor::_end_voxel_stroke(bool p_cancel) {
 	_update_info();
 }
 
-void TerrainEditor::_end_foliage_stroke(bool p_cancel) {
+void AsosdotTerrainEditor::_end_foliage_stroke(bool p_cancel) {
 	Foliage3D *foliage = _get_foliage();
 	if (foliage_before_type >= 0 && foliage && foliage->get_data().is_valid()) {
 		const Ref<FoliageData> fd = foliage->get_data();
@@ -1839,7 +1839,7 @@ void TerrainEditor::_end_foliage_stroke(bool p_cancel) {
 /*                                    Input                                   */
 /* -------------------------------------------------------------------------- */
 
-EditorPlugin::AfterGUIInput TerrainEditor::forward_input(Camera3D *p_camera, const Ref<InputEvent> &p_event) {
+EditorPlugin::AfterGUIInput AsosdotTerrainEditor::forward_input(Camera3D *p_camera, const Ref<InputEvent> &p_event) {
 	Node3D *terrain = _get_edited_node();
 	if (!terrain || tool == TerrainBrush::TOOL_NONE || !active) {
 		return EditorPlugin::AFTER_GUI_INPUT_PASS;
@@ -1902,7 +1902,7 @@ EditorPlugin::AfterGUIInput TerrainEditor::forward_input(Camera3D *p_camera, con
 	return EditorPlugin::AFTER_GUI_INPUT_PASS;
 }
 
-void TerrainEditor::draw_overlay(Control *p_overlay) {
+void AsosdotTerrainEditor::draw_overlay(Control *p_overlay) {
 	if (tool == TerrainBrush::TOOL_NONE || !_get_edited_node()) {
 		return;
 	}
@@ -1927,7 +1927,7 @@ void TerrainEditor::draw_overlay(Control *p_overlay) {
 	p_overlay->draw_string(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(1, 1, 1));
 }
 
-void TerrainEditor::_notification(int p_what) {
+void AsosdotTerrainEditor::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_THEME_CHANGED: {
 			for (Button *b : icon_buttons) {
@@ -1977,7 +1977,7 @@ void TerrainEditor::_notification(int p_what) {
 /*                                Construction                                */
 /* -------------------------------------------------------------------------- */
 
-TerrainEditor::TerrainEditor() {
+AsosdotTerrainEditor::AsosdotTerrainEditor() {
 	set_name(TTRC("Terrain"));
 	set_icon_name("TerrainDock");
 	set_dock_shortcut(ED_SHORTCUT_AND_COMMAND("bottom_panels/toggle_terrain_bottom_panel", TTRC("Toggle Terrain Dock")));
@@ -2002,12 +2002,12 @@ TerrainEditor::TerrainEditor() {
 	terrain_menu->set_text(TTR("Terrain"));
 	terrain_menu->set_flat(false);
 	terrain_menu->set_theme_type_variation("FlatMenuButton");
-	terrain_menu->get_popup()->connect(SceneStringName(id_pressed), callable_mp(this, &TerrainEditor::_menu_option));
+	terrain_menu->get_popup()->connect(SceneStringName(id_pressed), callable_mp(this, &AsosdotTerrainEditor::_menu_option));
 	menus->add_child(terrain_menu);
 	view_menu = memnew(MenuButton);
 	view_menu->set_text(TTR("View"));
 	view_menu->set_theme_type_variation("FlatMenuButton");
-	view_menu->get_popup()->connect(SceneStringName(id_pressed), callable_mp(this, &TerrainEditor::_view_option));
+	view_menu->get_popup()->connect(SceneStringName(id_pressed), callable_mp(this, &AsosdotTerrainEditor::_view_option));
 	menus->add_child(view_menu);
 	_update_menus();
 	info_label = memnew(Label);
@@ -2037,7 +2037,7 @@ TerrainEditor::TerrainEditor() {
 			b->set_theme_type_variation(SceneStringName(FlatButton));
 			b->set_tooltip_text(TTRGET(p_infos[i].tooltip));
 			b->set_accessibility_name(TTRGET(TerrainBrush::get_tool_name(p_infos[i].tool)));
-			b->connect(SceneStringName(toggled), callable_mp(this, &TerrainEditor::_tool_toggled).bind((int)p_infos[i].tool));
+			b->connect(SceneStringName(toggled), callable_mp(this, &AsosdotTerrainEditor::_tool_toggled).bind((int)p_infos[i].tool));
 			grid->add_child(b);
 			tool_buttons[p_infos[i].tool] = b;
 		}
@@ -2062,7 +2062,7 @@ TerrainEditor::TerrainEditor() {
 		s->set_exp_ratio(p_exp);
 		s->set_allow_greater(true);
 		s->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		s->connect(SceneStringName(value_changed), callable_mp(this, &TerrainEditor::_settings_changed));
+		s->connect(SceneStringName(value_changed), callable_mp(this, &AsosdotTerrainEditor::_settings_changed));
 		brush->add_child(s);
 		return s;
 	};
@@ -2079,7 +2079,7 @@ TerrainEditor::TerrainEditor() {
 	flatten_fixed = memnew(CheckBox);
 	flatten_fixed->set_text(TTR("Fixed Height"));
 	flatten_fixed->set_tooltip_text(TTR("Off: flatten to the height where the stroke starts. On: always flatten to this height."));
-	flatten_fixed->connect(SceneStringName(toggled), callable_mp(this, &TerrainEditor::_flatten_fixed_toggled));
+	flatten_fixed->connect(SceneStringName(toggled), callable_mp(this, &AsosdotTerrainEditor::_flatten_fixed_toggled));
 	flatten_row->add_child(flatten_fixed);
 	flatten_height = memnew(SpinBox);
 	flatten_height->set_min(-100000);
@@ -2088,7 +2088,7 @@ TerrainEditor::TerrainEditor() {
 	flatten_height->set_suffix("m");
 	flatten_height->set_editable(false);
 	flatten_height->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	flatten_height->connect(SceneStringName(value_changed), callable_mp(this, &TerrainEditor::_settings_changed));
+	flatten_height->connect(SceneStringName(value_changed), callable_mp(this, &AsosdotTerrainEditor::_settings_changed));
 	flatten_row->add_child(flatten_height);
 
 	color_row = memnew(HBoxContainer);
@@ -2098,7 +2098,7 @@ TerrainEditor::TerrainEditor() {
 	color_picker->set_pick_color(settings.color);
 	color_picker->set_edit_alpha(false);
 	color_picker->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	color_picker->connect("color_changed", callable_mp(this, &TerrainEditor::_color_changed));
+	color_picker->connect("color_changed", callable_mp(this, &AsosdotTerrainEditor::_color_changed));
 	color_row->add_child(color_picker);
 
 	hint_label = memnew(Label);
@@ -2167,16 +2167,16 @@ TerrainEditor::TerrainEditor() {
 	layer_add->get_popup()->add_item(TTR("New Layer"), LAYER_NEW);
 	layer_add->get_popup()->add_item(TTR("New Layers from Textures..."), LAYER_FROM_TEXTURES);
 	layer_add->get_popup()->add_item(TTR("Load Layer..."), LAYER_LOAD);
-	layer_add->get_popup()->connect(SceneStringName(id_pressed), callable_mp(this, &TerrainEditor::_layer_add_option));
+	layer_add->get_popup()->connect(SceneStringName(id_pressed), callable_mp(this, &AsosdotTerrainEditor::_layer_add_option));
 	layer_bar->add_child(layer_add);
-	layer_duplicate_button = add_icon_button(layer_bar, SNAME("Duplicate"), TTR("Duplicate the selected layer."), callable_mp(this, &TerrainEditor::_duplicate_layer));
-	layer_left_button = add_icon_button(layer_bar, SNAME("ArrowLeft"), TTR("Move the selected layer earlier. Its painted areas move with it."), callable_mp(this, &TerrainEditor::_move_layer).bind(-1));
-	layer_right_button = add_icon_button(layer_bar, SNAME("ArrowRight"), TTR("Move the selected layer later. Its painted areas move with it."), callable_mp(this, &TerrainEditor::_move_layer).bind(1));
-	layer_save_button = add_icon_button(layer_bar, SNAME("Save"), TTR("Save the selected layer to a file, to share it with other terrains."), callable_mp(this, &TerrainEditor::_save_selected).bind(false));
-	layer_remove_button = add_icon_button(layer_bar, SNAME("Remove"), TTR("Remove the selected layer. Where it was painted, the others take over."), callable_mp(this, &TerrainEditor::_remove_layer));
+	layer_duplicate_button = add_icon_button(layer_bar, SNAME("Duplicate"), TTR("Duplicate the selected layer."), callable_mp(this, &AsosdotTerrainEditor::_duplicate_layer));
+	layer_left_button = add_icon_button(layer_bar, SNAME("ArrowLeft"), TTR("Move the selected layer earlier. Its painted areas move with it."), callable_mp(this, &AsosdotTerrainEditor::_move_layer).bind(-1));
+	layer_right_button = add_icon_button(layer_bar, SNAME("ArrowRight"), TTR("Move the selected layer later. Its painted areas move with it."), callable_mp(this, &AsosdotTerrainEditor::_move_layer).bind(1));
+	layer_save_button = add_icon_button(layer_bar, SNAME("Save"), TTR("Save the selected layer to a file, to share it with other terrains."), callable_mp(this, &AsosdotTerrainEditor::_save_selected).bind(false));
+	layer_remove_button = add_icon_button(layer_bar, SNAME("Remove"), TTR("Remove the selected layer. Where it was painted, the others take over."), callable_mp(this, &AsosdotTerrainEditor::_remove_layer));
 	layer_list = make_list();
-	layer_list->connect(SceneStringName(item_selected), callable_mp(this, &TerrainEditor::_layer_selected));
-	layer_list->set_drag_forwarding(Callable(), callable_mp(this, &TerrainEditor::_can_drop_layer), callable_mp(this, &TerrainEditor::_drop_layer));
+	layer_list->connect(SceneStringName(item_selected), callable_mp(this, &AsosdotTerrainEditor::_layer_selected));
+	layer_list->set_drag_forwarding(Callable(), callable_mp(this, &AsosdotTerrainEditor::_can_drop_layer), callable_mp(this, &AsosdotTerrainEditor::_drop_layer));
 	layer_side->add_child(layer_list);
 	layer_empty = memnew(Label);
 	layer_empty->set_text(TTR("No layers yet. Add one, or drag textures here from the FileSystem dock."));
@@ -2198,14 +2198,14 @@ TerrainEditor::TerrainEditor() {
 	foliage_add->set_text(TTR("Add..."));
 	foliage_add->set_theme_type_variation(SceneStringName(FlatButton));
 	foliage_add->set_tooltip_text(TTR("Add grass or objects from your own meshes and scenes, choosing whether each is painted as grass or placed as objects. You can also drag them from the FileSystem dock into the list."));
-	foliage_add->connect(SceneStringName(pressed), callable_mp(this, &TerrainEditor::_add_foliage_pressed));
+	foliage_add->connect(SceneStringName(pressed), callable_mp(this, &AsosdotTerrainEditor::_add_foliage_pressed));
 	foliage_bar->add_child(foliage_add);
-	foliage_duplicate_button = add_icon_button(foliage_bar, SNAME("Duplicate"), TTR("Duplicate the selected type, without what was painted with it."), callable_mp(this, &TerrainEditor::_duplicate_foliage_type));
-	foliage_save_button = add_icon_button(foliage_bar, SNAME("Save"), TTR("Save the selected type to a file, to share it with other terrains."), callable_mp(this, &TerrainEditor::_save_selected).bind(true));
-	foliage_remove_button = add_icon_button(foliage_bar, SNAME("Remove"), TTR("Remove the selected type and everything painted with it."), callable_mp(this, &TerrainEditor::_remove_foliage_type));
+	foliage_duplicate_button = add_icon_button(foliage_bar, SNAME("Duplicate"), TTR("Duplicate the selected type, without what was painted with it."), callable_mp(this, &AsosdotTerrainEditor::_duplicate_foliage_type));
+	foliage_save_button = add_icon_button(foliage_bar, SNAME("Save"), TTR("Save the selected type to a file, to share it with other terrains."), callable_mp(this, &AsosdotTerrainEditor::_save_selected).bind(true));
+	foliage_remove_button = add_icon_button(foliage_bar, SNAME("Remove"), TTR("Remove the selected type and everything painted with it."), callable_mp(this, &AsosdotTerrainEditor::_remove_foliage_type));
 	foliage_list = make_list();
-	foliage_list->connect(SceneStringName(item_selected), callable_mp(this, &TerrainEditor::_foliage_selected));
-	foliage_list->set_drag_forwarding(Callable(), callable_mp(this, &TerrainEditor::_can_drop_foliage), callable_mp(this, &TerrainEditor::_drop_foliage));
+	foliage_list->connect(SceneStringName(item_selected), callable_mp(this, &AsosdotTerrainEditor::_foliage_selected));
+	foliage_list->set_drag_forwarding(Callable(), callable_mp(this, &AsosdotTerrainEditor::_can_drop_foliage), callable_mp(this, &AsosdotTerrainEditor::_drop_foliage));
 	foliage_side->add_child(foliage_list);
 	foliage_empty = memnew(Label);
 	foliage_empty->set_text(TTR("No foliage yet. Use Add... to bring in a mesh or scene as grass or objects, or drag one here from the FileSystem dock."));
@@ -2216,8 +2216,8 @@ TerrainEditor::TerrainEditor() {
 	foliage_split->add_child(foliage_inspector);
 
 	// Dialogs.
-	create_dialog = memnew(TerrainCreateDialog);
-	create_dialog->connect(SceneStringName(confirmed), callable_mp(this, &TerrainEditor::_create_confirmed));
+	create_dialog = memnew(AsosdotTerrainCreateDialog);
+	create_dialog->connect(SceneStringName(confirmed), callable_mp(this, &AsosdotTerrainEditor::_create_confirmed));
 	add_child(create_dialog);
 
 	{
@@ -2234,7 +2234,7 @@ TerrainEditor::TerrainEditor() {
 		layer_textures_dialog->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_FILES);
 		layer_textures_dialog->set_access(EditorFileDialog::ACCESS_RESOURCES);
 		layer_textures_dialog->add_filter(String(",").join(patterns), TTR("Textures"));
-		layer_textures_dialog->connect("files_selected", callable_mp(this, &TerrainEditor::_add_layers_from_files));
+		layer_textures_dialog->connect("files_selected", callable_mp(this, &AsosdotTerrainEditor::_add_layers_from_files));
 		add_child(layer_textures_dialog);
 	}
 	layer_load_dialog = memnew(EditorFileDialog);
@@ -2242,14 +2242,14 @@ TerrainEditor::TerrainEditor() {
 	layer_load_dialog->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_FILES);
 	layer_load_dialog->set_access(EditorFileDialog::ACCESS_RESOURCES);
 	layer_load_dialog->add_filter("*.tres,*.res", TTR("Terrain Layers"));
-	layer_load_dialog->connect("files_selected", callable_mp(this, &TerrainEditor::_layer_load_selected));
+	layer_load_dialog->connect("files_selected", callable_mp(this, &AsosdotTerrainEditor::_layer_load_selected));
 	add_child(layer_load_dialog);
 	resource_save_dialog = memnew(EditorFileDialog);
 	resource_save_dialog->set_file_mode(EditorFileDialog::FILE_MODE_SAVE_FILE);
 	resource_save_dialog->set_access(EditorFileDialog::ACCESS_RESOURCES);
 	resource_save_dialog->add_filter("*.tres", TTR("Text Resource"));
 	resource_save_dialog->add_filter("*.res", TTR("Binary Resource"));
-	resource_save_dialog->connect("file_selected", callable_mp(this, &TerrainEditor::_resource_save_selected));
+	resource_save_dialog->connect("file_selected", callable_mp(this, &AsosdotTerrainEditor::_resource_save_selected));
 	add_child(resource_save_dialog);
 
 	foliage_add_dialog = memnew(EditorFileDialog);
@@ -2270,7 +2270,7 @@ TerrainEditor::TerrainEditor() {
 		foliage_add_dialog->add_filter(String(",").join(patterns), TTR("Meshes, Scenes and Foliage Types"));
 	}
 	foliage_add_dialog->add_option(TTR("Paint As"), { TTR("Objects, placed one by one"), TTR("Grass, painted as a density") }, 0);
-	foliage_add_dialog->connect("files_selected", callable_mp(this, &TerrainEditor::_foliage_files_selected));
+	foliage_add_dialog->connect("files_selected", callable_mp(this, &AsosdotTerrainEditor::_foliage_files_selected));
 	add_child(foliage_add_dialog);
 
 	export_dialog = memnew(EditorFileDialog);
@@ -2279,7 +2279,7 @@ TerrainEditor::TerrainEditor() {
 	export_dialog->add_filter("*.exr", TTR("OpenEXR (metres)"));
 	export_dialog->add_filter("*.png", TTR("PNG, 16-bit"));
 	export_dialog->add_filter("*.r16", TTR("Raw 16-bit"));
-	export_dialog->connect("file_selected", callable_mp(this, &TerrainEditor::_export_selected));
+	export_dialog->connect("file_selected", callable_mp(this, &AsosdotTerrainEditor::_export_selected));
 	add_child(export_dialog);
 
 	message_dialog = memnew(AcceptDialog);
@@ -2293,11 +2293,14 @@ TerrainEditor::TerrainEditor() {
 /*                                   Plugin                                   */
 /* -------------------------------------------------------------------------- */
 
-bool TerrainEditorPlugin::handles(Object *p_object) const {
+bool AsosdotTerrainEditorPlugin::handles(Object *p_object) const {
+	if (!terrain_editor) {
+		return false;
+	}
 	return Object::cast_to<Terrain3D>(p_object) || Object::cast_to<Foliage3D>(p_object) || Object::cast_to<VoxelTerrain3D>(p_object);
 }
 
-void TerrainEditorPlugin::edit(Object *p_object) {
+void AsosdotTerrainEditorPlugin::edit(Object *p_object) {
 	// The editor still tidies its plugins up after the dock has gone.
 	if (!terrain_editor) {
 		return;
@@ -2305,7 +2308,7 @@ void TerrainEditorPlugin::edit(Object *p_object) {
 	terrain_editor->edit(p_object);
 }
 
-void TerrainEditorPlugin::make_visible(bool p_visible) {
+void AsosdotTerrainEditorPlugin::make_visible(bool p_visible) {
 	if (!terrain_editor) {
 		return;
 	}
@@ -2317,7 +2320,10 @@ void TerrainEditorPlugin::make_visible(bool p_visible) {
 	terrain_editor->set_active(p_visible);
 }
 
-EditorPlugin::AfterGUIInput TerrainEditorPlugin::forward_3d_gui_input(Camera3D *p_camera, const Ref<InputEvent> &p_event) {
+EditorPlugin::AfterGUIInput AsosdotTerrainEditorPlugin::forward_3d_gui_input(Camera3D *p_camera, const Ref<InputEvent> &p_event) {
+	if (!terrain_editor) {
+		return EditorPlugin::AFTER_GUI_INPUT_PASS;
+	}
 	const EditorPlugin::AfterGUIInput result = terrain_editor->forward_input(p_camera, p_event);
 	if (terrain_editor->tool != TerrainBrush::TOOL_NONE) {
 		update_overlays();
@@ -2325,14 +2331,20 @@ EditorPlugin::AfterGUIInput TerrainEditorPlugin::forward_3d_gui_input(Camera3D *
 	return result;
 }
 
-void TerrainEditorPlugin::forward_3d_draw_over_viewport(Control *p_overlay) {
-	terrain_editor->draw_overlay(p_overlay);
+void AsosdotTerrainEditorPlugin::forward_3d_draw_over_viewport(Control *p_overlay) {
+	if (terrain_editor) {
+		terrain_editor->draw_overlay(p_overlay);
+	}
 }
 
-void TerrainEditorPlugin::_notification(int p_what) {
+void AsosdotTerrainEditorPlugin::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
-			terrain_editor = memnew(TerrainEditor);
+			if (ClassDB::is_asosdot_class_group_yielded("terrain")) {
+				// The project has its own class of one of the terrain's names, as with the Terrain3D extension.
+				break;
+			}
+			terrain_editor = memnew(AsosdotTerrainEditor);
 			EditorDockManager::get_singleton()->add_dock(terrain_editor);
 			terrain_editor->close();
 			terrain_editor->set_process(true);
@@ -2340,6 +2352,9 @@ void TerrainEditorPlugin::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_EXIT_TREE: {
+			if (!terrain_editor) {
+				break;
+			}
 			EditorDockManager::get_singleton()->remove_dock(terrain_editor);
 			memdelete_notnull(terrain_editor);
 			terrain_editor = nullptr;
@@ -2349,7 +2364,7 @@ void TerrainEditorPlugin::_notification(int p_what) {
 			// Grass grows around a camera, and while editing that is whichever
 			// viewport was used last.
 			Node3DEditor *editor = Node3DEditor::get_singleton();
-			if (!editor) {
+			if (!editor || !terrain_editor) {
 				break;
 			}
 			Camera3D *camera = terrain_editor ? ObjectDB::get_instance<Camera3D>(terrain_editor->last_camera) : nullptr;
@@ -2365,7 +2380,10 @@ void TerrainEditorPlugin::_notification(int p_what) {
 	}
 }
 
-TerrainEditorPlugin::TerrainEditorPlugin() {
+AsosdotTerrainEditorPlugin::AsosdotTerrainEditorPlugin() {
+	if (ClassDB::is_asosdot_class_group_yielded("terrain")) {
+		return;
+	}
 	gizmo_plugin.instantiate();
 	Node3DEditor::get_singleton()->add_gizmo_plugin(gizmo_plugin);
 	voxel_gizmo_plugin.instantiate();

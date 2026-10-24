@@ -31,6 +31,7 @@
 #pragma once
 
 #include "core/templates/rb_map.h"
+#include "core/templates/rb_set.h"
 #include "editor/editor_data.h"
 #include "editor/inspector/editor_properties.h"
 #include "editor/inspector/property_selector.h"
@@ -475,6 +476,7 @@ class AnimationTrackEdit : public Control {
 
 	bool hovered = false;
 	bool clicking_on_name = false;
+	bool double_clicking_on_name = false;
 	int hovering_key_idx = -1;
 
 	void _zoom_changed();
@@ -488,6 +490,13 @@ class AnimationTrackEdit : public Control {
 	void _path_submitted(const String &p_text);
 	void _play_position_draw();
 	bool _is_value_key_valid(const Variant &p_key_value, Variant::Type &r_valid_type) const;
+
+	// Resolved on first use during each draw. Looking the property up is expensive, and it is the same for every key on the track.
+	mutable bool key_validity_resolved = false;
+	mutable bool key_validity_has_node = false;
+	mutable bool key_validity_prop_exists = false;
+	mutable Variant::Type key_validity_prop_type = Variant::NIL;
+	void _resolve_key_validity() const;
 	bool _try_select_at_ui_pos(const Point2 &p_pos, bool p_aggregate, bool p_deselectable);
 
 	int lookup_key_idx = -1;
@@ -608,9 +617,12 @@ class AnimationTrackEditor : public VBoxContainer {
 	friend class AnimationTimelineEdit;
 	friend class AnimationBezierTrackEdit;
 	friend class AnimationMarkerKeyEditEditor;
+	friend class AnimationTrackEdit;
+	friend class AnimationTrackEditGroup;
 
 	Ref<Animation> animation;
 	bool read_only = false;
+	bool file_read_only = false;
 	Node *root = nullptr;
 
 	AcceptDialog *read_only_dialog = nullptr;
@@ -668,6 +680,9 @@ class AnimationTrackEditor : public VBoxContainer {
 	void _animation_changed();
 	void _update_tracks();
 	void _redraw_tracks();
+	void _redraw_visible_tracks();
+	bool visible_tracks_dirty = false;
+	void _queue_visible_track_redraw();
 	void _redraw_groups();
 	void _check_bezier_exist();
 
@@ -780,6 +795,61 @@ class AnimationTrackEditor : public VBoxContainer {
 	AnimationMultiTrackKeyEdit *multi_key_edit = nullptr;
 	void _update_key_edit();
 	void _clear_key_edit();
+
+	////////////// track selection
+
+	// Whole rows, as opposed to the individual keys held in `selection`. Drives
+	// the bulk operations in the Tracks menu.
+
+	enum {
+		TRACKS_SCOPE_LABEL,
+		TRACKS_SELECT_ALL,
+		TRACKS_SELECT_NONE,
+		TRACKS_SELECT_INVERT,
+		TRACKS_SET_INTERPOLATION_NEAREST,
+		TRACKS_SET_INTERPOLATION_LINEAR,
+		TRACKS_SET_INTERPOLATION_CUBIC,
+		TRACKS_SET_INTERPOLATION_LINEAR_ANGLE,
+		TRACKS_SET_INTERPOLATION_CUBIC_ANGLE,
+		TRACKS_SET_UPDATE_MODE_CONTINUOUS,
+		TRACKS_SET_UPDATE_MODE_DISCRETE,
+		TRACKS_SET_UPDATE_MODE_CAPTURE,
+		TRACKS_SET_LOOP_WRAP,
+		TRACKS_SET_LOOP_CLAMP,
+		TRACKS_SET_USE_BLEND_ENABLED,
+		TRACKS_SET_USE_BLEND_DISABLED,
+		TRACKS_ENABLE,
+		TRACKS_DISABLE,
+		// Submenu holders, never dispatched.
+		TRACKS_SUBMENU_INTERPOLATION,
+		TRACKS_SUBMENU_UPDATE_MODE,
+		TRACKS_SUBMENU_LOOP_WRAP,
+	};
+
+	RBSet<int> selected_tracks;
+	int track_selection_anchor = -1;
+
+	void _track_selection_changed();
+	bool _track_passes_filters(int p_track) const;
+	Vector<int> _get_tracks_passing_filters() const;
+	void _refresh_track_visibility();
+	void _selected_filter_toggled();
+	Vector<int> _get_displayed_track_order() const;
+	Vector<int> _get_bulk_edit_tracks() const;
+
+	MenuButton *track_menu = nullptr;
+	PopupMenu *track_interpolation_menu = nullptr;
+	PopupMenu *track_update_mode_menu = nullptr;
+	PopupMenu *track_loop_wrap_menu = nullptr;
+	void _track_menu_about_to_popup();
+	void _track_menu_pressed(int p_option);
+	String _describe_bulk_edit_scope() const;
+
+	void _set_tracks_interpolation_type(const Vector<int> &p_tracks, Animation::InterpolationType p_type);
+	void _set_tracks_update_mode(const Vector<int> &p_tracks, Animation::UpdateMode p_mode);
+	void _set_tracks_loop_wrap(const Vector<int> &p_tracks, bool p_enable);
+	void _set_tracks_use_blend(const Vector<int> &p_tracks, bool p_enable);
+	void _set_tracks_enabled(const Vector<int> &p_tracks, bool p_enabled);
 
 	Control *box_selection_container = nullptr;
 
@@ -976,11 +1046,25 @@ public:
 	void insert_transform_key(Node3D *p_node, const String &p_sub, const Animation::TrackType p_type, const Variant &p_value);
 	bool has_track(Node3D *p_node, const String &p_sub, const Animation::TrackType p_type);
 	void make_insert_queue();
-	void commit_insert_queue();
+	// Asosdot: p_confirm_new_tracks false creates missing tracks without asking, for recording.
+	void commit_insert_queue(bool p_confirm_new_tracks = true);
 
 	void show_select_node_warning(bool p_show);
 	void show_dummy_player_warning(bool p_show);
 	void show_inactive_player_warning(bool p_show);
+
+	bool is_track_selected(int p_track) const;
+	bool is_track_on_screen(const AnimationTrackEdit *p_track_edit) const;
+	bool has_track_selection() const;
+	Vector<int> get_selected_tracks() const;
+	void select_track(int p_track, bool p_toggle, bool p_extend);
+	void clear_track_selection();
+
+	/** The tracks a menu opened on `p_clicked_track` should act on: the whole track
+	 *  selection when that track is part of it, otherwise just that one track. */
+	Vector<int> get_tracks_for_menu_op(int p_clicked_track) const;
+
+	void popup_track_operations_menu(const Vector2 &p_screen_position);
 
 	bool is_key_selected(int p_track, int p_key) const;
 	bool is_selection_active() const;
@@ -1015,6 +1099,7 @@ public:
 	void popup_read_only_dialog();
 
 	MenuButton *get_edit_menu();
+	MenuButton *get_track_menu();
 	AnimationTrackEditor();
 	~AnimationTrackEditor();
 };
