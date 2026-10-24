@@ -19,9 +19,11 @@ on:
       - "asosdot-macos-templates-*"
 
 env:
+  # --keep-going: a failed build reports every compile error, not just the first.
   SCONS_FLAGS: >-
     module_text_server_fb_enabled=yes
     debug_symbols=no
+    --keep-going
 
 jobs:
   build:

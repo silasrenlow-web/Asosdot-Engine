@@ -9,6 +9,8 @@
 #include "core/object/class_db.h"
 #include "scene/3d/skeleton_3d.h"
 
+#include <cfloat>
+
 namespace {
 
 // A Skeleton3D imported from Blender is its armature turned from Z up to Y up.
