@@ -1,0 +1,144 @@
+# Asosdot: macOS export templates, which can only be built on a Mac. Started by hand only, since
+# macOS runner time is costly; pushes never run it. The result is a `macos.zip` that
+# misc/scripts/make_export_templates.py packages into Asosdot's .tpz.
+name: 🍎 Asosdot macOS export templates
+on:
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: Also build the debug template (for Export With Debug)
+        type: boolean
+        default: false
+
+env:
+  SCONS_FLAGS: >-
+    module_text_server_fb_enabled=yes
+    debug_symbols=no
+
+jobs:
+  build:
+    runs-on: macos-26
+    name: ${{ matrix.target }} (universal)
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(inputs.debug && '["template_release", "template_debug"]' || '["template_release"]') }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Restore build cache
+        uses: ./.github/actions/godot-cache-restore
+        with:
+          cache-name: asosdot-macos-${{ matrix.target }}
+        continue-on-error: true
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/godot-deps
+
+      - name: Download pre-built ANGLE
+        shell: sh
+        id: angle-sdk
+        run: |
+          if python ./misc/scripts/install_angle.py; then
+            echo "ANGLE_ENABLED=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::ANGLE SDK installation failed, building without ANGLE support."
+            echo "ANGLE_ENABLED=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download pre-built AccessKit
+        shell: sh
+        id: accesskit-sdk
+        run: |
+          if python3 ./misc/scripts/install_accesskit.py; then
+            echo "ACCESSKIT_ENABLED=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::AccessKit SDK installation failed, building without AccessKit support."
+            echo "ACCESSKIT_ENABLED=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Vulkan SDK
+        id: vulkan-sdk
+        run: |
+          if sh misc/scripts/install_vulkan_sdk_macos.sh; then
+            echo "VULKAN_ENABLED=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::macOS: Vulkan SDK installation failed, building without Vulkan support."
+            echo "VULKAN_ENABLED=no" >> "$GITHUB_OUTPUT"
+          fi
+        continue-on-error: true
+
+      - name: Compilation (x86_64)
+        uses: ./.github/actions/godot-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=x86_64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }} accesskit=${{ steps.accesskit-sdk.outputs.ACCESSKIT_ENABLED }} angle=${{ steps.angle-sdk.outputs.ANGLE_ENABLED }}
+          platform: macos
+          target: ${{ matrix.target }}
+
+      - name: Compilation (arm64)
+        uses: ./.github/actions/godot-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }} accesskit=${{ steps.accesskit-sdk.outputs.ACCESSKIT_ENABLED }} angle=${{ steps.angle-sdk.outputs.ANGLE_ENABLED }}
+          platform: macos
+          target: ${{ matrix.target }}
+
+      - name: Save build cache
+        uses: ./.github/actions/godot-cache-save
+        with:
+          cache-name: asosdot-macos-${{ matrix.target }}
+        continue-on-error: true
+
+      - name: Universal binary
+        run: |
+          lipo -create ./bin/asosdot.macos.${{ matrix.target }}.x86_64 ./bin/asosdot.macos.${{ matrix.target }}.arm64 -output ./bin/asosdot.macos.${{ matrix.target }}.universal
+          strip ./bin/asosdot.macos.${{ matrix.target }}.universal
+          chmod +x ./bin/asosdot.macos.${{ matrix.target }}.universal
+          ./bin/asosdot.macos.${{ matrix.target }}.universal --version
+
+      - name: Upload binary
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: asosdot-macos-${{ matrix.target }}
+          path: bin/asosdot.macos.${{ matrix.target }}.universal
+
+  package:
+    # Zipping needs no Mac, so it runs where minutes cost least.
+    needs: build
+    runs-on: ubuntu-latest
+    name: Package macos.zip
+    steps:
+      - name: Checkout the app bundle
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            misc/dist/macos_template.app
+            .github
+
+      - name: Download binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: asosdot-macos-template_*
+          path: binaries
+          merge-multiple: true
+
+      - name: Make macos.zip
+        run: |
+          cp -r misc/dist/macos_template.app .
+          mkdir -p macos_template.app/Contents/MacOS
+          cp binaries/asosdot.macos.template_release.universal macos_template.app/Contents/MacOS/godot_macos_release.universal
+          if [ -f binaries/asosdot.macos.template_debug.universal ]; then
+            cp binaries/asosdot.macos.template_debug.universal macos_template.app/Contents/MacOS/godot_macos_debug.universal
+          fi
+          chmod +x macos_template.app/Contents/MacOS/godot_macos_*
+          zip -q -9 -r macos.zip macos_template.app
+
+      - name: Upload macos.zip
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: asosdot-macos-templates
+          path: macos.zip
