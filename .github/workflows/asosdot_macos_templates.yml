@@ -1,6 +1,11 @@
 # Asosdot: macOS export templates, which can only be built on a Mac. Started by hand only, since
-# macOS runner time is costly; pushes never run it. The result is a `macos.zip` that
+# macOS runner time is costly; pushing a branch never runs it. The result is a `macos.zip` that
 # misc/scripts/make_export_templates.py packages into Asosdot's .tpz.
+#
+# Start it by pushing a tag, which works from any branch:
+#   git tag asosdot-macos-templates-1 && git push origin asosdot-macos-templates-1
+# A tag containing "-debug" builds the debug template too. (The Run workflow button needs this
+# file on the repository's default branch.)
 name: 🍎 Asosdot macOS export templates
 on:
   workflow_dispatch:
@@ -9,6 +14,9 @@ on:
         description: Also build the debug template (for Export With Debug)
         type: boolean
         default: false
+  push:
+    tags:
+      - "asosdot-macos-templates-*"
 
 env:
   SCONS_FLAGS: >-
@@ -23,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: ${{ fromJSON(inputs.debug && '["template_release", "template_debug"]' || '["template_release"]') }}
+        target: ${{ fromJSON((inputs.debug || contains(github.ref_name, '-debug')) && '["template_release", "template_debug"]' || '["template_release"]') }}
 
     steps:
       - name: Checkout
