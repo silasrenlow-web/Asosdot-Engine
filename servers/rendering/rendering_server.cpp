@@ -2691,6 +2691,17 @@ void RenderingServer::_bind_methods() {
 	BIND_ENUM_CONSTANT(RSE::VOXEL_GI_QUALITY_LOW);
 	BIND_ENUM_CONSTANT(RSE::VOXEL_GI_QUALITY_HIGH);
 
+	/* REALTIME GI */
+
+	ClassDB::bind_method(D_METHOD("realtime_gi_create"), &RenderingServer::realtime_gi_create);
+	ClassDB::bind_method(D_METHOD("realtime_gi_set_surfaces", "realtime_gi", "atlas_size", "patches", "cluster_offsets", "texel_patches"), &RenderingServer::realtime_gi_set_surfaces);
+	ClassDB::bind_method(D_METHOD("realtime_gi_set_transport", "realtime_gi", "ray_count", "offsets", "entries", "sky_visibility"), &RenderingServer::realtime_gi_set_transport);
+	ClassDB::bind_method(D_METHOD("realtime_gi_set_geometry", "realtime_gi", "bounds", "bvh", "triangles"), &RenderingServer::realtime_gi_set_geometry);
+	ClassDB::bind_method(D_METHOD("realtime_gi_set_probes", "realtime_gi", "points", "ray_count", "rays", "tetrahedra", "bsp_tree"), &RenderingServer::realtime_gi_set_probes);
+	ClassDB::bind_method(D_METHOD("realtime_gi_set_energy", "realtime_gi", "indirect_energy", "environment_energy", "albedo_boost", "emission_energy"), &RenderingServer::realtime_gi_set_energy);
+	ClassDB::bind_method(D_METHOD("realtime_gi_set_quality", "realtime_gi", "bounces_per_frame", "shadow_samples", "probe_update_interval"), &RenderingServer::realtime_gi_set_quality);
+	ClassDB::bind_method(D_METHOD("realtime_gi_set_interior", "realtime_gi", "interior"), &RenderingServer::realtime_gi_set_interior);
+
 	/* LIGHTMAP */
 
 	ClassDB::bind_method(D_METHOD("lightmap_create"), &RenderingServer::lightmap_create);
@@ -3299,6 +3310,7 @@ void RenderingServer::_bind_methods() {
 	BIND_ENUM_CONSTANT(RSE::INSTANCE_VISIBLITY_NOTIFIER);
 	BIND_ENUM_CONSTANT(RSE::INSTANCE_FOG_VOLUME);
 	BIND_ENUM_CONSTANT(RSE::INSTANCE_LENS_FLARE);
+	BIND_ENUM_CONSTANT(RSE::INSTANCE_REALTIME_GI);
 	BIND_ENUM_CONSTANT(RSE::INSTANCE_MAX);
 
 	BIND_ENUM_CONSTANT(RSE::INSTANCE_GEOMETRY_MASK);

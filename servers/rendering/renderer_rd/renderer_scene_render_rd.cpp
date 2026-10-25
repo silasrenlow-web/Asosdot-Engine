@@ -2068,6 +2068,9 @@ void RendererSceneRenderRD::init() {
 		gi.init(&sky);
 	}
 
+	// Realtime GI writes a lightmap, which both Forward+ and Mobile draw.
+	gi.realtime_gi.init();
+
 	{ //decals
 		RendererRD::TextureStorage::get_singleton()->set_max_decals(max_cluster_elements);
 	}
@@ -2214,6 +2217,7 @@ RendererSceneRenderRD::~RendererSceneRenderRD() {
 	if (is_dynamic_gi_supported()) {
 		gi.free();
 	}
+	gi.realtime_gi.free();
 
 	if (is_volumetric_supported()) {
 		RendererRD::Fog::get_singleton()->free_fog_shader();

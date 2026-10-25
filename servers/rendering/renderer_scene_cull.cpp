@@ -260,7 +260,7 @@ void RendererSceneCull::_instance_pair(Instance *p_A, Instance *p_B) {
 			idata.flags |= InstanceData::FLAG_GEOM_DECAL_DIRTY;
 		}
 
-	} else if (B->base_type == RSE::INSTANCE_LIGHTMAP && ((1 << A->base_type) & RSE::INSTANCE_GEOMETRY_MASK)) {
+	} else if (_is_lightmap_type(B->base_type) && ((1 << A->base_type) & RSE::INSTANCE_GEOMETRY_MASK)) {
 		InstanceLightmapData *lightmap_data = static_cast<InstanceLightmapData *>(B->base_data);
 		InstanceGeometryData *geom = static_cast<InstanceGeometryData *>(A->base_data);
 
@@ -295,6 +295,9 @@ void RendererSceneCull::_instance_pair(Instance *p_A, Instance *p_B) {
 	} else if (B->base_type == RSE::INSTANCE_VOXEL_GI && A->base_type == RSE::INSTANCE_LIGHT) {
 		InstanceVoxelGIData *voxel_gi = static_cast<InstanceVoxelGIData *>(B->base_data);
 		voxel_gi->lights.insert(A);
+	} else if (B->base_type == RSE::INSTANCE_REALTIME_GI && A->base_type == RSE::INSTANCE_LIGHT) {
+		InstanceRealtimeGIData *realtime_gi = static_cast<InstanceRealtimeGIData *>(B->base_data);
+		realtime_gi->lights.insert(A);
 	} else if (B->base_type == RSE::INSTANCE_PARTICLES_COLLISION && A->base_type == RSE::INSTANCE_PARTICLES) {
 		InstanceParticlesCollisionData *collision = static_cast<InstanceParticlesCollisionData *>(B->base_data);
 
@@ -390,7 +393,7 @@ void RendererSceneCull::_instance_unpair(Instance *p_A, Instance *p_B) {
 			idata.flags |= InstanceData::FLAG_GEOM_DECAL_DIRTY;
 		}
 
-	} else if (B->base_type == RSE::INSTANCE_LIGHTMAP && ((1 << A->base_type) & RSE::INSTANCE_GEOMETRY_MASK)) {
+	} else if (_is_lightmap_type(B->base_type) && ((1 << A->base_type) & RSE::INSTANCE_GEOMETRY_MASK)) {
 		InstanceLightmapData *lightmap_data = static_cast<InstanceLightmapData *>(B->base_data);
 		InstanceGeometryData *geom = static_cast<InstanceGeometryData *>(A->base_data);
 		if (A->dynamic_gi) {
@@ -424,6 +427,9 @@ void RendererSceneCull::_instance_unpair(Instance *p_A, Instance *p_B) {
 	} else if (B->base_type == RSE::INSTANCE_VOXEL_GI && A->base_type == RSE::INSTANCE_LIGHT) {
 		InstanceVoxelGIData *voxel_gi = static_cast<InstanceVoxelGIData *>(B->base_data);
 		voxel_gi->lights.erase(A);
+	} else if (B->base_type == RSE::INSTANCE_REALTIME_GI && A->base_type == RSE::INSTANCE_LIGHT) {
+		InstanceRealtimeGIData *realtime_gi = static_cast<InstanceRealtimeGIData *>(B->base_data);
+		realtime_gi->lights.erase(A);
 	} else if (B->base_type == RSE::INSTANCE_PARTICLES_COLLISION && A->base_type == RSE::INSTANCE_PARTICLES) {
 		InstanceParticlesCollisionData *collision = static_cast<InstanceParticlesCollisionData *>(B->base_data);
 
@@ -666,6 +672,16 @@ void RendererSceneCull::instance_set_base(RID p_instance, RID p_base) {
 				}
 				RSG::light_storage->lightmap_instance_free(lightmap_data->instance);
 			} break;
+			case RSE::INSTANCE_REALTIME_GI: {
+				InstanceRealtimeGIData *realtime_gi = static_cast<InstanceRealtimeGIData *>(instance->base_data);
+				while (realtime_gi->users.begin()) {
+					instance_geometry_set_lightmap((*realtime_gi->users.begin())->self, RID(), Rect2(), 0);
+				}
+				if (realtime_gi->update_element.in_list()) {
+					realtime_gi_update_list.remove(&realtime_gi->update_element);
+				}
+				RSG::light_storage->lightmap_instance_free(realtime_gi->instance);
+			} break;
 			case RSE::INSTANCE_VOXEL_GI: {
 				InstanceVoxelGIData *voxel_gi = static_cast<InstanceVoxelGIData *>(instance->base_data);
 #ifdef DEBUG_ENABLED
@@ -814,6 +830,15 @@ void RendererSceneCull::instance_set_base(RID p_instance, RID p_base) {
 				instance->base_data = lightmap_data;
 				lightmap_data->instance = RSG::light_storage->lightmap_instance_create(p_base);
 			} break;
+			case RSE::INSTANCE_REALTIME_GI: {
+				InstanceRealtimeGIData *realtime_gi = memnew(InstanceRealtimeGIData);
+				instance->base_data = realtime_gi;
+				realtime_gi->owner = instance;
+				realtime_gi->instance = RSG::light_storage->lightmap_instance_create(RSG::gi->realtime_gi_get_lightmap(p_base));
+				if (scenario && !realtime_gi->update_element.in_list()) {
+					realtime_gi_update_list.add(&realtime_gi->update_element);
+				}
+			} break;
 			case RSE::INSTANCE_VOXEL_GI: {
 				InstanceVoxelGIData *voxel_gi = memnew(InstanceVoxelGIData);
 				instance->base_data = voxel_gi;
@@ -909,6 +934,12 @@ void RendererSceneCull::instance_set_scenario(RID p_instance, RID p_scenario) {
 					voxel_gi_update_list.remove(&voxel_gi->update_element);
 				}
 			} break;
+			case RSE::INSTANCE_REALTIME_GI: {
+				InstanceRealtimeGIData *realtime_gi = static_cast<InstanceRealtimeGIData *>(instance->base_data);
+				if (realtime_gi->update_element.in_list()) {
+					realtime_gi_update_list.remove(&realtime_gi->update_element);
+				}
+			} break;
 			case RSE::INSTANCE_OCCLUDER: {
 				if (instance->visible) {
 					RendererSceneOcclusionCull::get_singleton()->scenario_remove_instance(instance->scenario->self, p_instance);
@@ -946,6 +977,12 @@ void RendererSceneCull::instance_set_scenario(RID p_instance, RID p_scenario) {
 			case RSE::INSTANCE_LENS_FLARE: {
 				InstanceLensFlareData *flare = static_cast<InstanceLensFlareData *>(instance->base_data);
 				flare->D = scenario->lens_flares.push_back(instance);
+			} break;
+			case RSE::INSTANCE_REALTIME_GI: {
+				InstanceRealtimeGIData *realtime_gi = static_cast<InstanceRealtimeGIData *>(instance->base_data);
+				if (!realtime_gi->update_element.in_list()) {
+					realtime_gi_update_list.add(&realtime_gi->update_element);
+				}
 			} break;
 			case RSE::INSTANCE_OCCLUDER: {
 				RendererSceneOcclusionCull::get_singleton()->scenario_set_instance(scenario->self, p_instance, instance->base, instance->transform, instance->visible);
@@ -1693,7 +1730,7 @@ void RendererSceneCull::_update_instance(Instance *p_instance) const {
 
 		RSG::texture_storage->decal_instance_set_transform(decal->instance, *instance_xform);
 		decal->cull_mask = RSG::texture_storage->decal_get_cull_mask(p_instance->base);
-	} else if (p_instance->base_type == RSE::INSTANCE_LIGHTMAP) {
+	} else if (_is_lightmap_type(p_instance->base_type)) {
 		InstanceLightmapData *lightmap = static_cast<InstanceLightmapData *>(p_instance->base_data);
 
 		RSG::light_storage->lightmap_instance_set_transform(lightmap->instance, *instance_xform);
@@ -1727,7 +1764,7 @@ void RendererSceneCull::_update_instance(Instance *p_instance) const {
 		return;
 	}
 
-	if (p_instance->base_type == RSE::INSTANCE_LIGHTMAP) {
+	if (_is_lightmap_type(p_instance->base_type)) {
 		//if this moved, update the captured objects
 		InstanceLightmapData *lightmap_data = static_cast<InstanceLightmapData *>(p_instance->base_data);
 		//erase dependencies, since no longer a lightmap
@@ -1838,7 +1875,8 @@ void RendererSceneCull::_update_instance(Instance *p_instance) const {
 			case RSE::INSTANCE_DECAL: {
 				idata.instance_data_rid = static_cast<InstanceDecalData *>(p_instance->base_data)->instance.get_id();
 			} break;
-			case RSE::INSTANCE_LIGHTMAP: {
+			case RSE::INSTANCE_LIGHTMAP:
+			case RSE::INSTANCE_REALTIME_GI: {
 				idata.instance_data_rid = static_cast<InstanceLightmapData *>(p_instance->base_data)->instance.get_id();
 			} break;
 			case RSE::INSTANCE_VOXEL_GI: {
@@ -1911,6 +1949,7 @@ void RendererSceneCull::_update_instance(Instance *p_instance) const {
 		pair.pair_mask |= 1 << RSE::INSTANCE_LIGHT;
 		pair.pair_mask |= 1 << RSE::INSTANCE_VOXEL_GI;
 		pair.pair_mask |= 1 << RSE::INSTANCE_LIGHTMAP;
+		pair.pair_mask |= 1 << RSE::INSTANCE_REALTIME_GI;
 		if (p_instance->base_type == RSE::INSTANCE_PARTICLES) {
 			pair.pair_mask |= 1 << RSE::INSTANCE_PARTICLES_COLLISION;
 		}
@@ -1924,12 +1963,17 @@ void RendererSceneCull::_update_instance(Instance *p_instance) const {
 
 		RSE::LightBakeMode bake_mode = RSG::light_storage->light_get_bake_mode(p_instance->base);
 		if (bake_mode == RSE::LIGHT_BAKE_STATIC || bake_mode == RSE::LIGHT_BAKE_DYNAMIC) {
-			pair.pair_mask |= (1 << RSE::INSTANCE_VOXEL_GI);
+			pair.pair_mask |= (1 << RSE::INSTANCE_VOXEL_GI) | (1 << RSE::INSTANCE_REALTIME_GI);
 			pair.bvh2 = &p_instance->scenario->indexers[Scenario::INDEXER_VOLUMES];
 		}
 	} else if (p_instance->base_type == RSE::INSTANCE_LIGHTMAP) {
 		pair.pair_mask = RSE::INSTANCE_GEOMETRY_MASK;
 		pair.bvh = &p_instance->scenario->indexers[Scenario::INDEXER_GEOMETRY];
+	} else if (p_instance->base_type == RSE::INSTANCE_REALTIME_GI) {
+		// Dynamic geometry it captures, and the lights it relights with.
+		pair.pair_mask = RSE::INSTANCE_GEOMETRY_MASK | (1 << RSE::INSTANCE_LIGHT);
+		pair.bvh = &p_instance->scenario->indexers[Scenario::INDEXER_GEOMETRY];
+		pair.bvh2 = &p_instance->scenario->indexers[Scenario::INDEXER_VOLUMES];
 	} else if (geometry_instance_pair_mask & (1 << RSE::INSTANCE_REFLECTION_PROBE) && (p_instance->base_type == RSE::INSTANCE_REFLECTION_PROBE)) {
 		pair.pair_mask = RSE::INSTANCE_GEOMETRY_MASK;
 		pair.bvh = &p_instance->scenario->indexers[Scenario::INDEXER_GEOMETRY];
@@ -2085,6 +2129,10 @@ void RendererSceneCull::_update_instance_aabb(Instance *p_instance) const {
 			new_aabb = RSG::light_storage->lightmap_get_aabb(p_instance->base);
 
 		} break;
+		case RSE::INSTANCE_REALTIME_GI: {
+			new_aabb = RSG::gi->realtime_gi_get_bounds(p_instance->base);
+
+		} break;
 		default: {
 		}
 	}
@@ -2112,8 +2160,9 @@ void RendererSceneCull::_update_instance_lightmap_captures(Instance *p_instance)
 
 	for (Instance *E : geom->lightmap_captures) {
 		Instance *lightmap = E;
+		const RID lightmap_rid = _get_lightmap_rid(lightmap);
 
-		bool interior = RSG::light_storage->lightmap_is_interior(lightmap->base);
+		bool interior = RSG::light_storage->lightmap_is_interior(lightmap_rid);
 
 		if (inside && !interior) {
 			continue; //we are inside, ignore exteriors
@@ -2124,10 +2173,10 @@ void RendererSceneCull::_update_instance_lightmap_captures(Instance *p_instance)
 
 		Vector3 lm_pos = to_bounds.xform(center);
 
-		AABB bounds = RSG::light_storage->lightmap_get_aabb(lightmap->base);
+		AABB bounds = RSG::light_storage->lightmap_get_aabb(lightmap_rid);
 
 		Color sh[9];
-		RSG::light_storage->lightmap_tap_sh_light(lightmap->base, lm_pos, sh);
+		RSG::light_storage->lightmap_tap_sh_light(lightmap_rid, lm_pos, sh);
 
 		//rotate it
 		Basis rot = lightmap->transform.basis.orthonormalized();
@@ -3006,7 +3055,7 @@ void RendererSceneCull::_scene_cull(CullData &cull_data, InstanceCullResult &cul
 					cull_data.cull->lock.unlock();
 					cull_result.voxel_gi_instances.push_back(RID::from_uint64(idata.instance_data_rid));
 
-				} else if (base_type == RSE::INSTANCE_LIGHTMAP) {
+				} else if (base_type == RSE::INSTANCE_LIGHTMAP || base_type == RSE::INSTANCE_REALTIME_GI) {
 					cull_result.lightmaps.push_back(RID::from_uint64(idata.instance_data_rid));
 				} else if (base_type == RSE::INSTANCE_FOG_VOLUME) {
 					cull_result.fog_volumes.push_back(RID::from_uint64(idata.instance_data_rid));
@@ -4189,6 +4238,71 @@ void RendererSceneCull::render_probes() {
 		voxel_gi_update_list.remove(voxel_gi);
 
 		voxel_gi = next;
+	}
+
+	_update_realtime_gi();
+}
+
+void RendererSceneCull::_update_realtime_gi() {
+	SelfList<InstanceRealtimeGIData> *element = realtime_gi_update_list.first();
+	if (element) {
+		RENDER_TIMESTAMP("Update Realtime GI");
+	}
+
+	while (element) {
+		InstanceRealtimeGIData *realtime_gi = element->self();
+		Instance *instance = realtime_gi->owner;
+		element = element->next();
+
+		if (!instance->visible || !instance->scenario) {
+			continue;
+		}
+
+		// Unlike VoxelGI, realtime GI relights every frame, so it takes the
+		// lights as they are now rather than caching and comparing them; the
+		// renderer notices on its own when nothing changed.
+		realtime_gi->light_cache.clear();
+		auto add_light = [&](const Instance *p_light) {
+			if (!p_light->visible) {
+				return;
+			}
+			const RID base = p_light->base;
+			RSE::LightBakeMode bake_mode = RSG::light_storage->light_get_bake_mode(base);
+			if (bake_mode == RSE::LIGHT_BAKE_DISABLED) {
+				return;
+			}
+			RendererGI::RealtimeGILight light;
+			light.type = RSG::light_storage->light_get_type(base);
+			light.transform = p_light->transform;
+			light.color = RSG::light_storage->light_get_color(base);
+			light.energy = RSG::light_storage->light_get_param(base, RSE::LIGHT_PARAM_ENERGY);
+			light.intensity = RSG::light_storage->light_get_param(base, RSE::LIGHT_PARAM_INTENSITY);
+			light.indirect_energy = RSG::light_storage->light_get_param(base, RSE::LIGHT_PARAM_INDIRECT_ENERGY);
+			light.range = RSG::light_storage->light_get_param(base, RSE::LIGHT_PARAM_RANGE);
+			light.attenuation = RSG::light_storage->light_get_param(base, RSE::LIGHT_PARAM_ATTENUATION);
+			light.spot_angle = RSG::light_storage->light_get_param(base, RSE::LIGHT_PARAM_SPOT_ANGLE);
+			light.spot_attenuation = RSG::light_storage->light_get_param(base, RSE::LIGHT_PARAM_SPOT_ATTENUATION);
+			light.has_shadow = RSG::light_storage->light_has_shadow(base);
+			light.bake_static = bake_mode == RSE::LIGHT_BAKE_STATIC;
+			realtime_gi->light_cache.push_back(light);
+		};
+		for (const Instance *light : realtime_gi->lights) {
+			add_light(light);
+		}
+		for (const Instance *light : instance->scenario->directional_lights) {
+			add_light(light);
+		}
+
+		RID environment = instance->scenario->environment.is_valid() ? instance->scenario->environment : instance->scenario->fallback_environment;
+		if (RSG::gi->realtime_gi_update(instance->base, instance->transform, realtime_gi->light_cache, environment)) {
+			// New probe lighting: recapture what the probes light.
+			for (Instance *geometry : realtime_gi->geometries) {
+				InstanceGeometryData *geom = static_cast<InstanceGeometryData *>(geometry->base_data);
+				if (!geometry->lightmap && geom->lightmap_captures.size()) {
+					_update_instance_lightmap_captures(geometry);
+				}
+			}
+		}
 	}
 }
 

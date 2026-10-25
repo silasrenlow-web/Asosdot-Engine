@@ -415,6 +415,19 @@ public:
 
 	virtual void sdfgi_reset() = 0;
 
+	/* REALTIME GI API */
+
+	virtual RID realtime_gi_create() = 0;
+
+	virtual void realtime_gi_set_surfaces(RID p_realtime_gi, const Vector2i &p_atlas_size, const PackedFloat32Array &p_patches, const PackedInt32Array &p_cluster_offsets, const PackedInt32Array &p_texel_patches) = 0;
+	virtual void realtime_gi_set_transport(RID p_realtime_gi, int p_ray_count, const PackedInt32Array &p_offsets, const PackedInt32Array &p_entries, const PackedFloat32Array &p_sky_visibility) = 0;
+	virtual void realtime_gi_set_geometry(RID p_realtime_gi, const AABB &p_bounds, const PackedInt32Array &p_bvh, const PackedFloat32Array &p_triangles) = 0;
+	virtual void realtime_gi_set_probes(RID p_realtime_gi, const PackedVector3Array &p_points, int p_ray_count, const PackedInt32Array &p_rays, const PackedInt32Array &p_tetrahedra, const PackedInt32Array &p_bsp_tree) = 0;
+
+	virtual void realtime_gi_set_energy(RID p_realtime_gi, float p_indirect_energy, float p_environment_energy, float p_albedo_boost, float p_emission_energy) = 0;
+	virtual void realtime_gi_set_quality(RID p_realtime_gi, int p_bounces_per_frame, int p_shadow_samples, int p_probe_update_interval) = 0;
+	virtual void realtime_gi_set_interior(RID p_realtime_gi, bool p_interior) = 0;
+
 	/* LIGHTMAP API */
 
 	virtual RID lightmap_create() = 0;

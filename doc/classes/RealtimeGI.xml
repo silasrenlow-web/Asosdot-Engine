@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="RealtimeGI" inherits="VisualInstance3D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		Bounced light for static scenes that follows every light as it moves and changes.
+	</brief_description>
+	<description>
+		[RealtimeGI] gives static scenes global illumination, the light that bounces off walls, floors and ceilings, while every light in the scene stays free to move, turn, switch on and off, and change colour and brightness. A sun can set, a flashlight can sweep a room, and the bounced light follows at once. Like Enlighten, it splits the work in two:
+		- [b]The bake[/b] cuts static surfaces into patches about [member patch_size] across and traces how light travels between them and from the sky. That only depends on the geometry, so it never needs redoing when lights change.
+		- [b]Every frame[/b], the GPU lights each patch with the scene's lights as they are now, with traced shadows, bounces that light once through the baked transport, and writes the result into a lightmap. Each frame builds on the last, so the light keeps bouncing.
+		Static meshes it lights sample that lightmap like a baked one, through their UV2. Dynamic objects pick up the bounced light from probes placed through the scene every [member probe_spacing] metres. The sky and the [Environment]'s ambient light light the patches the way they light everything else.
+		Lights take part according to [member Light3D.light_bake_mode]: [constant Light3D.BAKE_DYNAMIC] lights bounce through realtime GI and light surfaces directly as usual; [constant Light3D.BAKE_STATIC] lights are drawn into the lightmap entirely, direct light included, at the resolution of the patches, which costs nothing per pixel; [constant Light3D.BAKE_DISABLED] lights don't bounce. [member Light3D.light_indirect_energy] scales a light's bounce. Lights with [member Light3D.shadow_enabled] off shine through walls for realtime GI too, as they do directly.
+		[b]Requirements:[/b] Meshes to light need [member GeometryInstance3D.gi_mode] set to [constant GeometryInstance3D.GI_MODE_STATIC]. Meshes without a UV2 channel are given one (see [member generate_uv2]). Select the node and press [b]Bake Realtime GI[/b] at the top of the 3D editor; the bake is saved next to the scene.
+		[b]Note:[/b] [RealtimeGI] needs the Forward+ or Mobile renderer, which have compute shaders. It writes the lightmap of the meshes it lights, so a mesh shouldn't also be lit by a [LightmapGI].
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="bake">
+			<return type="int" />
+			<param index="0" name="from_node" type="Node" default="null" />
+			<param index="1" name="save_path" type="String" default="&quot;&quot;" />
+			<description>
+				Bakes the static meshes under [param from_node] (the parent of this node when [code]null[/code]) and saves the result to [param save_path], or next to the scene when it's empty. Returns a [enum BakeError]. Only available in editor builds, which have the ray tracer the bake needs.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="albedo_boost" type="float" setter="set_albedo_boost" getter="get_albedo_boost" default="1.0">
+			Multiplies the colour of every surface as light bounces off it. Higher values make bounced light carry further and more colourfully. Albedo is capped at 98%, so light always fades.
+		</member>
+		<member name="bake_quality" type="int" setter="set_bake_quality" getter="get_bake_quality" enum="RealtimeGI.BakeQuality" default="1">
+			How many rays each patch casts during the bake: 64, 128, 256 or 512. More rays catch smaller things in a patch's view and make the bounced light smoother, at the cost of bake time. It doesn't change the cost per frame much.
+		</member>
+		<member name="bounces_per_frame" type="int" setter="set_bounces_per_frame" getter="get_bounces_per_frame" default="1">
+			How many bounces the GPU adds each frame. Light keeps bouncing over successive frames either way; more per frame lets it settle faster after a change, at more cost per frame.
+		</member>
+		<member name="data" type="RealtimeGIData" setter="set_data" getter="get_data">
+			The bake. Rebaking replaces it.
+		</member>
+		<member name="emission_energy" type="float" setter="set_emission_energy" getter="get_emission_energy" default="1.0">
+			Multiplies the light emissive surfaces give off into the bounce. Emissive materials light their surroundings through realtime GI.
+		</member>
+		<member name="energy" type="float" setter="set_energy" getter="get_energy" default="1.0">
+			Multiplies the bounced light, on static surfaces and on dynamic objects.
+		</member>
+		<member name="environment_energy" type="float" setter="set_environment_energy" getter="get_environment_energy" default="1.0">
+			Multiplies the light the sky and the [Environment]'s ambient light give the scene through realtime GI. Surfaces it lights take their ambient light from it rather than from the [Environment] directly.
+		</member>
+		<member name="generate_uv2" type="bool" setter="set_generate_uv2" getter="is_generating_uv2" default="true">
+			If [code]true[/code], static meshes without UV2 get a copy with UV2 unwrapped for them during the bake, the way Unity generates lightmap UVs, so a scene imported without lightmap UVs still gets bounced light. The copies are saved in [member data] and drawn in place of the original meshes while this node is in the scene; the meshes themselves aren't changed. Each mesh is unwrapped once however many times it's used. Skinned meshes and meshes with blend shapes aren't unwrapped. If [code]false[/code], meshes without UV2 only cast shadows.
+		</member>
+		<member name="interior" type="bool" setter="set_interior" getter="is_interior" default="false">
+			If [code]true[/code], dynamic objects inside this [RealtimeGI] take their lighting only from it, as for [member LightmapGI.interior].
+		</member>
+		<member name="max_patches" type="int" setter="set_max_patches" getter="get_max_patches" default="65536">
+			The most patches a bake makes. Large surfaces such as terrain already get coarser patches than [member patch_size], at most 128 across a mesh; if the scene still needs more patches than this, all of them grow until it fits. The cost per frame and the size of [member data] follow the number of patches, so this bounds both. Takes effect on the next bake.
+		</member>
+		<member name="patch_size" type="float" setter="set_patch_size" getter="get_patch_size" default="0.5">
+			The size in metres of the patches surfaces are cut into, and so of a lightmap texel. Bounced light is soft, so half a metre is usually enough; smaller patches show finer detail, such as light pooling in corners, at more cost. Static lights' direct light is drawn at this resolution too. Takes effect on the next bake.
+		</member>
+		<member name="probe_spacing" type="float" setter="set_probe_spacing" getter="get_probe_spacing" default="2.0">
+			The distance in metres between probes that light dynamic objects. [code]0[/code] places no probes. A scene with more than 8192 probes at this spacing gets a wider one. Takes effect on the next bake.
+		</member>
+		<member name="probe_update_interval" type="int" setter="set_probe_update_interval" getter="get_probe_update_interval" default="4">
+			How many frames pass between updates of the probes. Probe lighting is read back from the GPU, so updating it less often costs less; dynamic objects blend towards new values as they arrive.
+		</member>
+		<member name="shadow_samples" type="int" setter="set_shadow_samples" getter="get_shadow_samples" default="2">
+			How many shadow rays each patch casts towards each light, spread over the patch, so a shadow edge crossing a patch shades it partly. More samples give smoother bounced shadows.
+		</member>
+	</members>
+	<constants>
+		<constant name="BAKE_QUALITY_LOW" value="0" enum="BakeQuality">
+			64 rays per patch.
+		</constant>
+		<constant name="BAKE_QUALITY_MEDIUM" value="1" enum="BakeQuality">
+			128 rays per patch.
+		</constant>
+		<constant name="BAKE_QUALITY_HIGH" value="2" enum="BakeQuality">
+			256 rays per patch.
+		</constant>
+		<constant name="BAKE_QUALITY_ULTRA" value="3" enum="BakeQuality">
+			512 rays per patch.
+		</constant>
+		<constant name="BAKE_ERROR_OK" value="0" enum="BakeError">
+			The bake succeeded.
+		</constant>
+		<constant name="BAKE_ERROR_NO_SCENE_ROOT" value="1" enum="BakeError">
+			There was no scene to bake.
+		</constant>
+		<constant name="BAKE_ERROR_NO_SAVE_PATH" value="2" enum="BakeError">
+			The scene hasn't been saved, so there's nowhere next to it to save the bake.
+		</constant>
+		<constant name="BAKE_ERROR_NO_MESHES" value="3" enum="BakeError">
+			No static meshes with UV2 were found.
+		</constant>
+		<constant name="BAKE_ERROR_NO_RAYCASTER" value="4" enum="BakeError">
+			The ray tracer the bake needs isn't available; it's only in editor builds.
+		</constant>
+		<constant name="BAKE_ERROR_CANT_SAVE" value="5" enum="BakeError">
+			The bake couldn't be saved.
+		</constant>
+		<constant name="BAKE_ERROR_USER_ABORTED" value="6" enum="BakeError">
+			The bake was cancelled.
+		</constant>
+	</constants>
+</class>

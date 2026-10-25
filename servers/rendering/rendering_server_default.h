@@ -606,6 +606,16 @@ public:
 
 	FUNC0(sdfgi_reset)
 
+	FUNCRIDSPLIT(realtime_gi)
+
+	FUNC5(realtime_gi_set_surfaces, RID, const Vector2i &, const PackedFloat32Array &, const PackedInt32Array &, const PackedInt32Array &)
+	FUNC5(realtime_gi_set_transport, RID, int, const PackedInt32Array &, const PackedInt32Array &, const PackedFloat32Array &)
+	FUNC4(realtime_gi_set_geometry, RID, const AABB &, const PackedInt32Array &, const PackedFloat32Array &)
+	FUNC6(realtime_gi_set_probes, RID, const PackedVector3Array &, int, const PackedInt32Array &, const PackedInt32Array &, const PackedInt32Array &)
+	FUNC5(realtime_gi_set_energy, RID, float, float, float, float)
+	FUNC4(realtime_gi_set_quality, RID, int, int, int)
+	FUNC2(realtime_gi_set_interior, RID, bool)
+
 	/* PARTICLES */
 
 #undef ServerName

@@ -67,6 +67,7 @@
 #include "editor/scene/3d/gizmos/lens_flare_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/light_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/lightmap_gi_gizmo_plugin.h"
+#include "editor/scene/3d/gizmos/realtime_gi_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/lightmap_probe_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/marker_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/mesh_instance_3d_gizmo_plugin.h"
@@ -10262,6 +10263,9 @@ void Node3DEditor::_register_all_gizmos() {
 	add_gizmo_plugin(Ref<DecalGizmoPlugin>(memnew(DecalGizmoPlugin)));
 	add_gizmo_plugin(Ref<VoxelGIGizmoPlugin>(memnew(VoxelGIGizmoPlugin)));
 	add_gizmo_plugin(Ref<LightmapGIGizmoPlugin>(memnew(LightmapGIGizmoPlugin)));
+	if (!ClassDB::is_asosdot_class_group_yielded("realtime_gi")) {
+		add_gizmo_plugin(Ref<RealtimeGIGizmoPlugin>(memnew(RealtimeGIGizmoPlugin)));
+	}
 	add_gizmo_plugin(Ref<LightmapProbeGizmoPlugin>(memnew(LightmapProbeGizmoPlugin)));
 	add_gizmo_plugin(Ref<CollisionObject3DGizmoPlugin>(memnew(CollisionObject3DGizmoPlugin)));
 	add_gizmo_plugin(Ref<CollisionShape3DGizmoPlugin>(memnew(CollisionShape3DGizmoPlugin)));

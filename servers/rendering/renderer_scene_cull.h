@@ -827,6 +827,35 @@ public:
 		}
 	};
 
+	// Realtime GI is a lightmap the GPU relights every frame, so it shares the
+	// lightmap's bookkeeping (static users, captured dynamic geometry, the
+	// lightmap instance) and adds the lights it pairs with, like VoxelGI.
+	struct InstanceRealtimeGIData : public InstanceLightmapData {
+		Instance *owner = nullptr;
+		HashSet<Instance *> lights;
+		Vector<RendererGI::RealtimeGILight> light_cache;
+
+		SelfList<InstanceRealtimeGIData> update_element;
+
+		InstanceRealtimeGIData() :
+				update_element(this) {
+		}
+	};
+
+	SelfList<InstanceRealtimeGIData>::List realtime_gi_update_list;
+
+	_FORCE_INLINE_ static bool _is_lightmap_type(RSE::InstanceType p_type) {
+		return p_type == RSE::INSTANCE_LIGHTMAP || p_type == RSE::INSTANCE_REALTIME_GI;
+	}
+
+	// The lightmap behind a lightmap instance; for realtime GI, the one it
+	// writes into.
+	_FORCE_INLINE_ static RID _get_lightmap_rid(const Instance *p_instance) {
+		return p_instance->base_type == RSE::INSTANCE_REALTIME_GI ? RSG::gi->realtime_gi_get_lightmap(p_instance->base) : p_instance->base;
+	}
+
+	void _update_realtime_gi();
+
 	mutable uint64_t pair_pass = 1;
 
 	struct PairInstances {

@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="RealtimeGIData" inherits="Resource" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		Contains what a [RealtimeGI] bake works out about a scene.
+	</brief_description>
+	<description>
+		[RealtimeGIData] holds a [RealtimeGI] bake: the patches its static surfaces were cut into and their lightmap atlas, how light travels between the patches and from the sky, the geometry lights cast shadows with, and the probes that light dynamic objects. None of it depends on the lights, which is why they can move. A new bake replaces it.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="clear_users">
+			<return type="void" />
+			<description>
+				Forgets the meshes this bake lights, and the copies with UV2 it made for them.
+			</description>
+		</method>
+		<method name="get_atlas_size" qualifiers="const">
+			<return type="Vector2i" />
+			<description>
+				Returns the size in texels of the lightmap realtime GI writes, one texel per patch.
+			</description>
+		</method>
+		<method name="get_bounds" qualifiers="const">
+			<return type="AABB" />
+			<description>
+				Returns the bounds of the patches, in the [RealtimeGI]'s space.
+			</description>
+		</method>
+		<method name="get_cluster_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns how many clusters the patches are grouped in. Light reaching a patch is gathered from clusters rather than from single patches.
+			</description>
+		</method>
+		<method name="get_generated_mesh_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns how many meshes were given UV2 by the bake. See [member RealtimeGI.generate_uv2].
+			</description>
+		</method>
+		<method name="get_patch_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns how many patches the static surfaces were cut into.
+			</description>
+		</method>
+		<method name="get_patch_size" qualifiers="const">
+			<return type="float" />
+			<description>
+				Returns the patch size the bake used. It is larger than [member RealtimeGI.patch_size] when the scene was too large for a 4096×4096 atlas at that size.
+			</description>
+		</method>
+		<method name="get_probe_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns how many probes light dynamic objects.
+			</description>
+		</method>
+		<method name="get_transport_entry_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns how many patch-to-cluster links the transport holds, four bytes each.
+			</description>
+		</method>
+		<method name="get_triangle_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns how many triangles cast shadows for realtime GI. Meshes with LODs give a simplified version.
+			</description>
+		</method>
+		<method name="get_user_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns how many meshes this bake lights.
+			</description>
+		</method>
+		<method name="get_user_path" qualifiers="const">
+			<return type="NodePath" />
+			<param index="0" name="user_idx" type="int" />
+			<description>
+				Returns the path, from the [RealtimeGI], of a mesh this bake lights.
+			</description>
+		</method>
+	</methods>
+</class>

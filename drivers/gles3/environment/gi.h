@@ -32,6 +32,8 @@
 
 #ifdef GLES3_ENABLED
 
+#include "core/math/aabb.h"
+#include "core/templates/rid.h"
 #include "servers/rendering/environment/renderer_gi.h"
 
 namespace GLES3 {
@@ -81,6 +83,24 @@ public:
 	virtual uint32_t voxel_gi_get_version(RID p_voxel_gi) const override;
 
 	virtual void sdfgi_reset() override;
+
+	/* REALTIME GI API */
+
+	// Realtime GI needs compute shaders, which the Compatibility renderer lacks.
+
+	virtual RID realtime_gi_allocate() override { return RID(); }
+	virtual void realtime_gi_free(RID p_rid) override {}
+	virtual void realtime_gi_initialize(RID p_rid) override {}
+	virtual void realtime_gi_set_surfaces(RID p_realtime_gi, const Vector2i &p_atlas_size, const Vector<float> &p_patches, const Vector<int32_t> &p_cluster_offsets, const Vector<int32_t> &p_texel_patches) override {}
+	virtual void realtime_gi_set_transport(RID p_realtime_gi, int p_ray_count, const Vector<int32_t> &p_offsets, const Vector<int32_t> &p_entries, const Vector<float> &p_sky_visibility) override {}
+	virtual void realtime_gi_set_geometry(RID p_realtime_gi, const AABB &p_bounds, const Vector<int32_t> &p_bvh, const Vector<float> &p_triangles) override {}
+	virtual void realtime_gi_set_probes(RID p_realtime_gi, const Vector<Vector3> &p_points, int p_ray_count, const Vector<int32_t> &p_rays, const Vector<int32_t> &p_tetrahedra, const Vector<int32_t> &p_bsp_tree) override {}
+	virtual void realtime_gi_set_energy(RID p_realtime_gi, float p_indirect_energy, float p_environment_energy, float p_albedo_boost, float p_emission_energy) override {}
+	virtual void realtime_gi_set_quality(RID p_realtime_gi, int p_bounces_per_frame, int p_shadow_samples, int p_probe_update_interval) override {}
+	virtual void realtime_gi_set_interior(RID p_realtime_gi, bool p_interior) override {}
+	virtual AABB realtime_gi_get_bounds(RID p_realtime_gi) const override { return AABB(); }
+	virtual RID realtime_gi_get_lightmap(RID p_realtime_gi) const override { return RID(); }
+	virtual bool realtime_gi_update(RID p_realtime_gi, const Transform3D &p_transform, const Vector<RealtimeGILight> &p_lights, RID p_environment) override { return false; }
 };
 
 }; // namespace GLES3

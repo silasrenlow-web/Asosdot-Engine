@@ -34,6 +34,7 @@
 #include "core/templates/rid_owner.h"
 #include "servers/rendering/environment/renderer_gi.h"
 #include "servers/rendering/renderer_compositor.h"
+#include "servers/rendering/renderer_rd/environment/realtime_gi.h"
 #include "servers/rendering/renderer_rd/environment/sky.h"
 #include "servers/rendering/renderer_rd/pipeline_deferred_rd.h"
 #include "servers/rendering/renderer_rd/shaders/environment/gi.glsl.gen.h"
@@ -527,6 +528,27 @@ public:
 	RID voxel_gi_get_sdf_texture(RID p_voxel_gi);
 
 	Dependency *voxel_gi_get_dependency(RID p_voxel_gi) const;
+
+	/* REALTIME GI API */
+
+	RealtimeGI realtime_gi;
+
+	bool owns_realtime_gi(RID p_rid) { return realtime_gi.owns_realtime_gi(p_rid); }
+
+	virtual RID realtime_gi_allocate() override { return realtime_gi.realtime_gi_allocate(); }
+	virtual void realtime_gi_free(RID p_rid) override { realtime_gi.realtime_gi_free(p_rid); }
+	virtual void realtime_gi_initialize(RID p_rid) override { realtime_gi.realtime_gi_initialize(p_rid); }
+	virtual void realtime_gi_set_surfaces(RID p_realtime_gi, const Vector2i &p_atlas_size, const Vector<float> &p_patches, const Vector<int32_t> &p_cluster_offsets, const Vector<int32_t> &p_texel_patches) override { realtime_gi.realtime_gi_set_surfaces(p_realtime_gi, p_atlas_size, p_patches, p_cluster_offsets, p_texel_patches); }
+	virtual void realtime_gi_set_transport(RID p_realtime_gi, int p_ray_count, const Vector<int32_t> &p_offsets, const Vector<int32_t> &p_entries, const Vector<float> &p_sky_visibility) override { realtime_gi.realtime_gi_set_transport(p_realtime_gi, p_ray_count, p_offsets, p_entries, p_sky_visibility); }
+	virtual void realtime_gi_set_geometry(RID p_realtime_gi, const AABB &p_bounds, const Vector<int32_t> &p_bvh, const Vector<float> &p_triangles) override { realtime_gi.realtime_gi_set_geometry(p_realtime_gi, p_bounds, p_bvh, p_triangles); }
+	virtual void realtime_gi_set_probes(RID p_realtime_gi, const Vector<Vector3> &p_points, int p_ray_count, const Vector<int32_t> &p_rays, const Vector<int32_t> &p_tetrahedra, const Vector<int32_t> &p_bsp_tree) override { realtime_gi.realtime_gi_set_probes(p_realtime_gi, p_points, p_ray_count, p_rays, p_tetrahedra, p_bsp_tree); }
+	virtual void realtime_gi_set_energy(RID p_realtime_gi, float p_indirect_energy, float p_environment_energy, float p_albedo_boost, float p_emission_energy) override { realtime_gi.realtime_gi_set_energy(p_realtime_gi, p_indirect_energy, p_environment_energy, p_albedo_boost, p_emission_energy); }
+	virtual void realtime_gi_set_quality(RID p_realtime_gi, int p_bounces_per_frame, int p_shadow_samples, int p_probe_update_interval) override { realtime_gi.realtime_gi_set_quality(p_realtime_gi, p_bounces_per_frame, p_shadow_samples, p_probe_update_interval); }
+	virtual void realtime_gi_set_interior(RID p_realtime_gi, bool p_interior) override { realtime_gi.realtime_gi_set_interior(p_realtime_gi, p_interior); }
+	virtual AABB realtime_gi_get_bounds(RID p_realtime_gi) const override { return realtime_gi.realtime_gi_get_bounds(p_realtime_gi); }
+	virtual RID realtime_gi_get_lightmap(RID p_realtime_gi) const override { return realtime_gi.realtime_gi_get_lightmap(p_realtime_gi); }
+	virtual bool realtime_gi_update(RID p_realtime_gi, const Transform3D &p_transform, const Vector<RealtimeGILight> &p_lights, RID p_environment) override { return realtime_gi.realtime_gi_update(p_realtime_gi, p_transform, p_lights, p_environment); }
+	Dependency *realtime_gi_get_dependency(RID p_rid) const { return realtime_gi.realtime_gi_get_dependency(p_rid); }
 
 	/* VOXEL_GI INSTANCE */
 

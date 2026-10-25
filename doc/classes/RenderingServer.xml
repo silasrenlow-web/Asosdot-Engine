@@ -3490,6 +3490,88 @@
 				Sets the filter quality for omni and spot light shadows in 3D. See also [member ProjectSettings.rendering/lights_and_shadows/positional_shadow/soft_shadow_filter_quality]. This parameter is global and cannot be set on a per-viewport basis.
 			</description>
 		</method>
+		<method name="realtime_gi_create">
+			<return type="RID" />
+			<description>
+				Creates a realtime global illumination instance and adds it to the RenderingServer. It can be accessed with the RID that is returned. This RID will be used in all [code]realtime_gi_*[/code] RenderingServer functions.
+				Once finished with your RID, you will want to free the RID using the RenderingServer's [method free_rid] method.
+				To place in a scene, attach this realtime GI to an instance using [method instance_set_base] using the returned RID. Static geometry it lights is then given the instance with [method instance_geometry_set_lightmap].
+				[b]Note:[/b] The equivalent node is [RealtimeGI]. Its bake fills in the data this needs.
+			</description>
+		</method>
+		<method name="realtime_gi_set_energy">
+			<return type="void" />
+			<param index="0" name="realtime_gi" type="RID" />
+			<param index="1" name="indirect_energy" type="float" />
+			<param index="2" name="environment_energy" type="float" />
+			<param index="3" name="albedo_boost" type="float" />
+			<param index="4" name="emission_energy" type="float" />
+			<description>
+				Sets how bright the bounced light, the sky light, the surfaces' albedo and their emission are. See [member RealtimeGI.energy], [member RealtimeGI.environment_energy], [member RealtimeGI.albedo_boost] and [member RealtimeGI.emission_energy].
+			</description>
+		</method>
+		<method name="realtime_gi_set_geometry">
+			<return type="void" />
+			<param index="0" name="realtime_gi" type="RID" />
+			<param index="1" name="bounds" type="AABB" />
+			<param index="2" name="bvh" type="PackedInt32Array" />
+			<param index="3" name="triangles" type="PackedFloat32Array" />
+			<description>
+				Sets the bounds of what [param realtime_gi] lights and the geometry its lights cast shadows with: a binary BVH of eight 32-bit values per node (minimum corner as floats, right child or first triangle, maximum corner as floats, triangle count, zero for an inner node whose left child follows it), and twelve floats per triangle.
+			</description>
+		</method>
+		<method name="realtime_gi_set_interior">
+			<return type="void" />
+			<param index="0" name="realtime_gi" type="RID" />
+			<param index="1" name="interior" type="bool" />
+			<description>
+				If [code]true[/code], dynamic objects inside [param realtime_gi] take their lighting only from it, ignoring exterior lightmaps around it. See [member RealtimeGI.interior].
+			</description>
+		</method>
+		<method name="realtime_gi_set_probes">
+			<return type="void" />
+			<param index="0" name="realtime_gi" type="RID" />
+			<param index="1" name="points" type="PackedVector3Array" />
+			<param index="2" name="ray_count" type="int" />
+			<param index="3" name="rays" type="PackedInt32Array" />
+			<param index="4" name="tetrahedra" type="PackedInt32Array" />
+			<param index="5" name="bsp_tree" type="PackedInt32Array" />
+			<description>
+				Sets the probes that light dynamic objects. Each probe casts [param ray_count] rays along a spherical Fibonacci set of directions, and [param rays] holds what each ray hit: a cluster index, [code]-1[/code] for the sky, or [code]-2[/code] for nothing that gives light. [param tetrahedra] and [param bsp_tree] are laid out as for [method lightmap_set_probe_capture_data].
+			</description>
+		</method>
+		<method name="realtime_gi_set_quality">
+			<return type="void" />
+			<param index="0" name="realtime_gi" type="RID" />
+			<param index="1" name="bounces_per_frame" type="int" />
+			<param index="2" name="shadow_samples" type="int" />
+			<param index="3" name="probe_update_interval" type="int" />
+			<description>
+				Sets how much work [param realtime_gi] does each frame. See [member RealtimeGI.bounces_per_frame], [member RealtimeGI.shadow_samples] and [member RealtimeGI.probe_update_interval].
+			</description>
+		</method>
+		<method name="realtime_gi_set_surfaces">
+			<return type="void" />
+			<param index="0" name="realtime_gi" type="RID" />
+			<param index="1" name="atlas_size" type="Vector2i" />
+			<param index="2" name="patches" type="PackedFloat32Array" />
+			<param index="3" name="cluster_offsets" type="PackedInt32Array" />
+			<param index="4" name="texel_patches" type="PackedInt32Array" />
+			<description>
+				Sets the patches the static surfaces were cut into: sixteen floats each (position, footprint radius, normal, albedo, emission). Patches are stored cluster by cluster, and [param cluster_offsets] gives where each cluster starts, with one more entry for the end. [param texel_patches] gives, for every texel of the [param atlas_size] lightmap atlas, the patch it shows or [code]-1[/code].
+			</description>
+		</method>
+		<method name="realtime_gi_set_transport">
+			<return type="void" />
+			<param index="0" name="realtime_gi" type="RID" />
+			<param index="1" name="ray_count" type="int" />
+			<param index="2" name="offsets" type="PackedInt32Array" />
+			<param index="3" name="entries" type="PackedInt32Array" />
+			<param index="4" name="sky_visibility" type="PackedFloat32Array" />
+			<description>
+				Sets how light travels between patches. Each patch cast [param ray_count] rays (at most 1023); [param entries] holds, from [param offsets] onward for each patch, a cluster index in the top 22 bits and how many of the rays landed on it in the low 10. [param sky_visibility] holds nine spherical harmonics coefficients per patch for the sky it sees.
+			</description>
+		</method>
 		<method name="reflection_probe_create">
 			<return type="RID" />
 			<description>
@@ -6120,7 +6202,10 @@
 		<constant name="INSTANCE_LENS_FLARE" value="13" enum="InstanceType">
 			The instance is a lens flare.
 		</constant>
-		<constant name="INSTANCE_MAX" value="14" enum="InstanceType">
+		<constant name="INSTANCE_REALTIME_GI" value="14" enum="InstanceType">
+			The instance is a realtime global illumination.
+		</constant>
+		<constant name="INSTANCE_MAX" value="15" enum="InstanceType">
 			Represents the size of the [enum InstanceType] enum.
 		</constant>
 		<constant name="INSTANCE_GEOMETRY_MASK" value="14" enum="InstanceType">

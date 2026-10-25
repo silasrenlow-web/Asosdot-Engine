@@ -30,11 +30,15 @@
 
 #pragma once
 
+#include "core/math/color.h"
+#include "core/math/transform_3d.h"
+#include "servers/rendering/rendering_server_enums.h"
+
 #include <cstdint>
 
 class RID;
 struct AABB;
-struct Transform3D;
+struct Vector2i;
 struct Vector3;
 struct Vector3i;
 
@@ -89,4 +93,48 @@ public:
 	virtual uint32_t voxel_gi_get_version(RID p_probe) const = 0;
 
 	virtual void sdfgi_reset() = 0;
+
+	/* REALTIME GI API */
+
+	// A light as the scene culler hands it to realtime GI each frame. Values
+	// are the light's own settings; the renderer turns them into shading units
+	// the same way it does for direct lighting, so bounce and direct agree.
+	struct RealtimeGILight {
+		RSE::LightType type = RSE::LIGHT_OMNI;
+		Transform3D transform;
+		Color color;
+		float energy = 1.0;
+		float intensity = 1.0;
+		float indirect_energy = 1.0;
+		float range = 5.0;
+		float attenuation = 1.0;
+		float spot_angle = 45.0;
+		float spot_attenuation = 1.0;
+		bool has_shadow = false;
+		// Static lights are left out of direct lighting on lightmapped surfaces,
+		// so realtime GI lights those surfaces itself.
+		bool bake_static = false;
+	};
+
+	virtual RID realtime_gi_allocate() = 0;
+	virtual void realtime_gi_free(RID p_rid) = 0;
+	virtual void realtime_gi_initialize(RID p_rid) = 0;
+
+	virtual void realtime_gi_set_surfaces(RID p_realtime_gi, const Vector2i &p_atlas_size, const Vector<float> &p_patches, const Vector<int32_t> &p_cluster_offsets, const Vector<int32_t> &p_texel_patches) = 0;
+	virtual void realtime_gi_set_transport(RID p_realtime_gi, int p_ray_count, const Vector<int32_t> &p_offsets, const Vector<int32_t> &p_entries, const Vector<float> &p_sky_visibility) = 0;
+	virtual void realtime_gi_set_geometry(RID p_realtime_gi, const AABB &p_bounds, const Vector<int32_t> &p_bvh, const Vector<float> &p_triangles) = 0;
+	virtual void realtime_gi_set_probes(RID p_realtime_gi, const Vector<Vector3> &p_points, int p_ray_count, const Vector<int32_t> &p_rays, const Vector<int32_t> &p_tetrahedra, const Vector<int32_t> &p_bsp_tree) = 0;
+
+	virtual void realtime_gi_set_energy(RID p_realtime_gi, float p_indirect_energy, float p_environment_energy, float p_albedo_boost, float p_emission_energy) = 0;
+	virtual void realtime_gi_set_quality(RID p_realtime_gi, int p_bounces_per_frame, int p_shadow_samples, int p_probe_update_interval) = 0;
+	virtual void realtime_gi_set_interior(RID p_realtime_gi, bool p_interior) = 0;
+
+	virtual AABB realtime_gi_get_bounds(RID p_realtime_gi) const = 0;
+	// The lightmap realtime GI writes into. Static surfaces use it as their
+	// lightmap and dynamic objects read its probes.
+	virtual RID realtime_gi_get_lightmap(RID p_realtime_gi) const = 0;
+
+	// Runs this frame's lighting. Returns true when new probe lighting has
+	// arrived, so the culler knows to recapture the objects it lights.
+	virtual bool realtime_gi_update(RID p_realtime_gi, const Transform3D &p_transform, const Vector<RealtimeGILight> &p_lights, RID p_environment) = 0;
 };

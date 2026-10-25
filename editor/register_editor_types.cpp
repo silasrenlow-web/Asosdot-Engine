@@ -99,6 +99,7 @@
 #include "editor/scene/3d/camera_3d_editor_plugin.h"
 #include "editor/scene/3d/gpu_particles_collision_sdf_editor_plugin.h"
 #include "editor/scene/3d/lightmap_gi_editor_plugin.h"
+#include "editor/scene/3d/realtime_gi_editor_plugin.h"
 #include "editor/scene/3d/mesh_editor_plugin.h"
 #include "editor/scene/3d/mesh_instance_3d_editor_plugin.h"
 #include "editor/scene/3d/mesh_library_editor_plugin.h"
@@ -250,6 +251,7 @@ void register_editor_types() {
 	EditorPlugins::add_by_type<GradientTexture2DEditorPlugin>();
 	EditorPlugins::add_by_type<InputEventEditorPlugin>();
 	EditorPlugins::add_by_type<LightmapGIEditorPlugin>();
+	EditorPlugins::add_by_type<RealtimeGIEditorPlugin>();
 	EditorPlugins::add_by_type<MarginContainerEditorPlugin>();
 	EditorPlugins::add_by_type<MaterialEditorPlugin>();
 	EditorPlugins::add_by_type<MeshEditorPlugin>();

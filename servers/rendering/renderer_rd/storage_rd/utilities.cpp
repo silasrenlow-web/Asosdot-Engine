@@ -67,6 +67,9 @@ RSE::InstanceType Utilities::get_base_type(RID p_rid) const {
 	if (RendererRD::GI::get_singleton()->owns_voxel_gi(p_rid)) {
 		return RSE::INSTANCE_VOXEL_GI;
 	}
+	if (RendererRD::GI::get_singleton()->owns_realtime_gi(p_rid)) {
+		return RSE::INSTANCE_REALTIME_GI;
+	}
 	if (RendererRD::LightStorage::get_singleton()->owns_light(p_rid)) {
 		return RSE::INSTANCE_LIGHT;
 	}
@@ -103,6 +106,9 @@ bool Utilities::free(RID p_rid) {
 	} else if (RendererRD::GI::get_singleton()->owns_voxel_gi(p_rid)) {
 		RendererRD::GI::get_singleton()->voxel_gi_free(p_rid);
 		return true;
+	} else if (RendererRD::GI::get_singleton()->owns_realtime_gi(p_rid)) {
+		RendererRD::GI::get_singleton()->realtime_gi_free(p_rid);
+		return true;
 	} else if (RendererRD::Fog::get_singleton()->owns_fog_volume(p_rid)) {
 		RendererRD::Fog::get_singleton()->fog_volume_free(p_rid);
 		return true;
@@ -136,6 +142,9 @@ void Utilities::base_update_dependency(RID p_base, DependencyTracker *p_instance
 		p_instance->update_dependency(dependency);
 	} else if (GI::get_singleton()->owns_voxel_gi(p_base)) {
 		Dependency *dependency = GI::get_singleton()->voxel_gi_get_dependency(p_base);
+		p_instance->update_dependency(dependency);
+	} else if (GI::get_singleton()->owns_realtime_gi(p_base)) {
+		Dependency *dependency = GI::get_singleton()->realtime_gi_get_dependency(p_base);
 		p_instance->update_dependency(dependency);
 	} else if (LightStorage::get_singleton()->owns_lightmap(p_base)) {
 		Dependency *dependency = LightStorage::get_singleton()->lightmap_get_dependency(p_base);

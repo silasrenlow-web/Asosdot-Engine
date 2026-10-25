@@ -25,6 +25,21 @@ illumination and reflections, traced against a top level acceleration structure
 built from the scene's meshes, denoised and accumulated over time. Behind the
 `Asos Lighting` toggle in the environment.
 
+**Realtime global illumination.** A `RealtimeGI` node in the spirit of Unity's
+Enlighten: bounced light for static scenes that follows every light as it
+moves, turns, switches on and off, or changes colour, the sun and a flashlight
+included. A bake cuts static surfaces into patches and traces how light travels
+between them and from the sky, which depends on nothing but the geometry. Each
+frame the GPU then lights the patches with the scene's lights as they are,
+with traced shadows, bounces that through the baked transport, and writes a
+lightmap the static meshes sample; repeated frames converge on every bounce.
+Dynamic objects take the bounce from a grid of probes. Meshes imported without
+UV2 get it generated during the bake, and large scenes get coarser patches on
+large surfaces and a patch budget, so a 450 by 600 metre level bakes in under
+20 seconds. Static lights are drawn into the lightmap entirely and cost nothing
+per pixel. Forward+ and Mobile; check it with
+`python misc/scripts/test_realtime_gi.py --engine <editor>`.
+
 **Rope3D.** Verlet simulated rope that can pin either end to any `Node3D`, drawn
 either as a generated tube or as a mesh instanced per segment.
 
