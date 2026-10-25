@@ -78,6 +78,93 @@ func main_screen_button(name: String) -> Button:
 	return null
 
 
+func click(control: Control) -> void:
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	control.gui_input.emit(press)
+
+
+# Which camera the animation makes live at a time: the latest true key at or before it.
+func live_at(anim: Animation, time: float) -> String:
+	var best := ""
+	var best_time := -1.0
+	for track in anim.get_track_count():
+		var path := String(anim.track_get_path(track))
+		if not path.ends_with(":current"):
+			continue
+		for key in anim.track_get_key_count(track):
+			var key_time := anim.track_get_key_time(track, key)
+			if anim.track_get_key_value(track, key) and key_time <= time + 0.0001 and key_time > best_time:
+				best_time = key_time
+				best = path.get_slice(":", 0)
+	return best
+
+
+func check_monitor(monitor: Control, spatial: Control, player: AnimationPlayer, anim: Animation, cam_a: Camera3D, cam_b: Camera3D) -> void:
+	var split := monitor.get_parent()
+	check(split is HSplitContainer and monitor.get_index() > 0 and split.is_ancestor_of(spatial.find_children("*", "Node3DEditorViewportContainer", true, false)[0]), "it sits right of the viewer, side by side")
+	check(monitor.get_camera_count() == 2, "the monitor knows the scene's two cameras")
+	var source: OptionButton = monitor.find_children("*", "OptionButton", true, false)[0]
+	check(source.item_count == 3 and source.get_item_text(0) == "Live Shot", "its source menu offers the live shot and each camera")
+	var tiles := monitor.find_children("*", "Control", true, false).filter(func(c): return c.get_class() == "AsosdotCameraView" and c.get_parent() is HBoxContainer)
+	check(tiles.size() == 2 and tiles[0].get_camera() == cam_a and tiles[1].get_camera() == cam_b, "the multicam strip has a picture of each camera, in scene order")
+
+	set_playhead(1.0)
+	await frames(3)
+	check(monitor.get_shown_camera() == cam_a and monitor.get_live_camera() == cam_a, "on the live shot, it shows CamA before the cut")
+	set_playhead(3.0)
+	await frames(3)
+	check(monitor.get_shown_camera() == cam_b, "and CamB after it")
+	monitor.show_camera(cam_a)
+	await frames(2)
+	check(monitor.get_shown_camera() == cam_a and source.selected == 1, "a picked camera shows whatever is live")
+	source.select(0)
+	source.item_selected.emit(0)
+	await frames(2)
+	check(monitor.get_shown_camera() == cam_b, "back on the live shot, it follows the cuts again")
+
+	click(tiles[0])
+	await frames(3)
+	check(live_at(anim, 3.0) == "CamA" and live_at(anim, 2.9) == "CamB", "clicking a camera in the strip cuts to it at the playhead")
+	set_playhead(3.5)
+	await frames(2)
+	var key := InputEventKey.new()
+	key.keycode = KEY_2
+	key.pressed = true
+	get_tree().root.push_input(key)
+	await frames(3)
+	check(live_at(anim, 3.5) == "CamB" and live_at(anim, 3.4) == "CamA", "pressing a camera's number cuts to it")
+
+	player.stop()
+	player.play("cut")
+	await get_tree().create_timer(0.3).timeout
+	var before := player.current_animation_position
+	click(tiles[1])
+	player.pause()
+	await frames(3)
+	var cut_time := -1.0
+	var track_b := anim.find_track(NodePath("CamB:current"), Animation.TYPE_VALUE)
+	for k in anim.track_get_key_count(track_b):
+		var t := anim.track_get_key_time(track_b, k)
+		if t > 0.01 and t < 1.9 and anim.track_get_key_value(track_b, k):
+			cut_time = t
+	var on_frame := cut_time > 0.0 and absf(cut_time / anim.step - roundf(cut_time / anim.step)) < 0.001
+	check(on_frame and absf(cut_time - before) <= anim.step * 0.5 + 0.0001, "clicking while playing cuts live, on the frame being shown (%.3f s, playing at %.3f s)" % [cut_time, before])
+
+	var monitor_button: Button = null
+	for button in spatial.find_children("*", "Button", true, false):
+		if button.text == "Monitor":
+			monitor_button = button
+	check(monitor_button != null and monitor_button.button_pressed, "the toolbar has the Monitor switch, on")
+	monitor_button.button_pressed = false
+	await frames(2)
+	check(not monitor.is_visible_in_tree(), "switching it off gives the viewer the width back")
+	monitor_button.button_pressed = true
+	await frames(2)
+	check(monitor.is_visible_in_tree(), "and on again brings the monitor back")
+
+
 func run() -> void:
 	await get_tree().create_timer(1.5).timeout
 	build_scene()
@@ -154,6 +241,15 @@ func run() -> void:
 	EditorInterface.get_editor_undo_redo().get_history_undo_redo(EditorInterface.get_editor_undo_redo().get_object_history_id(anim)).redo()
 	await frames()
 
+	# The camera monitor, beside the viewer.
+	var monitor: Control = null
+	for found in spatial.find_children("*", "Control", true, false):
+		if found.get_class() == "AsosdotCameraMonitor":
+			monitor = found
+	check(monitor != null and monitor.is_visible_in_tree(), "the camera monitor shows in the workspace")
+	if monitor != null:
+		await check_monitor(monitor, spatial, player, anim, cam_a, cam_b)
+
 	# Recording.
 	var record: Button = null
 	for button in spatial.find_children("*", "Button", true, false):
@@ -228,6 +324,8 @@ func run() -> void:
 	await frames(10)
 	check(not workspace.is_visible_in_tree() and file_system.is_visible_in_tree(), "leaving the workspace puts the docks back")
 	check(spatial.is_visible_in_tree(), "the 3D screen still shows its editor")
+	var monitors := spatial.find_children("*", "Control", true, false).filter(func(c): return c.get_class() == "AsosdotCameraMonitor")
+	check(monitors.size() == 1 and not monitors[0].is_visible_in_tree(), "and the 3D screen has no monitor")
 
 	print("WORKSPACE_OK" if failures.is_empty() else "WORKSPACE_FAILED")
 	get_tree().quit()

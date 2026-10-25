@@ -192,6 +192,7 @@ class AnimationTimelineEdit : public Range {
 	friend class AnimationBezierTrackEdit;
 	friend class AnimationTrackEditor;
 	friend class AnimationMarkerEdit;
+	friend class AsosdotGraphEditor;
 
 	static constexpr float SCROLL_ZOOM_FACTOR_IN = 1.02f; // Zoom factor per mouse scroll in the animation editor when zooming in. The closer to 1.0, the finer the control.
 	static constexpr float SCROLL_ZOOM_FACTOR_OUT = 0.98f; // Zoom factor when zooming out. Similar to SCROLL_ZOOM_FACTOR_IN but less than 1.0.
@@ -579,6 +580,7 @@ public:
 class AnimationTrackKeyEdit;
 class AnimationMultiTrackKeyEdit;
 class AnimationBezierTrackEdit;
+class AsosdotGraphEditor;
 
 class AnimationTrackEditGroup : public Control {
 	friend class AnimationTrackEditor;
@@ -619,6 +621,7 @@ class AnimationTrackEditor : public VBoxContainer {
 	friend class AnimationMarkerKeyEditEditor;
 	friend class AnimationTrackEdit;
 	friend class AnimationTrackEditGroup;
+	friend class AsosdotGraphEditor;
 
 	Ref<Animation> animation;
 	bool read_only = false;
@@ -635,6 +638,10 @@ class AnimationTrackEditor : public VBoxContainer {
 	VBoxContainer *track_vbox = nullptr;
 	MarginContainer *bezier_mc = nullptr;
 	AnimationBezierTrackEdit *bezier_edit = nullptr;
+	// Asosdot: the Graph Editor, the curves of every track, in the place of the tracks (Ctrl+Tab).
+	MarginContainer *graph_mc = nullptr;
+	AsosdotGraphEditor *graph_editor = nullptr;
+	Button *graph_edit_icon = nullptr;
 	VBoxContainer *timeline_vbox = nullptr;
 
 	MarginContainer *timeline_mc = nullptr;
@@ -867,6 +874,7 @@ class AnimationTrackEditor : public VBoxContainer {
 	void _toggle_bezier_edit();
 	void _cancel_bezier_edit();
 	void _bezier_edit(int p_for_track);
+	void _show_graph_edit(bool p_show);
 	void _bezier_track_set_key_handle_mode(Animation *p_anim, int p_track, int p_index, Animation::HandleMode p_mode, Animation::HandleSetMode p_set_mode = Animation::HANDLE_SET_MODE_NONE);
 	void _bezier_track_set_key_handle_mode_at_time(Animation *p_anim, int p_track, float p_time, Animation::HandleMode p_mode, Animation::HandleSetMode p_set_mode = Animation::HANDLE_SET_MODE_NONE);
 
@@ -982,8 +990,14 @@ class AnimationTrackEditor : public VBoxContainer {
 protected:
 	static void _bind_methods();
 	void _notification(int p_what);
+	virtual void gui_input(const Ref<InputEvent> &p_event) override;
 
 public:
+	// Asosdot: switches between the tracks and the Graph Editor, as Ctrl+Tab does in Blender.
+	void toggle_graph_editor();
+	bool is_graph_editor_active() const;
+	AsosdotGraphEditor *get_graph_editor() const { return graph_editor; }
+
 	// Public for use as signal callback.
 	void _clear_selection(bool p_update = false);
 	void _key_selected(int p_key, bool p_single, int p_track);

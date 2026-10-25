@@ -80,6 +80,8 @@
 #include "editor/inspector/sub_viewport_preview_editor_plugin.h"
 #include "editor/inspector/tool_button_editor_plugin.h"
 #include "editor/render/render_editor_plugin.h"
+#include "editor/animation/animation_camera_monitor.h"
+#include "editor/animation/animation_graph_editor.h"
 #include "editor/scene/2d/camera_2d_editor_plugin.h"
 #include "editor/scene/2d/light_occluder_2d_editor_plugin.h"
 #include "editor/scene/2d/line_2d_editor_plugin.h"
@@ -170,6 +172,9 @@ void register_editor_types() {
 	GDREGISTER_CLASS(EditorResourceTooltipPlugin);
 	GDREGISTER_INTERNAL_CLASS(AsosdotRenderShot);
 	GDREGISTER_INTERNAL_CLASS(AsosdotRenderEditor);
+	GDREGISTER_INTERNAL_CLASS(AsosdotCameraView);
+	GDREGISTER_INTERNAL_CLASS(AsosdotCameraMonitor);
+	GDREGISTER_INTERNAL_CLASS(AsosdotGraphEditor);
 	GDREGISTER_ABSTRACT_CLASS(EditorFileSystem);
 	GDREGISTER_CLASS(EditorFileSystemDirectory);
 	GDREGISTER_CLASS(EditorVCSInterface);

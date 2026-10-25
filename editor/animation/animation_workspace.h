@@ -16,6 +16,7 @@
 class AnimationLibrary;
 class AnimationPlayer;
 class AnimationTrackEditor;
+class AsosdotCameraMonitor;
 class AudioStreamPlayer;
 class Button;
 class Camera3D;
@@ -35,6 +36,7 @@ class AsosdotAnimationWorkspace : public VBoxContainer {
 	GDCLASS(AsosdotAnimationWorkspace, VBoxContainer);
 
 	friend class AsosdotAnimationWorkspacePlugin;
+	friend class AsosdotCameraMonitor;
 
 public:
 	struct CameraCut {
@@ -56,9 +58,17 @@ private:
 	HBoxContainer *toolbar = nullptr;
 	Button *record_button = nullptr;
 	Button *shot_button = nullptr;
+	Button *monitor_button = nullptr;
+	Button *graph_button = nullptr;
 	Button *docks_button = nullptr;
 	Button *cut_button = nullptr;
 	Label *timecode = nullptr;
+
+	// Beside the viewer, in the 3D editor's right panel.
+	AsosdotCameraMonitor *monitor = nullptr;
+
+	// The edited scene's cameras in scene order, found once a frame for the Shots list and the monitor.
+	LocalVector<ObjectID> scene_cameras;
 
 	TabContainer *tabs = nullptr;
 
@@ -130,6 +140,7 @@ private:
 	void _animation_tool(int p_tool);
 
 	// Shots.
+	void _update_scene_cameras();
 	void _update_shots(bool p_force = false);
 	void _camera_activated();
 	void _camera_button(TreeItem *p_item, int p_column, int p_id, MouseButton p_button);
@@ -164,9 +175,12 @@ private:
 	void _record_flush();
 
 	void _shot_toggled(bool p_pressed);
+	void _monitor_toggled(bool p_pressed);
+	void _graph_toggled(bool p_pressed);
+	void _graph_editor_toggled(bool p_shown);
 	void _docks_toggled(bool p_pressed);
 	void _apply_docks();
-	void _enlarge_timeline();
+	void _enlarge_timeline(float p_share);
 
 protected:
 	static void _bind_methods();
@@ -177,6 +191,11 @@ public:
 	static Vector<CameraCut> get_camera_cuts(const Ref<Animation> &p_animation, Node *p_root);
 	static void cut_to_camera(const Ref<Animation> &p_animation, Node *p_root, Camera3D *p_camera, double p_time);
 	static void remove_cut(const Ref<Animation> &p_animation, Node *p_root, double p_time);
+	// Cuts the edited animation to the camera at the playhead; while playing, on the frame being shown.
+	void cut_to_camera_at_playhead(Camera3D *p_camera);
+
+	static String format_time(double p_time);
+	static uint64_t get_scene_history_version();
 
 	// A pose is an Animation holding one key per bone track; it's applied by bone name, so it fits
 	// any rig with the same bones.
@@ -186,6 +205,7 @@ public:
 	void set_active(bool p_active);
 	bool is_active() const { return active; }
 	bool is_recording() const;
+	AsosdotCameraMonitor *get_monitor() const { return monitor; }
 
 	Dictionary get_layout() const;
 	void set_layout(const Dictionary &p_layout);

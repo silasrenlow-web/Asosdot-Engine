@@ -88,7 +88,7 @@ public:
 	virtual void draw_key(int p_index, float p_pixels_sec, int p_x, bool p_selected, int p_clip_left, int p_clip_right) override;
 
 	void set_node(Object *p_object);
-	static Color get_shot_color(const String &p_camera_name);
+	static Color get_shot_color(const Node *p_camera);
 };
 
 class AnimationTrackEditSpriteFrame : public AnimationTrackEdit {

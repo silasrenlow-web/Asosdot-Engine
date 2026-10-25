@@ -10,6 +10,7 @@
 #include "animation_workspace.h"
 
 #include "core/io/resource_loader.h"
+#include "editor/animation/animation_camera_monitor.h"
 #include "core/io/resource_saver.h"
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
@@ -47,10 +48,12 @@
 #include "scene/resources/animation_library.h"
 #include "servers/audio/audio_stream.h"
 
-// How much of the editor's height the timeline gets while the workspace is open.
+// How much of the editor's height the timeline gets while the workspace is open, and while it
+// shows the Graph Editor, whose curves want the room.
 static constexpr float TIMELINE_SHARE = 0.42f;
+static constexpr float GRAPH_TIMELINE_SHARE = 0.62f;
 
-static String _format_time(double p_time) {
+String AsosdotAnimationWorkspace::format_time(double p_time) {
 	const int minutes = int(p_time) / 60;
 	return vformat("%02d:%05.2f", minutes, p_time - minutes * 60);
 }
@@ -109,9 +112,9 @@ void AsosdotAnimationWorkspace::_update_timecode() {
 	const double time = _get_playhead();
 	const double step = animation->get_step();
 	if (step > 0.0) {
-		timecode->set_text(vformat(TTR("%s  frame %d"), _format_time(time), int(Math::round(time / step))));
+		timecode->set_text(vformat(TTR("%s  frame %d"), format_time(time), int(Math::round(time / step))));
 	} else {
-		timecode->set_text(_format_time(time));
+		timecode->set_text(format_time(time));
 	}
 }
 
@@ -121,6 +124,26 @@ void AsosdotAnimationWorkspace::_shot_toggled(bool p_pressed) {
 	}
 	// The viewer looks through the camera that's current at the playhead, which the camera cuts set.
 	Node3DEditor::get_singleton()->get_editor_viewport(0)->set_cinematic_preview(p_pressed);
+}
+
+void AsosdotAnimationWorkspace::_monitor_toggled(bool p_pressed) {
+	monitor->set_active(active && p_pressed);
+}
+
+void AsosdotAnimationWorkspace::_graph_toggled(bool p_pressed) {
+	AnimationTrackEditor *track_editor = _get_track_editor();
+	if (track_editor && track_editor->is_graph_editor_active() != p_pressed) {
+		track_editor->toggle_graph_editor();
+	}
+	// Without an animation to show there's no Graph Editor to open.
+	graph_button->set_pressed_no_signal(track_editor && track_editor->is_graph_editor_active());
+}
+
+void AsosdotAnimationWorkspace::_graph_editor_toggled(bool p_shown) {
+	graph_button->set_pressed_no_signal(p_shown);
+	if (active && p_shown) {
+		_enlarge_timeline(GRAPH_TIMELINE_SHARE);
+	}
 }
 
 void AsosdotAnimationWorkspace::_docks_toggled(bool p_pressed) {
@@ -366,16 +389,47 @@ void AsosdotAnimationWorkspace::remove_cut(const Ref<Animation> &p_animation, No
 	undo_redo->commit_action();
 }
 
+void AsosdotAnimationWorkspace::_update_scene_cameras() {
+	scene_cameras.clear();
+	Node *scene = EditorNode::get_singleton()->get_edited_scene();
+	if (!scene) {
+		return;
+	}
+	if (Object::cast_to<Camera3D>(scene)) {
+		scene_cameras.push_back(scene->get_instance_id());
+	}
+	TypedArray<Node> found = scene->find_children("*", "Camera3D", true, false);
+	for (int i = 0; i < found.size(); i++) {
+		scene_cameras.push_back(Object::cast_to<Node>(found[i])->get_instance_id());
+	}
+}
+
+void AsosdotAnimationWorkspace::cut_to_camera_at_playhead(Camera3D *p_camera) {
+	const Ref<Animation> animation = _get_animation();
+	if (animation.is_null() || !_get_animation_root()) {
+		EditorNode::get_singleton()->show_warning(TTR("Pick an animation to cut in first."));
+		return;
+	}
+	ERR_FAIL_NULL(p_camera);
+	double time = _get_playhead();
+	AnimationPlayer *player = _get_player();
+	if (player && player->is_playing() && animation->get_step() > 0.0) {
+		// A cut made while playing lands on the frame being shown, as one made with the playhead
+		// stopped on that frame would.
+		time = CLAMP(Math::snapped(time, double(animation->get_step())), 0.0, double(animation->get_length()));
+	}
+	cut_to_camera(animation, _get_animation_root(), p_camera, time);
+	// Next frame: the lists are rebuilt from scratch, and a Tree can't lose the item it's signalling about.
+	callable_mp(this, &AsosdotAnimationWorkspace::_update_shots).call_deferred(false);
+}
+
 void AsosdotAnimationWorkspace::_update_shots(bool p_force) {
 	Node *scene = EditorNode::get_singleton()->get_edited_scene();
 	LocalVector<Camera3D *> cameras;
-	if (scene) {
-		TypedArray<Node> found = scene->find_children("*", "Camera3D", true, false);
-		if (Object::cast_to<Camera3D>(scene)) {
-			cameras.push_back(Object::cast_to<Camera3D>(scene));
-		}
-		for (int i = 0; i < found.size(); i++) {
-			cameras.push_back(Object::cast_to<Camera3D>(found[i]));
+	for (const ObjectID &id : scene_cameras) {
+		Camera3D *camera = ObjectDB::get_instance<Camera3D>(id);
+		if (camera && camera->is_inside_tree()) {
+			cameras.push_back(camera);
 		}
 	}
 	uint32_t cameras_hash = hash_murmur3_one_64(scene ? uint64_t(scene->get_instance_id()) : 0);
@@ -403,7 +457,7 @@ void AsosdotAnimationWorkspace::_update_shots(bool p_force) {
 			TreeItem *item = camera_tree->create_item(root);
 			item->set_text(0, camera->get_name());
 			item->set_icon(0, camera_icon);
-			item->set_icon_modulate(0, AsosdotAnimationTrackEditShot::get_shot_color(camera->get_name()));
+			item->set_icon_modulate(0, AsosdotAnimationTrackEditShot::get_shot_color(camera));
 			item->set_metadata(0, int64_t(camera->get_instance_id()));
 			item->set_tooltip_text(0, String(scene->get_path_to(camera)));
 			item->add_button(0, cut_icon, 0, false, TTR("Cut to this camera at the playhead."));
@@ -423,8 +477,8 @@ void AsosdotAnimationWorkspace::_update_shots(bool p_force) {
 		const Ref<Texture2D> remove_icon = get_editor_theme_icon(SNAME("Remove"));
 		for (const CameraCut &cut : cuts) {
 			TreeItem *item = cut_tree->create_item(root);
-			item->set_text(0, _format_time(cut.time) + "   " + String(cut.camera->get_name()));
-			item->set_custom_color(0, AsosdotAnimationTrackEditShot::get_shot_color(cut.camera->get_name()));
+			item->set_text(0, format_time(cut.time) + "   " + String(cut.camera->get_name()));
+			item->set_custom_color(0, AsosdotAnimationTrackEditShot::get_shot_color(cut.camera));
 			item->set_metadata(0, cut.time);
 			item->add_button(0, remove_icon, 0, false, TTR("Remove this cut."));
 		}
@@ -456,14 +510,8 @@ void AsosdotAnimationWorkspace::_camera_button(TreeItem *p_item, int p_column, i
 		return;
 	}
 	Camera3D *camera = ObjectDB::get_instance<Camera3D>(ObjectID(uint64_t(int64_t(p_item->get_metadata(0)))));
-	if (_get_animation().is_null() || !_get_animation_root()) {
-		EditorNode::get_singleton()->show_warning(TTR("Pick an animation to cut in first."));
-		return;
-	}
 	if (camera) {
-		cut_to_camera(_get_animation(), _get_animation_root(), camera, _get_playhead());
-		// Next frame: the lists are rebuilt from scratch, and a Tree can't lose the item it's signalling about.
-		callable_mp(this, &AsosdotAnimationWorkspace::_update_shots).call_deferred(false);
+		cut_to_camera_at_playhead(camera);
 	}
 }
 
@@ -501,8 +549,7 @@ void AsosdotAnimationWorkspace::_cut_to_selected_camera() {
 		EditorNode::get_singleton()->show_warning(TTR("Select the Camera3D to cut to, in the scene or the Shots list."));
 		return;
 	}
-	cut_to_camera(_get_animation(), _get_animation_root(), camera, _get_playhead());
-	callable_mp(this, &AsosdotAnimationWorkspace::_update_shots).call_deferred(false);
+	cut_to_camera_at_playhead(camera);
 }
 
 /// Sounds.
@@ -824,7 +871,7 @@ bool AsosdotAnimationWorkspace::is_recording() const {
 	return active && record_button->is_pressed();
 }
 
-static uint64_t _get_scene_history_version() {
+uint64_t AsosdotAnimationWorkspace::get_scene_history_version() {
 	UndoRedo *undo_redo = EditorUndoRedoManager::get_singleton()->get_history_undo_redo(EditorNode::get_editor_data().get_current_edited_scene_history_id());
 	return undo_redo ? undo_redo->get_version() : 0;
 }
@@ -833,7 +880,7 @@ void AsosdotAnimationWorkspace::_record_toggled(bool p_pressed) {
 	record_button->set_self_modulate(p_pressed ? Color(1.0, 0.35, 0.35) : Color(1, 1, 1));
 	recorded_properties.clear();
 	_take_record_snapshot();
-	recorded_version = _get_scene_history_version();
+	recorded_version = get_scene_history_version();
 }
 
 void AsosdotAnimationWorkspace::_record_snapshot() {
@@ -872,7 +919,7 @@ void AsosdotAnimationWorkspace::_record_version_changed() {
 	if (!is_recording()) {
 		return;
 	}
-	const uint64_t version = _get_scene_history_version();
+	const uint64_t version = get_scene_history_version();
 	if (record_inserting) {
 		recorded_version = version; // The keys recording itself inserts.
 		return;
@@ -992,7 +1039,7 @@ void AsosdotAnimationWorkspace::_record_flush() {
 		record_inserting = false;
 	}
 	_take_record_snapshot();
-	recorded_version = _get_scene_history_version();
+	recorded_version = get_scene_history_version();
 }
 
 /// Workspace.
@@ -1011,18 +1058,26 @@ void AsosdotAnimationWorkspace::set_active(bool p_active) {
 		AnimationPlayerEditor::get_singleton()->make_visible();
 		saved_center_split = EditorNode::get_center_split()->get_split_offset();
 		saved_center_split_valid = true;
-		callable_mp(this, &AsosdotAnimationWorkspace::_enlarge_timeline).call_deferred();
+		AnimationTrackEditor *track_editor = _get_track_editor();
+		if (track_editor && !track_editor->is_connected(SNAME("graph_editor_toggled"), callable_mp(this, &AsosdotAnimationWorkspace::_graph_editor_toggled))) {
+			track_editor->connect(SNAME("graph_editor_toggled"), callable_mp(this, &AsosdotAnimationWorkspace::_graph_editor_toggled));
+		}
+		const bool graph = track_editor && track_editor->is_graph_editor_active();
+		graph_button->set_pressed_no_signal(graph);
+		callable_mp(this, &AsosdotAnimationWorkspace::_enlarge_timeline).call_deferred(graph ? GRAPH_TIMELINE_SHARE : TIMELINE_SHARE);
 		_apply_docks();
 		if (shot_button->is_pressed()) {
 			_shot_toggled(true);
 		}
+		_update_scene_cameras();
+		monitor->set_active(monitor_button->is_pressed());
 		_update_animations(true);
 		_update_shots(true);
 		_update_sounds();
 		_update_poses();
 		_watch_player();
 		_take_record_snapshot();
-		recorded_version = _get_scene_history_version();
+		recorded_version = get_scene_history_version();
 	} else {
 		EditorDockManager::get_singleton()->set_side_docks_hidden(false);
 		if (saved_center_split_valid) {
@@ -1032,11 +1087,12 @@ void AsosdotAnimationWorkspace::set_active(bool p_active) {
 		if (shot_button->is_pressed() && Node3DEditor::get_singleton()) {
 			Node3DEditor::get_singleton()->get_editor_viewport(0)->set_cinematic_preview(false);
 		}
+		monitor->set_active(false);
 		sound_preview->stop();
 	}
 }
 
-void AsosdotAnimationWorkspace::_enlarge_timeline() {
+void AsosdotAnimationWorkspace::_enlarge_timeline(float p_share) {
 	DockSplitContainer *center = EditorNode::get_center_split();
 	if (!active || center->get_child_count() < 2) {
 		return;
@@ -1045,7 +1101,7 @@ void AsosdotAnimationWorkspace::_enlarge_timeline() {
 	if (!bottom || !bottom->is_visible()) {
 		return;
 	}
-	const float wanted = center->get_size().y * TIMELINE_SHARE;
+	const float wanted = center->get_size().y * p_share;
 	if (bottom->get_size().y < wanted) {
 		center->set_split_offset(center->get_split_offset() - int(wanted - bottom->get_size().y));
 	}
@@ -1055,6 +1111,8 @@ Dictionary AsosdotAnimationWorkspace::get_layout() const {
 	Dictionary layout;
 	layout["tab"] = tabs->get_current_tab();
 	layout["shot"] = shot_button->is_pressed();
+	layout["monitor"] = monitor_button->is_pressed();
+	layout["camera_monitor"] = monitor->get_layout();
 	layout["docks"] = docks_button->is_pressed();
 	layout["pose_mix"] = pose_mix->get_value();
 	return layout;
@@ -1063,11 +1121,14 @@ Dictionary AsosdotAnimationWorkspace::get_layout() const {
 void AsosdotAnimationWorkspace::set_layout(const Dictionary &p_layout) {
 	tabs->set_current_tab(CLAMP(int(p_layout.get("tab", 0)), 0, tabs->get_tab_count() - 1));
 	shot_button->set_pressed_no_signal(p_layout.get("shot", false));
+	monitor_button->set_pressed_no_signal(p_layout.get("monitor", true));
+	monitor->set_layout(p_layout.get("camera_monitor", Dictionary()));
 	docks_button->set_pressed_no_signal(p_layout.get("docks", false));
 	pose_mix->set_value(p_layout.get("pose_mix", 100.0));
 	if (active) {
 		_apply_docks();
 		_shot_toggled(shot_button->is_pressed());
+		monitor->set_active(monitor_button->is_pressed());
 	}
 }
 
@@ -1092,6 +1153,8 @@ void AsosdotAnimationWorkspace::_notification(int p_what) {
 		case NOTIFICATION_THEME_CHANGED: {
 			record_button->set_button_icon(get_editor_theme_icon(SNAME("AutoKey")));
 			shot_button->set_button_icon(get_editor_theme_icon(SNAME("Camera3D")));
+			monitor_button->set_button_icon(get_editor_theme_icon(SNAME("Panels2Alt")));
+			graph_button->set_button_icon(get_editor_theme_icon(SNAME("Curve")));
 			cut_button->set_button_icon(get_editor_theme_icon(SNAME("Key")));
 			animation_search->set_right_icon(get_editor_theme_icon(SNAME("Search")));
 			sound_search->set_right_icon(get_editor_theme_icon(SNAME("Search")));
@@ -1101,6 +1164,7 @@ void AsosdotAnimationWorkspace::_notification(int p_what) {
 			_update_timecode();
 			_watch_player();
 			// Lists follow the scene and animation as they change; cheap enough to check each frame.
+			_update_scene_cameras();
 			_update_animations();
 			_update_shots();
 		} break;
@@ -1133,6 +1197,15 @@ AsosdotAnimationWorkspace::AsosdotAnimationWorkspace() {
 	shot_button->set_toggle_mode(true);
 	shot_button->connect(SceneStringName(toggled), callable_mp(this, &AsosdotAnimationWorkspace::_shot_toggled));
 	toolbar->add_child(shot_button);
+	monitor_button = _make_tool_button(TTR("Monitor"), TTR("Show the camera monitor beside the viewer: the live shot or any camera, with frame guides, and every camera in a strip to cut between."));
+	monitor_button->set_toggle_mode(true);
+	monitor_button->set_pressed(true);
+	monitor_button->connect(SceneStringName(toggled), callable_mp(this, &AsosdotAnimationWorkspace::_monitor_toggled));
+	toolbar->add_child(monitor_button);
+	graph_button = _make_tool_button(TTR("Graph"), TTR("Show the Graph Editor in the timeline: every animated number as a curve, edited as in Blender (Ctrl+Tab)."));
+	graph_button->set_toggle_mode(true);
+	graph_button->connect(SceneStringName(toggled), callable_mp(this, &AsosdotAnimationWorkspace::_graph_toggled));
+	toolbar->add_child(graph_button);
 	cut_button = _make_tool_button(TTR("Cut"), TTR("Cut to the selected camera at the playhead."));
 	cut_button->connect(SceneStringName(pressed), callable_mp(this, &AsosdotAnimationWorkspace::_cut_to_selected_camera));
 	toolbar->add_child(cut_button);
@@ -1313,6 +1386,8 @@ AsosdotAnimationWorkspace::AsosdotAnimationWorkspace() {
 	pose_name_dialog->connect(SceneStringName(confirmed), callable_mp(this, &AsosdotAnimationWorkspace::_save_pose_confirmed));
 	add_child(pose_name_dialog);
 
+	monitor = memnew(AsosdotCameraMonitor(this));
+
 	hide();
 }
 
@@ -1372,6 +1447,8 @@ AsosdotAnimationWorkspacePlugin::AsosdotAnimationWorkspacePlugin() {
 	singleton = this;
 	workspace = memnew(AsosdotAnimationWorkspace);
 	add_control_to_container(CONTAINER_SPATIAL_EDITOR_SIDE_LEFT, workspace);
+	// The monitor sits right of the viewer, sharing the width with it, side by side.
+	add_control_to_container(CONTAINER_SPATIAL_EDITOR_SIDE_RIGHT, workspace->get_monitor());
 	add_control_to_container(CONTAINER_SPATIAL_EDITOR_MENU, workspace->toolbar);
 }
 

@@ -38,6 +38,7 @@
 #include "core/object/class_db.h"
 #include "core/string/translation_server.h"
 #include "editor/animation/animation_bezier_editor.h"
+#include "editor/animation/animation_graph_editor.h"
 #include "editor/animation/animation_player_editor_plugin.h"
 #include "editor/animation/animation_track_editor_plugins.h"
 #include "editor/docks/inspector_dock.h"
@@ -4185,6 +4186,11 @@ void AnimationTrackEditor::set_animation(const Ref<Animation> &p_anim, bool p_re
 
 	marker_edit->set_animation(p_anim, read_only);
 	marker_edit->set_play_position(timeline->get_play_position());
+	graph_editor->set_animation(p_anim, read_only);
+	graph_edit_icon->set_disabled(p_anim.is_null());
+	if (p_anim.is_null() && graph_mc->is_visible()) {
+		_show_graph_edit(false);
+	}
 
 	_check_bezier_exist();
 	_update_tracks();
@@ -4281,6 +4287,7 @@ void AnimationTrackEditor::set_root(Node *p_root) {
 	if (root) {
 		root->connect(SceneStringName(tree_exiting), callable_mp(this, &AnimationTrackEditor::_root_removed), CONNECT_ONE_SHOT);
 	}
+	graph_editor->set_root(root);
 
 	_update_tracks();
 }
@@ -4467,6 +4474,7 @@ void AnimationTrackEditor::set_anim_pos(float p_pos) {
 	}
 	_redraw_groups();
 	bezier_edit->set_play_position(p_pos);
+	graph_editor->set_play_position(p_pos);
 	emit_signal(SNAME("timeline_changed"), p_pos, true, true);
 }
 
@@ -5832,6 +5840,7 @@ void AnimationTrackEditor::_update_nearest_fps_label() {
 void AnimationTrackEditor::_animation_update() {
 	timeline->queue_redraw();
 	timeline->update_values();
+	graph_editor->animation_changed();
 
 	bool same = true;
 
@@ -5893,6 +5902,7 @@ void AnimationTrackEditor::_notification(int p_what) {
 			add_animation_player->set_button_icon(get_editor_theme_icon(SNAME("Add")));
 			zoom_icon->set_texture(get_editor_theme_icon(SNAME("Zoom")));
 			bezier_edit_icon->set_button_icon(get_editor_theme_icon(SNAME("EditBezier")));
+			graph_edit_icon->set_button_icon(get_editor_theme_icon(SNAME("Curve")));
 			snap_timeline->set_button_icon(get_editor_theme_icon(SNAME("SnapTimeline")));
 			snap_keys->set_button_icon(get_editor_theme_icon(SNAME("SnapKeys")));
 			insert_at_current_time->set_button_icon(get_editor_theme_icon(SNAME("InsertAtCurrentTime")));
@@ -6303,6 +6313,7 @@ void AnimationTrackEditor::_timeline_value_changed(double) {
 
 	bezier_edit->queue_redraw();
 	bezier_edit->update_play_position();
+	graph_editor->update_view();
 
 	marker_edit->update_play_position();
 }
@@ -7227,6 +7238,9 @@ void AnimationTrackEditor::_toggle_bezier_edit() {
 	if (bezier_mc->is_visible()) {
 		_cancel_bezier_edit();
 	} else {
+		if (graph_mc->is_visible()) {
+			_show_graph_edit(false);
+		}
 		int track_count = animation->get_track_count();
 		for (int i = 0; i < track_count; ++i) {
 			if (animation->track_get_type(i) == Animation::TrackType::TYPE_BEZIER) {
@@ -7288,6 +7302,42 @@ void AnimationTrackEditor::_pan_callback(Vector2 p_scroll_vec, Ref<InputEvent> p
 
 void AnimationTrackEditor::_zoom_callback(float p_zoom_factor, Vector2 p_origin, Ref<InputEvent> p_event) {
 	timeline->_zoom_callback(p_zoom_factor, p_origin, p_event);
+}
+
+void AnimationTrackEditor::_show_graph_edit(bool p_show) {
+	if (p_show && bezier_mc->is_visible()) {
+		_cancel_bezier_edit();
+	}
+	graph_mc->set_visible(p_show);
+	box_selection_container->set_visible(!p_show);
+	graph_edit_icon->set_pressed_no_signal(p_show);
+	if (p_show) {
+		_clear_selection();
+		graph_editor->set_animation(animation, read_only);
+		graph_editor->grab_view_focus();
+	}
+	emit_signal(SNAME("graph_editor_toggled"), p_show);
+}
+
+void AnimationTrackEditor::toggle_graph_editor() {
+	if (animation.is_null()) {
+		return;
+	}
+	_show_graph_edit(!graph_mc->is_visible());
+}
+
+bool AnimationTrackEditor::is_graph_editor_active() const {
+	return graph_mc->is_visible();
+}
+
+void AnimationTrackEditor::gui_input(const Ref<InputEvent> &p_event) {
+	// Ctrl+Tab switches between the tracks and the Graph Editor while focus is in the animation
+	// editor, as in Blender; elsewhere it still goes to the next scene tab.
+	const Ref<InputEventKey> key = p_event;
+	if (key.is_valid() && key->is_pressed() && !key->is_echo() && ED_IS_SHORTCUT("graph_editor/toggle_dope_sheet", p_event)) {
+		toggle_graph_editor();
+		accept_event();
+	}
 }
 
 void AnimationTrackEditor::_cancel_bezier_edit() {
@@ -7701,6 +7751,28 @@ void AnimationTrackEditor::goto_next_step(bool p_from_mouse_event, bool p_timeli
 }
 
 void AnimationTrackEditor::_edit_menu_pressed(int p_option) {
+	// Asosdot: with the Graph Editor showing, these work on its keys, which are what's selected.
+	if (graph_mc->is_visible()) {
+		switch (p_option) {
+			case EDIT_DUPLICATE_SELECTED_KEYS:
+				graph_editor->duplicate_selection();
+				return;
+			case EDIT_CUT_KEYS:
+				graph_editor->copy_selection(true);
+				return;
+			case EDIT_COPY_KEYS:
+				graph_editor->copy_selection(false);
+				return;
+			case EDIT_PASTE_KEYS:
+				graph_editor->paste();
+				return;
+			case EDIT_DELETE_SELECTION:
+				graph_editor->delete_selection();
+				return;
+			default:
+				break;
+		}
+	}
 	switch (p_option) {
 		case EDIT_COPY_TRACKS: {
 			track_copy_select->clear();
@@ -8594,10 +8666,18 @@ bool AnimationTrackEditor::is_function_name_pressed() {
 }
 
 void AnimationTrackEditor::_auto_fit() {
+	if (graph_mc->is_visible()) {
+		graph_editor->frame_all();
+		return;
+	}
 	timeline->auto_fit();
 }
 
 void AnimationTrackEditor::_auto_fit_bezier() {
+	if (graph_mc->is_visible()) {
+		graph_editor->frame_all();
+		return;
+	}
 	timeline->auto_fit();
 
 	if (bezier_mc->is_visible()) {
@@ -8684,6 +8764,7 @@ void AnimationTrackEditor::_update_timeline_margins() {
 	timeline_mc->add_theme_constant_override(SNAME("margin_right"), margin_right);
 
 	bezier_mc->add_theme_constant_override(SNAME("margin_left"), margin_left);
+	graph_mc->add_theme_constant_override(SNAME("margin_left"), margin_left);
 }
 
 void AnimationTrackEditor::_add_animation_player() {
@@ -8765,6 +8846,7 @@ void AnimationTrackEditor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("_bezier_track_set_key_handle_mode_at_time", "animation", "track_idx", "time", "key_handle_mode", "key_handle_set_mode"), &AnimationTrackEditor::_bezier_track_set_key_handle_mode_at_time, DEFVAL(Animation::HANDLE_SET_MODE_NONE));
 
 	ADD_SIGNAL(MethodInfo("timeline_changed", PropertyInfo(Variant::FLOAT, "position"), PropertyInfo(Variant::BOOL, "timeline_only"), PropertyInfo(Variant::BOOL, "update_position_only")));
+	ADD_SIGNAL(MethodInfo("graph_editor_toggled", PropertyInfo(Variant::BOOL, "shown")));
 	ADD_SIGNAL(MethodInfo("keying_changed"));
 	ADD_SIGNAL(MethodInfo("animation_len_changed", PropertyInfo(Variant::FLOAT, "len")));
 	ADD_SIGNAL(MethodInfo("animation_step_changed", PropertyInfo(Variant::FLOAT, "step")));
@@ -8898,6 +8980,18 @@ AnimationTrackEditor::AnimationTrackEditor() {
 	bezier_edit->set_timeline(timeline);
 	bezier_edit->connect("timeline_changed", callable_mp(this, &AnimationTrackEditor::_timeline_changed));
 
+	graph_mc = memnew(MarginContainer);
+	graph_mc->set_v_size_flags(SIZE_EXPAND_FILL);
+	graph_mc->set_theme_type_variation("AnimationBezierMargin");
+	timeline_vbox->add_child(graph_mc);
+	graph_mc->hide();
+
+	graph_editor = memnew(AsosdotGraphEditor);
+	graph_mc->add_child(graph_editor);
+	graph_editor->set_track_editor(this);
+	graph_editor->set_timeline(timeline);
+	graph_editor->connect("timeline_changed", callable_mp(this, &AnimationTrackEditor::_timeline_changed));
+
 	marker_edit = memnew(AnimationMarkerEdit);
 	timeline->get_child(0)->add_child(marker_edit);
 	// Prevents the play position from being drawn at the wrong place in specific cases.
@@ -8909,6 +9003,7 @@ AnimationTrackEditor::AnimationTrackEditor() {
 	marker_edit->connect(SceneStringName(draw), callable_mp(this, &AnimationTrackEditor::_redraw_groups));
 	marker_edit->connect(SceneStringName(draw), callable_mp(this, &AnimationTrackEditor::_redraw_tracks));
 	marker_edit->connect(SceneStringName(draw), callable_mp((CanvasItem *)bezier_edit, &CanvasItem::queue_redraw));
+	marker_edit->connect(SceneStringName(draw), callable_mp(graph_editor, &AsosdotGraphEditor::update_view));
 
 	scroll = memnew(ScrollContainer);
 	scroll->set_scroll_hint_mode(ScrollContainer::SCROLL_HINT_MODE_ALL);
@@ -8993,6 +9088,15 @@ AnimationTrackEditor::AnimationTrackEditor() {
 	bezier_edit_icon->set_tooltip_text(TTRC("Toggle between the bezier curve editor and track editor."));
 
 	bottom_hf->add_child(bezier_edit_icon);
+
+	graph_edit_icon = memnew(Button);
+	graph_edit_icon->set_flat(true);
+	graph_edit_icon->set_disabled(true);
+	graph_edit_icon->set_toggle_mode(true);
+	graph_edit_icon->set_accessibility_name(TTRC("Graph Editor"));
+	graph_edit_icon->set_tooltip_text(TTRC("Switch between the tracks and the Graph Editor, which draws every animated number as a curve to edit as in Blender (Ctrl+Tab)."));
+	graph_edit_icon->connect(SceneStringName(toggled), callable_mp(this, &AnimationTrackEditor::_show_graph_edit));
+	bottom_hf->add_child(graph_edit_icon);
 
 	function_name_toggler = memnew(Button);
 	function_name_toggler->set_flat(true);

@@ -28,6 +28,13 @@ built from the scene's meshes, denoised and accumulated over time. Behind the
 **Rope3D.** Verlet simulated rope that can pin either end to any `Node3D`, drawn
 either as a generated tube or as a mesh instanced per segment.
 
+**Animation workspace.** An **Animation** screen beside **3D**, laid out for
+cutscenes and rigs: the viewer, a library of animations, shots, sounds and
+poses, auto-key recording, camera cuts, a camera monitor with a multicam strip
+to cut between cameras live, and a Blender-style **Graph Editor** that draws
+every animated number as a curve to edit with Blender's keys. See
+[editor/animation/README.animation_workspace.md](editor/animation/README.animation_workspace.md).
+
 ## Godot 4.7 compatibility
 
 A Godot 4.7 project opens and runs in Asosdot as it does in Godot 4.7, and goes

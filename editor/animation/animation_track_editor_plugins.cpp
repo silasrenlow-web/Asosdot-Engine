@@ -30,9 +30,11 @@
 
 #include "animation_track_editor_plugins.h"
 
+#include "core/config/engine.h"
 #include "core/io/resource_loader.h"
 #include "core/object/callable_mp.h"
 #include "editor/audio/audio_stream_preview.h"
+#include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/inspector/editor_resource_preview.h"
@@ -411,9 +413,9 @@ void AsosdotAnimationTrackEditShot::draw_key(int p_index, float p_pixels_sec, in
 	const float height = int(font->get_height(font_size) * 1.5);
 	const Rect2 rect(from_x, (get_size().height - height) / 2, to_x - from_x, height);
 
-	Object *camera = ObjectDB::get_instance(id);
-	const String name = camera ? String(Object::cast_to<Node>(camera)->get_name()) : String();
-	Color color = get_shot_color(name);
+	const Node *camera = Object::cast_to<Node>(ObjectDB::get_instance(id));
+	const String name = camera ? String(camera->get_name()) : String();
+	Color color = get_shot_color(camera);
 	draw_rect(rect, Color(color, 0.45));
 	draw_rect(Rect2(rect.position, Vector2(3 * EDSCALE, rect.size.y)), color);
 	if (p_selected) {
@@ -430,9 +432,42 @@ void AsosdotAnimationTrackEditShot::set_node(Object *p_object) {
 	id = p_object->get_instance_id();
 }
 
-Color AsosdotAnimationTrackEditShot::get_shot_color(const String &p_camera_name) {
-	// Each camera keeps its colour wherever its shots appear.
-	const float hue = float(p_camera_name.hash() % 360) / 360.0f;
+// Where the camera comes among the edited scene's cameras, in scene order; the list is found at most
+// once a frame, however many shots are drawn.
+static int _get_scene_camera_index(const Node *p_camera) {
+	static LocalVector<ObjectID> cameras;
+	static uint64_t found_frame = UINT64_MAX;
+	static ObjectID found_scene;
+	Node *scene = EditorNode::get_singleton()->get_edited_scene();
+	const ObjectID scene_id = scene ? scene->get_instance_id() : ObjectID();
+	if (found_frame != Engine::get_singleton()->get_process_frames() || found_scene != scene_id) {
+		found_frame = Engine::get_singleton()->get_process_frames();
+		found_scene = scene_id;
+		cameras.clear();
+		if (scene) {
+			if (scene->is_class("Camera3D")) {
+				cameras.push_back(scene_id);
+			}
+			const TypedArray<Node> found = scene->find_children("*", "Camera3D", true, false);
+			for (int i = 0; i < found.size(); i++) {
+				cameras.push_back(Object::cast_to<Node>(found[i])->get_instance_id());
+			}
+		}
+	}
+	return p_camera ? int(cameras.find(p_camera->get_instance_id())) : -1;
+}
+
+Color AsosdotAnimationTrackEditShot::get_shot_color(const Node *p_camera) {
+	// Each camera keeps its colour wherever its shots appear. The scene's cameras step around the
+	// colour wheel by the golden angle, so cameras next to each other never look alike, however
+	// alike their names are; a camera from elsewhere gets one from its name.
+	const int index = _get_scene_camera_index(p_camera);
+	float hue = 0.0f;
+	if (index >= 0) {
+		hue = Math::fmod(0.58f + index * 0.618034f, 1.0f);
+	} else if (p_camera) {
+		hue = float(hash_murmur3_one_32(String(p_camera->get_name()).hash()) % 360) / 360.0f;
+	}
 	return Color::from_hsv(hue, 0.55, 0.85);
 }
 
