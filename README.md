@@ -89,8 +89,22 @@ python misc/scripts/make_export_templates.py
 That makes `bin/Asosdot-Export-Templates-1.0.stable.tpz`. Install it from
 **Editor > Manage Export Templates > Install from File**. The script packages
 whatever templates are in `bin/`: Linux and Web templates build the same way
-with `platform=linuxbsd` or `platform=web` (Web needs Emscripten), and macOS and
-iOS templates need building on a Mac, as Godot's build documentation describes.
+with `platform=linuxbsd` or `platform=web` (Web needs Emscripten).
+
+The macOS template needs a Mac, so GitHub builds it. Push a tag to start the
+`Asosdot macOS export templates` workflow:
+
+```
+git tag asosdot-macos-templates-<n>
+git push origin asosdot-macos-templates-<n>
+```
+
+Its `asosdot-macos-templates` artifact holds a universal `macos.zip`; put that
+in `bin/` before running the packaging script. A tag with `-debug` in its name
+builds the debug template too. A Windows editor exports macOS games from it,
+signed ad hoc with the built-in codesign. iOS templates still need a Mac with
+Xcode.
+
 GDExtensions a project uses, such as GodotSteam or Terrain3D, export with it as
 they do with Godot's templates.
 
