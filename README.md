@@ -114,6 +114,13 @@ they do with Godot's templates.
 scons platform=windows target=editor d3d12=yes
 ```
 
+On Direct3D 12, Asosdot gives the resource descriptor heap
+(`rendering/rendering_device/d3d12/max_resource_descriptors`) 524288 entries
+by default, where Godot gives 65536, and the editor at least 1000000. Every
+render pass takes about 47, including each face of each shadowed omni light, so
+a level with many shadowed lights filled Godot's heap and drew black. If it
+fills anyway, the error says how full it is and which shaders hold the most.
+
 `d3d12=yes` needs the Direct3D 12 SDK files, which
 `python misc/scripts/install_d3d12_sdk_windows.py` downloads; `d3d12=no`
 builds without the Direct3D 12 renderer. Either way it goes on the command

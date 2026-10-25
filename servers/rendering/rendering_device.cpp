@@ -39,6 +39,7 @@
 #include "core/os/os.h"
 #include "core/profiling/profiling.h"
 #include "core/templates/fixed_vector.h"
+#include "core/templates/pair.h"
 #include "servers/rendering/rendering_device_binds.h"
 #include "servers/rendering/rendering_shader_container.h"
 #include "servers/rendering/shader_include_db.h"
@@ -4764,6 +4765,32 @@ RID RenderingDevice::uniform_set_create(const VectorView<RD::Uniform> &p_uniform
 	}
 
 	RDD::UniformSetID driver_uniform_set = driver->uniform_set_create(driver_uniforms, shader->driver_id, p_shader_set, p_linear_pool ? frame : -1);
+	if (!driver_uniform_set) {
+		// Asosdot: the first time the driver can't make one (on Direct3D 12, when its descriptor heap is
+		// full), say which shaders hold the most uniform sets, so whatever is filling it can be found;
+		// the draw errors that follow don't name a cause.
+		static bool reported = false;
+		if (!reported) {
+			reported = true;
+			HashMap<String, uint32_t> counts;
+			const LocalVector<RID> sets = uniform_set_owner.get_owned_list();
+			for (const RID &set_rid : sets) {
+				const UniformSet *set = uniform_set_owner.get_or_null(set_rid);
+				const Shader *set_shader = set ? shader_owner.get_or_null(set->shader_id) : nullptr;
+				counts[set_shader ? vformat("%s, set %d", set_shader->name, set->shader_set) : String("unknown shader")] += 1;
+			}
+			LocalVector<Pair<uint32_t, String>> ranked;
+			for (const KeyValue<String, uint32_t> &E : counts) {
+				ranked.push_back(Pair<uint32_t, String>(E.value, E.key));
+			}
+			ranked.sort_custom<PairSort<uint32_t, String>>();
+			String top;
+			for (int64_t i = int64_t(ranked.size()) - 1; i >= 0 && i >= int64_t(ranked.size()) - 12; i--) {
+				top += vformat("\n  %d  %s", ranked[i].first, ranked[i].second);
+			}
+			ERR_PRINT(vformat("Uniform sets can't be made any more (%d exist). The shaders with the most:%s", sets.size(), top));
+		}
+	}
 	ERR_FAIL_COND_V(!driver_uniform_set, RID());
 
 	UniformSet uniform_set;

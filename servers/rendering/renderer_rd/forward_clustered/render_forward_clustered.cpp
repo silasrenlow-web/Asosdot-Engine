@@ -626,6 +626,14 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 }
 
 void RenderForwardClustered::_render_list(RenderingDevice::DrawListID p_draw_list, RenderingDevice::FramebufferFormatID p_framebuffer_Format, RenderListParameters *p_params, uint32_t p_from_element, uint32_t p_to_element) {
+	// Asosdot: when a uniform set the pass needs couldn't be made (the driver ran out of room and has
+	// said so), each draw would fail with an error of its own, tens of thousands a second, enough to
+	// stall the editor. Skip the pass instead, saying so once.
+	if (unlikely(p_params->render_pass_uniform_set.is_null() || render_base_uniform_set.is_null())) {
+		ERR_PRINT_ONCE("3D render passes are being skipped because their uniform sets couldn't be made; the error before this one says why.");
+		return;
+	}
+
 	//use template for faster performance (pass mode comparisons are inlined)
 
 	switch (p_params->pass_mode) {

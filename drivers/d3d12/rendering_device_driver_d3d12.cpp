@@ -394,6 +394,12 @@ void RenderingDeviceDriverD3D12::DescriptorHeap::free(const Allocation &p_alloca
 	virtual_block->FreeAllocation(virtual_alloc);
 }
 
+String RenderingDeviceDriverD3D12::DescriptorHeap::get_usage_text() const {
+	D3D12MA::Statistics stats = {};
+	virtual_block->GetStatistics(&stats);
+	return vformat("%d of %d descriptors are in use, in %d allocations", stats.AllocationBytes, stats.BlockBytes, stats.AllocationCount);
+}
+
 void RenderingDeviceDriverD3D12::CPUDescriptorHeapPool::initialize(ID3D12Device *p_device, D3D12_DESCRIPTOR_HEAP_TYPE p_type) {
 	type = p_type;
 	increment_size = p_device->GetDescriptorHandleIncrementSize(p_type);
@@ -3384,8 +3390,7 @@ RDD::UniformSetID RenderingDeviceDriverD3D12::uniform_set_create(VectorView<Boun
 		if (unlikely(err != OK)) {
 			VersatileResource::free(resources_allocator, uniform_set_info);
 
-			ERR_FAIL_COND_V_MSG(err == ERR_OUT_OF_MEMORY, UniformSetID(), "Cannot create uniform set because there's not enough room in the RESOURCES descriptor heap.\n"
-																		  "Please increase the value of the rendering/rendering_device/d3d12/max_resource_descriptors project setting.");
+			ERR_FAIL_COND_V_MSG(err == ERR_OUT_OF_MEMORY, UniformSetID(), vformat("Cannot create uniform set because there's not enough room in the RESOURCES descriptor heap (%s; this set needs %d).\n", resource_descriptor_heap.get_usage_text(), uniform_set.resource_descriptor_count) + "Please increase the value of the rendering/rendering_device/d3d12/max_resource_descriptors project setting.");
 
 			ERR_FAIL_V_MSG(UniformSetID(), "Failed to allocate resource descriptors.");
 		}
@@ -3807,8 +3812,7 @@ RenderingDeviceDriverD3D12::DescriptorHeap::Allocation RenderingDeviceDriverD3D1
 		DescriptorHeap::Allocation descriptor_allocation = {};
 
 		Error err = resource_descriptor_heap.allocate(1, descriptor_allocation);
-		ERR_FAIL_COND_V_MSG(err == ERR_OUT_OF_MEMORY, DescriptorHeap::Allocation(), "Cannot allocate per frame descriptor because there's not enough room in the RESOURCES descriptor heap.\n"
-																					"Please increase the value of the rendering/rendering_device/d3d12/max_resource_descriptors project setting.");
+		ERR_FAIL_COND_V_MSG(err == ERR_OUT_OF_MEMORY, DescriptorHeap::Allocation(), vformat("Cannot allocate per frame descriptor because there's not enough room in the RESOURCES descriptor heap (%s).\n", resource_descriptor_heap.get_usage_text()) + "Please increase the value of the rendering/rendering_device/d3d12/max_resource_descriptors project setting.");
 
 		ERR_FAIL_COND_V_MSG(err != OK, DescriptorHeap::Allocation(), "Failed to allocate per frame descriptor.");
 
@@ -6343,6 +6347,15 @@ static Error create_command_signature(ID3D12Device *device, D3D12_INDIRECT_ARGUM
 Error RenderingDeviceDriverD3D12::_initialize_frames(uint32_t p_frame_count) {
 	uint32_t num_resource_descriptors = GLOBAL_GET("rendering/rendering_device/d3d12/max_resource_descriptors");
 	uint32_t num_sampler_descriptors = GLOBAL_GET("rendering/rendering_device/d3d12/max_sampler_descriptors");
+#ifdef TOOLS_ENABLED
+	if (Engine::get_singleton()->is_editor_hint()) {
+		// Asosdot: the editor keeps the materials of every open scene, and draws more views than a game
+		// (the 3D viewports, previews, the camera monitor), each with its own shadow passes, so it takes
+		// the most every Direct3D 12 GPU allows.
+		num_resource_descriptors = MAX(num_resource_descriptors, 1000000u);
+	}
+#endif
+
 
 	Error err = resource_descriptor_heap.initialize(device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, num_resource_descriptors, true);
 	ERR_FAIL_COND_V(err != OK, ERR_CANT_CREATE);
