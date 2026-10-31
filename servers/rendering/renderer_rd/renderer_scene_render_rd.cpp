@@ -829,7 +829,7 @@ void RendererSceneRenderRD::_render_buffers_post_process_and_tonemap(const Rende
 			RID view_color = use_upscaled_texture ? rb->get_upscaled_texture(v) : rb->get_internal_texture(v);
 			RID view_fb = FramebufferCacheRD::get_singleton()->get_cache(view_color);
 
-			lens_flare->draw(view_fb, depth_texture, lens_flare_instances, correction * p_render_data->scene_data->view_projection[v], p_render_data->scene_data->cam_transform, aspect, luminance_multiplier);
+			lens_flare->draw(view_fb, depth_texture, lens_flare_instances, correction * p_render_data->scene_data->view_projection[v], p_render_data->scene_data->cam_transform, aspect, luminance_multiplier, lens_flare_ghost_limit);
 		}
 
 		RD::get_singleton()->draw_command_end_label();

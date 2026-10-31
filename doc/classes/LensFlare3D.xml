@@ -12,7 +12,44 @@
 	</description>
 	<tutorials>
 	</tutorials>
+	<methods>
+		<method name="add_occlusion_exception">
+			<return type="void" />
+			<param index="0" name="node" type="VisualInstance3D" />
+			<description>
+				Makes the flare look past [param node] when it checks whether its source is hidden. The source is hidden by anything in front of it, so a flare inside a bulb is hidden by the bulb's own glass; add the bulb's mesh and it isn't, while a wall or a hand between the lamp and the camera still hides it.
+				[codeblock]
+				# The flare is a child of the bulb's mesh.
+				$Bulb/Flare.add_occlusion_exception($Bulb)
+				[/codeblock]
+				It works on anything visible: a [MeshInstance3D], its children, a [MultiMeshInstance3D], CSG shapes, particles. An excluded object is looked past where it is, using its world-space bounds, so it follows the object when it moves. Up to 8 objects count per flare. Adding a node twice does nothing.
+				[b]Note:[/b] Bounds are boxes. A surface that lies inside an excluded object's box is treated as the object, so a wall pressed right up against an excluded lamp is looked past where it is inside the lamp's box and hides the flare everywhere else.
+			</description>
+		</method>
+		<method name="clear_occlusion_exceptions">
+			<return type="void" />
+			<description>
+				Removes every exception, so everything in front of the source hides it again.
+			</description>
+		</method>
+		<method name="get_occlusion_exception_nodes" qualifiers="const">
+			<return type="VisualInstance3D[]" />
+			<description>
+				Returns the nodes the flare looks past, however they were added. Nodes that have been freed, or that a path no longer leads to, are left out.
+			</description>
+		</method>
+		<method name="remove_occlusion_exception">
+			<return type="void" />
+			<param index="0" name="node" type="VisualInstance3D" />
+			<description>
+				Makes [param node] hide the source again, if it was added with [method add_occlusion_exception] or in [member occlusion_exceptions].
+			</description>
+		</method>
+	</methods>
 	<members>
+		<member name="occlusion_exceptions" type="NodePath[]" setter="set_occlusion_exceptions" getter="get_occlusion_exceptions" default="[]">
+			Paths, from this node, to the [VisualInstance3D]s the flare looks past when it checks whether its source is hidden. Put a flare in a bulb and add the bulb here, so its glass doesn't hide it. See [method add_occlusion_exception]. Saved with the scene.
+		</member>
 		<member name="angle_fade" type="float" setter="set_angle_fade" getter="get_angle_fade" default="0.2">
 			How softly the flare fades out as the camera leaves the cone set by [member angle_limit], as a fraction of the cone. [code]0.0[/code] cuts the flare off at the edge of the cone. Has no effect when [member angle_limit] is [code]0.0[/code] or [member directional] is [code]true[/code].
 		</member>

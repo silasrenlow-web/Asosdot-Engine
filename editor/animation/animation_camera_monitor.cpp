@@ -166,6 +166,8 @@ void AsosdotCameraView::_sync_proxy() {
 	hash = hash_murmur3_one_32(source->get_keep_aspect_mode(), hash);
 	hash = hash_murmur3_one_32(source->get_cull_mask(), hash);
 	hash = hash_murmur3_one_32(flare_mask, hash);
+	hash = hash_murmur3_one_32(source->get_lens_flare_max_count(), hash);
+	hash = hash_murmur3_one_real(source->get_lens_flare_ghost_limit(), hash);
 	hash = hash_murmur3_one_64(environment_rid.get_id(), hash);
 	hash = hash_murmur3_one_64(attributes_rid.get_id(), hash);
 	hash = hash_murmur3_one_64(compositor_rid.get_id(), hash);
@@ -191,6 +193,8 @@ void AsosdotCameraView::_sync_proxy() {
 	rs->camera_set_use_vertical_aspect(proxy, source->get_keep_aspect_mode() == Camera3D::KEEP_WIDTH);
 	rs->camera_set_cull_mask(proxy, source->get_cull_mask() & SCENE_LAYERS);
 	rs->camera_set_lens_flare_cull_mask(proxy, flare_mask);
+	rs->camera_set_lens_flare_max_count(proxy, source->get_lens_flare_max_count());
+	rs->camera_set_lens_flare_ghost_limit(proxy, source->get_lens_flare_ghost_limit());
 	rs->camera_set_environment(proxy, environment_rid);
 	rs->camera_set_camera_attributes(proxy, attributes_rid);
 	rs->camera_set_compositor(proxy, compositor_rid);

@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/variant/typed_array.h"
 #include "scene/3d/visual_instance_3d.h"
 #include "scene/resources/lens_flare.h"
 
@@ -55,6 +56,11 @@ class LensFlare3D : public VisualInstance3D {
 	float occlusion_radius = 0.25;
 	float occlusion_angle = Math::deg_to_rad(1.0);
 
+	// What the occlusion test looks past. Paths are what a scene saves; objects
+	// are for nodes added from code before either node is in the tree.
+	Vector<NodePath> exception_paths;
+	Vector<ObjectID> exception_objects;
+
 	float fade_distance_begin = 0.0;
 	float fade_distance_end = 0.0;
 	float fade_screen_edge = 0.2;
@@ -64,8 +70,10 @@ class LensFlare3D : public VisualInstance3D {
 	void _flare_changed();
 	void _update_elements();
 	void _update_source();
+	void _update_exceptions();
 
 protected:
+	void _notification(int p_what);
 	static void _bind_methods();
 	void _validate_property(PropertyInfo &p_property) const;
 
@@ -96,6 +104,13 @@ public:
 
 	void set_occlusion_angle(float p_radians);
 	float get_occlusion_angle() const;
+
+	void set_occlusion_exceptions(const TypedArray<NodePath> &p_paths);
+	TypedArray<NodePath> get_occlusion_exceptions() const;
+	void add_occlusion_exception(VisualInstance3D *p_node);
+	void remove_occlusion_exception(VisualInstance3D *p_node);
+	void clear_occlusion_exceptions();
+	TypedArray<VisualInstance3D> get_occlusion_exception_nodes() const;
 
 	void set_fade_distance_begin(float p_distance);
 	float get_fade_distance_begin() const;

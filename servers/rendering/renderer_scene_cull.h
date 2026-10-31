@@ -86,6 +86,10 @@ public:
 		// Zero when the camera draws no flares at all, which is how Camera3D
 		// folds its lens_flares_enabled switch into the mask.
 		uint32_t lens_flare_cull_mask;
+		// Most flares the camera draws; 0 leaves it at what the pass can hold.
+		uint32_t lens_flare_max_count = 0;
+		// How far the ghosts of several flares are held to one flare's worth.
+		float lens_flare_ghost_limit = 1.0;
 		bool vaspect;
 		RID env;
 		RID attributes;
@@ -121,6 +125,8 @@ public:
 	virtual void camera_set_compositor(RID p_camera, RID p_compositor);
 	virtual void camera_set_use_vertical_aspect(RID p_camera, bool p_enable);
 	virtual void camera_set_lens_flare_cull_mask(RID p_camera, uint32_t p_layers);
+	virtual void camera_set_lens_flare_max_count(RID p_camera, int p_count);
+	virtual void camera_set_lens_flare_ghost_limit(RID p_camera, float p_limit);
 	virtual bool is_camera(RID p_camera) const;
 
 	/* OCCLUDER API */
@@ -1198,7 +1204,7 @@ public:
 
 	bool _render_reflection_probe_step(Instance *p_instance, int p_step);
 
-	void _render_scene(const RendererSceneRender::CameraData *p_camera_data, const Ref<RenderSceneBuffers> &p_render_buffers, RID p_environment, RID p_force_camera_attributes, RID p_compositor, uint32_t p_visible_layers, uint32_t p_lens_flare_cull_mask, RID p_scenario, RID p_viewport, RID p_shadow_atlas, RID p_reflection_probe, int p_reflection_probe_pass, float p_screen_mesh_lod_threshold, float p_window_output_max_value, bool p_using_shadows = true, RenderingServerTypes::RenderInfo *r_render_info = nullptr);
+	void _render_scene(const RendererSceneRender::CameraData *p_camera_data, const Ref<RenderSceneBuffers> &p_render_buffers, RID p_environment, RID p_force_camera_attributes, RID p_compositor, uint32_t p_visible_layers, uint32_t p_lens_flare_cull_mask, uint32_t p_lens_flare_max_count, float p_lens_flare_ghost_limit, RID p_scenario, RID p_viewport, RID p_shadow_atlas, RID p_reflection_probe, int p_reflection_probe_pass, float p_screen_mesh_lod_threshold, float p_window_output_max_value, bool p_using_shadows = true, RenderingServerTypes::RenderInfo *r_render_info = nullptr);
 	void render_empty_scene(const Ref<RenderSceneBuffers> &p_render_buffers, RID p_scenario, RID p_shadow_atlas, float p_window_output_max_value);
 
 	void render_camera(const Ref<RenderSceneBuffers> &p_render_buffers, RID p_camera, RID p_scenario, RID p_viewport, Size2 p_viewport_size, uint32_t p_jitter_phase_count, float p_screen_mesh_lod_threshold, RID p_shadow_atlas, Ref<XRInterface> &p_xr_interface, float p_window_output_max_value, RenderingServerTypes::RenderInfo *r_render_info = nullptr);

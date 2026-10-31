@@ -46,14 +46,17 @@ public:
 	enum {
 		// A scene only ever has a handful of flare sources worth drawing, and the
 		// buffers are allocated up front, so these are caps rather than budgets.
-		MAX_FLARES = 32,
+		MAX_FLARES = RendererSceneRender::MAX_LENS_FLARES,
 		MAX_QUADS = 256,
+		// Bounds a flare's occlusion test looks past, per flare and in all.
+		MAX_EXCEPTIONS_PER_FLARE = 8,
+		MAX_EXCEPTION_BOXES = 128,
 	};
 
 	LensFlare();
 	~LensFlare();
 
-	void draw(RID p_dest_fb, RID p_depth_texture, const LocalVector<RendererSceneRender::LensFlareInstance> &p_flares, const Projection &p_view_projection, const Transform3D &p_camera_transform, float p_aspect, float p_luminance_multiplier);
+	void draw(RID p_dest_fb, RID p_depth_texture, const LocalVector<RendererSceneRender::LensFlareInstance> &p_flares, const Projection &p_view_projection, const Transform3D &p_camera_transform, float p_aspect, float p_luminance_multiplier, float p_ghost_limit);
 
 private:
 	// Mirrors the Flare struct in lens_flare.glsl.
@@ -77,7 +80,9 @@ private:
 		float camera_right[4];
 		float camera_position[4];
 		uint32_t quad_offset;
-		uint32_t pad[3];
+		uint32_t flare_count;
+		float ghost_limit;
+		uint32_t pad;
 	};
 
 	// A run of quads that share a pipeline and a texture, so they go out in one
@@ -102,6 +107,8 @@ private:
 
 	RID flare_buffer;
 	RID quad_buffer;
+	// The inverse of the view projection, then two vec4 per excluded box.
+	RID exception_buffer;
 
 	// The bundled element textures, in RSE::LensFlareElementType order starting
 	// at LENS_FLARE_ELEMENT_BUILTIN_CORONA.
@@ -110,6 +117,7 @@ private:
 	// Held across frames so a steady scene does no allocation.
 	LocalVector<FlareData> flare_data;
 	LocalVector<QuadData> quad_data;
+	LocalVector<float> exception_data;
 	LocalVector<Batch> batches;
 
 	void _create_builtin_textures();

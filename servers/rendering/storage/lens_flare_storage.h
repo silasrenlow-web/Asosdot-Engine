@@ -32,6 +32,7 @@
 
 #include "core/math/color.h"
 #include "core/math/vector2.h"
+#include "core/variant/typed_array.h"
 #include "core/templates/local_vector.h"
 #include "core/templates/rid_owner.h"
 #include "servers/rendering/rendering_server_enums.h"
@@ -86,6 +87,9 @@ private:
 
 		bool occlusion_enabled = true;
 		float occlusion_radius = 0.5;
+		// Instances the occlusion test looks past, as RIDs of scenario
+		// instances. The scene culler turns them into world bounds each frame.
+		LocalVector<RID> occlusion_exceptions;
 
 		float fade_distance_begin = 0.0; // 0 disables distance fading.
 		float fade_distance_end = 0.0;
@@ -121,6 +125,8 @@ public:
 
 	void lens_flare_set_source(RID p_flare, float p_intensity, float p_scale, const Color &p_color, bool p_directional);
 	void lens_flare_set_occlusion(RID p_flare, bool p_enabled, float p_radius);
+	void lens_flare_set_occlusion_exceptions(RID p_flare, const TypedArray<RID> &p_instances);
+	const LocalVector<RID> &lens_flare_get_occlusion_exceptions(RID p_flare) const;
 	void lens_flare_set_fade(RID p_flare, float p_distance_begin, float p_distance_end, float p_screen_edge, float p_angle_limit, float p_angle_fade);
 
 	// Renderer side reads. These return references into the flare, so callers must

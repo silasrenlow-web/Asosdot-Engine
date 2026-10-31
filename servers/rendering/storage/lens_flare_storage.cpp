@@ -125,6 +125,22 @@ void RendererLensFlare::lens_flare_set_occlusion(RID p_flare, bool p_enabled, fl
 	flare->occlusion_radius = MAX(p_radius, 0.0f);
 }
 
+void RendererLensFlare::lens_flare_set_occlusion_exceptions(RID p_flare, const TypedArray<RID> &p_instances) {
+	LensFlare *flare = lens_flare_owner.get_or_null(p_flare);
+	ERR_FAIL_NULL(flare);
+
+	flare->occlusion_exceptions.clear();
+	for (int i = 0; i < p_instances.size(); i++) {
+		flare->occlusion_exceptions.push_back(p_instances[i]);
+	}
+}
+
+const LocalVector<RID> &RendererLensFlare::lens_flare_get_occlusion_exceptions(RID p_flare) const {
+	static const LocalVector<RID> none;
+	const LensFlare *flare = lens_flare_owner.get_or_null(p_flare);
+	return flare ? flare->occlusion_exceptions : none;
+}
+
 void RendererLensFlare::lens_flare_set_fade(RID p_flare, float p_distance_begin, float p_distance_end, float p_screen_edge, float p_angle_limit, float p_angle_fade) {
 	LensFlare *flare = lens_flare_owner.get_or_null(p_flare);
 	ERR_FAIL_NULL(flare);

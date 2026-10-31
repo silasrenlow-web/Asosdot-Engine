@@ -550,6 +550,8 @@ public:
 	virtual void camera_set_compositor(RID p_camera, RID p_compositor) = 0;
 	virtual void camera_set_use_vertical_aspect(RID p_camera, bool p_enable) = 0;
 	virtual void camera_set_lens_flare_cull_mask(RID p_camera, uint32_t p_layers) = 0;
+	virtual void camera_set_lens_flare_max_count(RID p_camera, int p_count) = 0;
+	virtual void camera_set_lens_flare_ghost_limit(RID p_camera, float p_limit) = 0;
 
 	/* VIEWPORT API */
 
@@ -748,6 +750,7 @@ public:
 
 	virtual void lens_flare_set_source(RID p_flare, float p_intensity, float p_scale, const Color &p_color, bool p_directional) = 0;
 	virtual void lens_flare_set_occlusion(RID p_flare, bool p_enabled, float p_radius) = 0;
+	virtual void lens_flare_set_occlusion_exceptions(RID p_flare, const TypedArray<RID> &p_instances) = 0;
 	virtual void lens_flare_set_fade(RID p_flare, float p_distance_begin, float p_distance_end, float p_screen_edge, float p_angle_limit, float p_angle_fade) = 0;
 
 	/* SCENARIO API */

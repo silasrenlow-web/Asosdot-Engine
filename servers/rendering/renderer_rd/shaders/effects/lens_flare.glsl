@@ -11,7 +11,7 @@ struct Flare {
 	vec4 source; // xyz: world position, or the direction the source lies in. w: 0 for a directional source, 1 otherwise.
 	vec4 direction; // xyz: the source's -Z axis in world space. w: cos(angle_limit), or -2 when the limit is off.
 	vec4 params; // x: occlusion radius, 0 when occlusion is off. yz: distance fade begin and end. w: screen edge fade.
-	vec4 params2; // x: angular fade width. y: overall scale. zw: unused.
+	vec4 params2; // x: angular fade width. y: overall scale. z: how much light the source adds to the frame. w: the excluded bounds, as first box * 16 + count.
 };
 
 struct Quad {
@@ -33,14 +33,21 @@ quads;
 
 layout(set = 0, binding = 2) uniform sampler2D source_depth;
 
+// The inverse of view_projection in the first four vec4 (its columns), then
+// two vec4 per excluded box: the minimum corner, the maximum corner.
+layout(set = 0, binding = 4, std430) restrict readonly buffer Exceptions {
+	vec4 data[];
+}
+exceptions;
+
 layout(push_constant, std430) uniform Params {
 	mat4 view_projection;
 	vec4 camera_right; // xyz: the camera's right vector in world space. w: luminance multiplier.
 	vec4 camera_position; // xyz: the camera's world position. w: aspect ratio.
 	uint quad_offset;
-	uint pad0;
-	uint pad1;
-	uint pad2;
+	uint flare_count;
+	float ghost_limit; // 0: every flare throws its ghosts in full. 1: all the ghosts together weigh no more than the brightest flare's.
+	uint pad;
 }
 params;
 
@@ -67,8 +74,18 @@ const vec2 occlusion_taps[12] = vec2[](
 
 // Godot's render device uses reverse Z, so a larger stored depth is nearer. A tap
 // occludes the source when whatever the scene wrote there sits in front of it.
-float sample_occlusion(vec2 p_uv, float p_depth, float p_radius) {
+//
+// Objects the flare is told to look past are handled without an object buffer,
+// which the depth buffer doesn't have: the surface nearest the camera at a tap is
+// only ever one thing, so if its world position lies inside an excluded object's
+// bounds, that surface is the object, and nothing else can stand in front of it.
+// A tap whose nearest surface is outside every excluded bound is a real
+// occluder, however close to the object it is.
+float sample_occlusion(vec2 p_uv, float p_depth, float p_radius, uint p_exception_info) {
 	float visible = 0.0;
+	uint box_count = p_exception_info & 15u;
+	uint first_box = p_exception_info >> 4;
+	mat4 inverse_view_projection = mat4(exceptions.data[0], exceptions.data[1], exceptions.data[2], exceptions.data[3]);
 
 	for (int i = 0; i < 12; i++) {
 		// Clamped into the frame rather than skipped. A tap that falls outside
@@ -78,24 +95,38 @@ float sample_occlusion(vec2 p_uv, float p_depth, float p_radius) {
 		// off entirely the moment a source left the frame and let a flare shine
 		// straight through a wall.
 		vec2 tap_uv = clamp(p_uv + occlusion_taps[i] * p_radius * vec2(1.0, params.camera_position.w), vec2(0.0), vec2(1.0));
-		visible += textureLod(source_depth, tap_uv, 0.0).r <= p_depth ? 1.0 : 0.0;
+		float tap_depth = textureLod(source_depth, tap_uv, 0.0).r;
+		float tap_visible = tap_depth <= p_depth ? 1.0 : 0.0;
+
+		if (tap_visible == 0.0 && box_count > 0u) {
+			vec4 world = inverse_view_projection * vec4(tap_uv * 2.0 - 1.0, tap_depth, 1.0);
+			vec3 world_position = world.xyz / world.w;
+			for (uint b = 0u; b < box_count; b++) {
+				uint at = 4u + (first_box + b) * 2u;
+				if (all(greaterThanEqual(world_position, exceptions.data[at].xyz)) && all(lessThanEqual(world_position, exceptions.data[at + 1u].xyz))) {
+					tap_visible = 1.0;
+					break;
+				}
+			}
+		}
+
+		visible += tap_visible;
 	}
 
 	return visible / 12.0;
 }
 
-void main() {
-	Quad quad = quads.data[params.quad_offset + uint(gl_InstanceIndex)];
-	Flare flare = flares.data[quad.flags.x];
-
-	vec4 clip = params.view_projection * flare.source;
+// Everything that dims a flare as a whole: occlusion, the screen edge, distance
+// and angle. Zero when the flare is not drawn at all.
+float flare_fade(Flare p_flare, out vec2 r_source_uv) {
+	vec4 clip = params.view_projection * p_flare.source;
 
 	float fade = clip.w > 0.0 ? 1.0 : 0.0;
-	vec2 source_uv = vec2(0.0);
+	r_source_uv = vec2(0.0);
 
 	if (fade > 0.0) {
 		vec3 ndc = clip.xyz / clip.w;
-		source_uv = ndc.xy * 0.5 + 0.5;
+		r_source_uv = ndc.xy * 0.5 + 0.5;
 
 		// Reverse Z puts the near plane at 1 and the far plane at 0, so a source
 		// outside that range is behind the camera or past the far plane. The
@@ -104,47 +135,80 @@ void main() {
 		// a source behind an orthogonal camera projects onto the screen as
 		// though it were in front. That is what puts flares in the editor's Top
 		// and Front views.
-		if (flare.source.w > 0.5) {
+		if (p_flare.source.w > 0.5) {
 			fade *= (ndc.z >= 0.0 && ndc.z <= 1.0) ? 1.0 : 0.0;
 		}
 
 		// A directional source sits at infinity, where the projected depth is the
 		// far plane and a depth compare is all floating point noise. Anything the
 		// scene drew at all is in front of it.
-		float source_depth = flare.source.w > 0.5 ? ndc.z : 0.0;
+		float source_depth = p_flare.source.w > 0.5 ? ndc.z : 0.0;
 
-		if (fade > 0.0 && flare.params.x > 0.0) {
+		if (fade > 0.0 && p_flare.params.x > 0.0) {
 			// Offsetting along the camera's right vector turns a radius given in
 			// world units into one in UV, and the same expression covers a
 			// directional source, where the offset is the tangent of an angle
 			// because the source itself is a direction of unit length.
-			vec4 probe = params.view_projection * vec4(flare.source.xyz + params.camera_right.xyz * flare.params.x, flare.source.w);
-			float radius = probe.w > 0.0 ? distance(probe.xy / probe.w * 0.5 + 0.5, source_uv) : 0.0;
-			fade *= sample_occlusion(source_uv, source_depth, radius);
+			vec4 probe = params.view_projection * vec4(p_flare.source.xyz + params.camera_right.xyz * p_flare.params.x, p_flare.source.w);
+			float radius = probe.w > 0.0 ? distance(probe.xy / probe.w * 0.5 + 0.5, r_source_uv) : 0.0;
+			fade *= sample_occlusion(r_source_uv, source_depth, radius, uint(p_flare.params2.w + 0.5));
 		}
 
 		// Screen edge fade, measured on the axis the source is furthest out along
 		// so that it tracks the rectangle rather than a circle inscribed in it.
 		// The floor keeps the two smoothstep edges apart: equal edges are
 		// undefined in GLSL, and a zero width fade is a legitimate setting.
-		float edge = max(flare.params.w, 0.0001);
+		float edge = max(p_flare.params.w, 0.0001);
 		fade *= 1.0 - smoothstep(1.0 - edge, 1.0 + edge, max(abs(ndc.x), abs(ndc.y)));
 
-		if (flare.source.w > 0.5) {
+		if (p_flare.source.w > 0.5) {
 			// Distance fade, on the view depth the projection already worked out.
-			if (flare.params.z > flare.params.y + 0.0001) {
-				fade *= 1.0 - smoothstep(flare.params.y, flare.params.z, clip.w);
+			if (p_flare.params.z > p_flare.params.y + 0.0001) {
+				fade *= 1.0 - smoothstep(p_flare.params.y, p_flare.params.z, clip.w);
 			}
 
 			// Angular fade, for a source that only throws a flare within a cone
 			// around its own -Z, the way a SpotLight3D only lights within one.
-			if (flare.direction.w > -1.0) {
-				float outer = flare.direction.w;
-				float inner = max(mix(outer, 1.0, flare.params2.x), outer + 0.0001);
-				float facing = dot(normalize(params.camera_position.xyz - flare.source.xyz), flare.direction.xyz);
+			if (p_flare.direction.w > -1.0) {
+				float outer = p_flare.direction.w;
+				float inner = max(mix(outer, 1.0, p_flare.params2.x), outer + 0.0001);
+				float facing = dot(normalize(params.camera_position.xyz - p_flare.source.xyz), p_flare.direction.xyz);
 				fade *= smoothstep(outer, inner, facing);
 			}
 		}
+	}
+
+	return fade;
+}
+
+// Elements strung out along the axis, as opposed to the ones sitting on the
+// source, are the ghosts.
+const float GHOST_MIN_POSITION = 0.05;
+
+void main() {
+	Quad quad = quads.data[params.quad_offset + uint(gl_InstanceIndex)];
+	Flare flare = flares.data[quad.flags.x];
+
+	vec2 source_uv;
+	float fade = flare_fade(flare, source_uv);
+
+	if (fade > 0.0 && params.ghost_limit > 0.0 && params.flare_count > 1u && abs(quad.layout_data.x) > GHOST_MIN_POSITION) {
+		// Every source throws its ghosts along a line through the centre of the
+		// screen, so with several they pile up there as a clutter of rings. A real
+		// lens does the same, but it looks like a mistake. Each flare's ghosts are
+		// scaled by its share of the light that reaches the frame, which keeps all
+		// the ghosts together no brighter than the brightest flare's: a lone flare
+		// is untouched, equal flares each show a fraction, and a bright one keeps
+		// its ghosts while a dim one's fade away. What sits on the source stays.
+		float own = fade * flare.params2.z;
+		float total = own;
+		for (uint i = 0u; i < params.flare_count; i++) {
+			if (i != quad.flags.x) {
+				vec2 other_uv;
+				total += flare_fade(flares.data[i], other_uv) * flares.data[i].params2.z;
+			}
+		}
+		fade *= mix(1.0, own / max(total, 0.0001), params.ghost_limit);
 	}
 
 	if (fade <= 0.0) {

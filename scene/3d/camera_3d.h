@@ -83,6 +83,8 @@ private:
 	uint32_t layers = 0xfffff;
 	bool lens_flare_enabled = true;
 	uint32_t lens_flare_layers = 0xfffff;
+	int lens_flare_max_count = 0;
+	float lens_flare_ghost_limit = 1.0;
 	void _update_lens_flare_cull_mask();
 
 	Ref<Environment> environment;
@@ -188,6 +190,12 @@ public:
 
 	void set_lens_flare_cull_mask(uint32_t p_layers);
 	uint32_t get_lens_flare_cull_mask() const;
+
+	void set_lens_flare_ghost_limit(float p_limit);
+	float get_lens_flare_ghost_limit() const;
+
+	void set_lens_flare_max_count(int p_count);
+	int get_lens_flare_max_count() const;
 
 	void set_lens_flare_cull_mask_value(int p_layer_number, bool p_enable);
 	bool get_lens_flare_cull_mask_value(int p_layer_number) const;

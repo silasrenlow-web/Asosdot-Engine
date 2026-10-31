@@ -2859,6 +2859,8 @@ void RenderingServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("camera_set_compositor", "camera", "compositor"), &RenderingServer::camera_set_compositor);
 	ClassDB::bind_method(D_METHOD("camera_set_use_vertical_aspect", "camera", "enable"), &RenderingServer::camera_set_use_vertical_aspect);
 	ClassDB::bind_method(D_METHOD("camera_set_lens_flare_cull_mask", "camera", "layers"), &RenderingServer::camera_set_lens_flare_cull_mask);
+	ClassDB::bind_method(D_METHOD("camera_set_lens_flare_max_count", "camera", "count"), &RenderingServer::camera_set_lens_flare_max_count);
+	ClassDB::bind_method(D_METHOD("camera_set_lens_flare_ghost_limit", "camera", "limit"), &RenderingServer::camera_set_lens_flare_ghost_limit);
 
 	/* VIEWPORT */
 
@@ -3223,6 +3225,7 @@ void RenderingServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("lens_flare_set_element_color", "flare", "index", "color", "intensity", "blend_mode", "tint_by_source"), &RenderingServer::lens_flare_set_element_color);
 	ClassDB::bind_method(D_METHOD("lens_flare_set_source", "flare", "intensity", "scale", "color", "directional"), &RenderingServer::lens_flare_set_source);
 	ClassDB::bind_method(D_METHOD("lens_flare_set_occlusion", "flare", "enabled", "radius"), &RenderingServer::lens_flare_set_occlusion);
+	ClassDB::bind_method(D_METHOD("lens_flare_set_occlusion_exceptions", "flare", "instances"), &RenderingServer::lens_flare_set_occlusion_exceptions);
 	ClassDB::bind_method(D_METHOD("lens_flare_set_fade", "flare", "distance_begin", "distance_end", "screen_edge", "angle_limit", "angle_fade"), &RenderingServer::lens_flare_set_fade);
 
 	BIND_ENUM_CONSTANT(RSE::LENS_FLARE_ELEMENT_GLOW);

@@ -730,6 +730,8 @@ public:
 	FUNC2(camera_set_compositor, RID, RID)
 	FUNC2(camera_set_use_vertical_aspect, RID, bool)
 	FUNC2(camera_set_lens_flare_cull_mask, RID, uint32_t)
+	FUNC2(camera_set_lens_flare_max_count, RID, int)
+	FUNC2(camera_set_lens_flare_ghost_limit, RID, float)
 
 	/* OCCLUDER */
 	FUNCRIDSPLIT(occluder)
@@ -949,6 +951,7 @@ public:
 
 	FUNC5(lens_flare_set_source, RID, float, float, const Color &, bool)
 	FUNC3(lens_flare_set_occlusion, RID, bool, float)
+	FUNC2(lens_flare_set_occlusion_exceptions, RID, const TypedArray<RID> &)
 	FUNC6(lens_flare_set_fade, RID, float, float, float, float, float)
 
 	/* SCENARIO API */

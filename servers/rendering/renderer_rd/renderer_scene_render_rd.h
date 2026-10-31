@@ -77,6 +77,7 @@ protected:
 	// The flares the camera being rendered can see, handed over by the cull step
 	// before render_scene() and consumed by the post process pass.
 	LocalVector<LensFlareInstance> lens_flare_instances;
+	float lens_flare_ghost_limit = 1.0;
 
 	double time = 0.0;
 	double time_step = 0.0;
@@ -297,8 +298,9 @@ public:
 		scene_pass = p_pass;
 	}
 
-	virtual void lens_flare_update_list(const LocalVector<LensFlareInstance> &p_flares) override {
+	virtual void lens_flare_update_list(const LocalVector<LensFlareInstance> &p_flares, float p_ghost_limit) override {
 		lens_flare_instances = p_flares;
+		lens_flare_ghost_limit = p_ghost_limit;
 	}
 	_FORCE_INLINE_ uint64_t get_scene_pass() {
 		return scene_pass;

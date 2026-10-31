@@ -224,6 +224,15 @@
 		<member name="lens_flare_enabled" type="bool" setter="set_lens_flare_enabled" getter="is_lens_flare_enabled" default="true">
 			If [code]false[/code], this camera draws no lens flares at all, whatever [member lens_flare_cull_mask] says.
 		</member>
+		<member name="lens_flare_ghost_limit" type="float" setter="set_lens_flare_ghost_limit" getter="get_lens_flare_ghost_limit" default="1.0">
+			How far the ghosts of several [LensFlare3D]s are held to one flare's worth. A flare's ghosts, the rings, polygons and discs strung out along the line through the centre of the screen, are thrown by every source, so with many lights in view they pile up in the middle as a clutter of rings. Each flare's ghosts are scaled by its share of the light all the visible flares put into the frame, so together they weigh no more than the brightest flare's. A single flare is not affected, equal flares each show a fraction of theirs, and a bright flare keeps its ghosts while those of a dim one beside it fade away. What sits on the source itself (the glow, the starburst, the streaks) is never scaled.
+			[code]0[/code] turns it off, so every flare throws its ghosts in full. Occluded and off screen flares count for nothing, so a lamp behind a wall does not take ghosts from one you can see.
+		</member>
+		<member name="lens_flare_max_count" type="int" setter="set_lens_flare_max_count" getter="get_lens_flare_max_count" default="0">
+			The most lens flares this camera draws in a frame. When more [LensFlare3D]s than that are visible to it, the ones nearest the camera are kept and the rest are skipped, which also skips their occlusion tests.
+			Flares behind the camera or well outside the frame come last, so they do not take a place from one on screen. A directional flare, such as the sun, counts as the nearest of all while it is in front of the camera.
+			[code]0[/code] draws as many as the renderer can hold, 32. Setting it higher than that has no effect.
+		</member>
 		<member name="near" type="float" setter="set_near" getter="get_near" default="0.05">
 			The distance to the near culling boundary for this camera relative to its local Z axis. Lower values allow the camera to see objects more up close to its origin, at the cost of lower precision across the [i]entire[/i] range. Values lower than the default can lead to increased Z-fighting.
 		</member>

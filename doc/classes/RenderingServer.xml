@@ -170,6 +170,22 @@
 				Sets the layers a lens flare instance must be on for this camera to draw it, checked against the instance's layer mask. It is separate from [method camera_set_cull_mask]. A mask of [code]0[/code] draws no flares at all. Equivalent to [member Camera3D.lens_flare_cull_mask], which folds [member Camera3D.lens_flare_enabled] into the same mask.
 			</description>
 		</method>
+		<method name="camera_set_lens_flare_ghost_limit">
+			<return type="void" />
+			<param index="0" name="camera" type="RID" />
+			<param index="1" name="limit" type="float" />
+			<description>
+				Sets how far the ghosts of several lens flares are held to one flare's worth, from [code]0[/code] (every flare throws its ghosts in full) to [code]1[/code]. Equivalent to [member Camera3D.lens_flare_ghost_limit].
+			</description>
+		</method>
+		<method name="camera_set_lens_flare_max_count">
+			<return type="void" />
+			<param index="0" name="camera" type="RID" />
+			<param index="1" name="count" type="int" />
+			<description>
+				Sets the most lens flares this camera draws in a frame, keeping the ones nearest the camera. [code]0[/code] draws as many as the renderer can hold. Equivalent to [member Camera3D.lens_flare_max_count].
+			</description>
+		</method>
 		<method name="camera_set_orthogonal">
 			<return type="void" />
 			<param index="0" name="camera" type="RID" />
@@ -2206,6 +2222,14 @@
 			<param index="2" name="radius" type="float" />
 			<description>
 				Sets whether the flare is faded out by geometry in front of its source, and how far the sampling disc steps sideways from it. [param radius] is in world units for a positional source and the tangent of an angle for a directional one, since that source is only a direction. See [member LensFlare3D.occlusion_enabled], [member LensFlare3D.occlusion_radius] and [member LensFlare3D.occlusion_angle].
+			</description>
+		</method>
+		<method name="lens_flare_set_occlusion_exceptions">
+			<return type="void" />
+			<param index="0" name="flare" type="RID" />
+			<param index="1" name="instances" type="RID[]" />
+			<description>
+				Sets the instances ([RID]s of [method instance_create] instances) the flare looks past when it checks whether its source is hidden, replacing the last list. Their world bounds are read every frame. See [method LensFlare3D.add_occlusion_exception].
 			</description>
 		</method>
 		<method name="lens_flare_set_source">

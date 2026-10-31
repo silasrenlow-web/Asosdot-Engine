@@ -159,6 +159,18 @@ void RendererSceneCull::camera_set_lens_flare_cull_mask(RID p_camera, uint32_t p
 	camera->lens_flare_cull_mask = p_layers;
 }
 
+void RendererSceneCull::camera_set_lens_flare_max_count(RID p_camera, int p_count) {
+	Camera *camera = camera_owner.get_or_null(p_camera);
+	ERR_FAIL_NULL(camera);
+	camera->lens_flare_max_count = MAX(p_count, 0);
+}
+
+void RendererSceneCull::camera_set_lens_flare_ghost_limit(RID p_camera, float p_limit) {
+	Camera *camera = camera_owner.get_or_null(p_camera);
+	ERR_FAIL_NULL(camera);
+	camera->lens_flare_ghost_limit = CLAMP(p_limit, 0.0f, 1.0f);
+}
+
 bool RendererSceneCull::is_camera(RID p_camera) const {
 	return camera_owner.owns(p_camera);
 }
@@ -2867,7 +2879,7 @@ void RendererSceneCull::render_camera(const Ref<RenderSceneBuffers> &p_render_bu
 	// For now just cull on the first camera
 	RendererSceneOcclusionCull::get_singleton()->buffer_update(p_viewport, camera_data.main_transform, camera_data.main_projection, camera_data.is_orthogonal);
 
-	_render_scene(&camera_data, p_render_buffers, environment, camera->attributes, compositor, camera->visible_layers, camera->lens_flare_cull_mask, p_scenario, p_viewport, p_shadow_atlas, RID(), -1, p_screen_mesh_lod_threshold, p_window_output_max_value, true, r_render_info);
+	_render_scene(&camera_data, p_render_buffers, environment, camera->attributes, compositor, camera->visible_layers, camera->lens_flare_cull_mask, camera->lens_flare_max_count, camera->lens_flare_ghost_limit, p_scenario, p_viewport, p_shadow_atlas, RID(), -1, p_screen_mesh_lod_threshold, p_window_output_max_value, true, r_render_info);
 #endif
 }
 
@@ -3381,7 +3393,7 @@ void RendererSceneCull::_scene_particles_set_view_axis(RID p_particles, const Ve
 	RSG::particles_storage->particles_set_view_axis(p_particles, p_axis, p_up_axis);
 }
 
-void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_camera_data, const Ref<RenderSceneBuffers> &p_render_buffers, RID p_environment, RID p_force_camera_attributes, RID p_compositor, uint32_t p_visible_layers, uint32_t p_lens_flare_cull_mask, RID p_scenario, RID p_viewport, RID p_shadow_atlas, RID p_reflection_probe, int p_reflection_probe_pass, float p_screen_mesh_lod_threshold, float p_window_output_max_value, bool p_using_shadows, RenderingServerTypes::RenderInfo *r_render_info) {
+void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_camera_data, const Ref<RenderSceneBuffers> &p_render_buffers, RID p_environment, RID p_force_camera_attributes, RID p_compositor, uint32_t p_visible_layers, uint32_t p_lens_flare_cull_mask, uint32_t p_lens_flare_max_count, float p_lens_flare_ghost_limit, RID p_scenario, RID p_viewport, RID p_shadow_atlas, RID p_reflection_probe, int p_reflection_probe_pass, float p_screen_mesh_lod_threshold, float p_window_output_max_value, bool p_using_shadows, RenderingServerTypes::RenderInfo *r_render_info) {
 	Instance *render_reflection_probe = instance_owner.get_or_null(p_reflection_probe); //if null, not rendering to it
 
 	// Prepare the light - camera volume culling system.
@@ -3408,13 +3420,95 @@ void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_c
 					continue;
 				}
 
+				// Nothing to draw, so nothing to spend a place on.
+				if (RSG::lens_flare->lens_flare_get_elements(instance->base).is_empty()) {
+					continue;
+				}
+
 				RendererSceneRender::LensFlareInstance flare;
 				flare.flare = instance->base;
 				flare.transform = instance->transform;
+				// Read live from the instances, so an excluded object that moves
+				// takes its exception with it.
+				for (const RID &excluded_rid : RSG::lens_flare->lens_flare_get_occlusion_exceptions(instance->base)) {
+					const Instance *excluded = instance_owner.get_or_null(excluded_rid);
+					if (excluded && excluded->transformed_aabb.has_surface()) {
+						flare.occlusion_exceptions.push_back(excluded->transformed_aabb);
+					}
+				}
 				visible_flares.push_back(flare);
 			}
 		}
-		scene_render->lens_flare_update_list(visible_flares);
+
+		// The pass holds a fixed number of flares and the camera may want fewer.
+		// Left to scenario order, the ones that miss out would be whichever were
+		// created last, so the ones nearest the camera are kept instead.
+		const uint32_t keep = p_lens_flare_max_count > 0 ? MIN(p_lens_flare_max_count, (uint32_t)RendererSceneRender::MAX_LENS_FLARES) : (uint32_t)RendererSceneRender::MAX_LENS_FLARES;
+		if (visible_flares.size() > keep) {
+			struct Candidate {
+				// Flares the camera can't be looking at come last, then nearest first.
+				bool off_screen;
+				float distance;
+				uint32_t index;
+
+				bool operator<(const Candidate &p_other) const {
+					if (off_screen != p_other.off_screen) {
+						return !off_screen;
+					}
+					if (distance != p_other.distance) {
+						return distance < p_other.distance;
+					}
+					return index < p_other.index;
+				}
+			};
+
+			const Transform3D to_view = p_camera_data->main_transform.affine_inverse();
+			LocalVector<Candidate> candidates;
+			for (uint32_t i = 0; i < visible_flares.size(); i++) {
+				const RendererSceneRender::LensFlareInstance &flare = visible_flares[i];
+				Candidate candidate;
+				candidate.index = i;
+				if (RSG::lens_flare->lens_flare_is_directional(flare.flare)) {
+					// At infinity, so as near as anything can be: the sun is never
+					// the flare that goes without. It only matters whether it is
+					// in front of the camera, which looks down its own -Z.
+					const Vector3 direction = to_view.basis.xform(flare.transform.basis.get_column(Vector3::AXIS_Z));
+					candidate.off_screen = direction.z >= 0.0f;
+					candidate.distance = 0.0f;
+				} else {
+					const Vector3 view_position = to_view.xform(flare.transform.origin);
+					candidate.distance = view_position.length();
+					// Behind the camera, or well outside the frame. A margin is left
+					// because streaks come from sources just past the edge.
+					candidate.off_screen = view_position.z >= 0.0f;
+					if (!candidate.off_screen) {
+						const Vector3 ndc = p_camera_data->main_projection.xform(view_position);
+						candidate.off_screen = Math::abs(ndc.x) > 2.0f || Math::abs(ndc.y) > 2.0f;
+					}
+				}
+				candidates.push_back(candidate);
+			}
+			candidates.sort();
+
+			// Keep what survives in its original order, so the draw order does
+			// not shuffle as flares trade places.
+			LocalVector<bool> kept;
+			kept.resize(visible_flares.size());
+			for (uint32_t i = 0; i < kept.size(); i++) {
+				kept[i] = false;
+			}
+			for (uint32_t i = 0; i < keep; i++) {
+				kept[candidates[i].index] = true;
+			}
+			LocalVector<RendererSceneRender::LensFlareInstance> survivors;
+			for (uint32_t i = 0; i < visible_flares.size(); i++) {
+				if (kept[i]) {
+					survivors.push_back(visible_flares[i]);
+				}
+			}
+			visible_flares = survivors;
+		}
+		scene_render->lens_flare_update_list(visible_flares, p_lens_flare_ghost_limit);
 	}
 
 	if (p_reflection_probe.is_null()) {
@@ -3971,7 +4065,7 @@ bool RendererSceneCull::_render_reflection_probe_step(Instance *p_instance, int 
 			camera_data.set_camera(xform, cm, false, false);
 
 			RENDER_TIMESTAMP("Render ReflectionProbe, Face " + itos(face));
-			_render_scene(&camera_data, render_buffers, environment, RID(), RID(), RSG::light_storage->reflection_probe_get_cull_mask(p_instance->base), 0, p_instance->scenario->self, RID(), shadow_atlas, reflection_probe->instance, face, mesh_lod_threshold, use_shadows);
+			_render_scene(&camera_data, render_buffers, environment, RID(), RID(), RSG::light_storage->reflection_probe_get_cull_mask(p_instance->base), 0, 0, 0.0, p_instance->scenario->self, RID(), shadow_atlas, reflection_probe->instance, face, mesh_lod_threshold, use_shadows);
 		}
 
 		RSG::light_storage->reflection_probe_instance_end_render(reflection_probe->instance, scenario->reflection_atlas);

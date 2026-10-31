@@ -72,6 +72,108 @@ void LensFlare3D::_update_elements() {
 	}
 }
 
+// Every node the flare is told to look past, from both lists.
+static void _collect_exceptions(const LensFlare3D *p_flare, const Vector<NodePath> &p_paths, const Vector<ObjectID> &p_objects, LocalVector<VisualInstance3D *> &r_nodes) {
+	if (p_flare->is_inside_tree()) {
+		for (const NodePath &path : p_paths) {
+			VisualInstance3D *node = Object::cast_to<VisualInstance3D>(p_flare->get_node_or_null(path));
+			if (node && !r_nodes.has(node)) {
+				r_nodes.push_back(node);
+			}
+		}
+	}
+	for (const ObjectID &id : p_objects) {
+		VisualInstance3D *node = ObjectDB::get_instance<VisualInstance3D>(id);
+		if (node && !r_nodes.has(node)) {
+			r_nodes.push_back(node);
+		}
+	}
+}
+
+void LensFlare3D::_update_exceptions() {
+	RenderingServer *rs = RenderingServer::get_singleton();
+	ERR_FAIL_NULL(rs);
+
+	LocalVector<VisualInstance3D *> nodes;
+	_collect_exceptions(this, exception_paths, exception_objects, nodes);
+	TypedArray<RID> instances;
+	for (VisualInstance3D *node : nodes) {
+		instances.push_back(node->get_instance());
+	}
+	rs->lens_flare_set_occlusion_exceptions(flare_rid, instances);
+}
+
+void LensFlare3D::set_occlusion_exceptions(const TypedArray<NodePath> &p_paths) {
+	exception_paths.clear();
+	for (int i = 0; i < p_paths.size(); i++) {
+		exception_paths.push_back(p_paths[i]);
+	}
+	_update_exceptions();
+}
+
+TypedArray<NodePath> LensFlare3D::get_occlusion_exceptions() const {
+	TypedArray<NodePath> paths;
+	for (const NodePath &path : exception_paths) {
+		paths.push_back(path);
+	}
+	return paths;
+}
+
+void LensFlare3D::add_occlusion_exception(VisualInstance3D *p_node) {
+	ERR_FAIL_NULL(p_node);
+	ERR_FAIL_COND_MSG(p_node == this, "A flare can't look past itself.");
+	LocalVector<VisualInstance3D *> existing;
+	_collect_exceptions(this, exception_paths, exception_objects, existing);
+	if (existing.has(p_node)) {
+		return;
+	}
+	if (is_inside_tree() && p_node->is_inside_tree()) {
+		// A path survives the scene being saved and the node being re-added.
+		exception_paths.push_back(get_path_to(p_node));
+	} else {
+		exception_objects.push_back(p_node->get_instance_id());
+	}
+	_update_exceptions();
+}
+
+void LensFlare3D::remove_occlusion_exception(VisualInstance3D *p_node) {
+	ERR_FAIL_NULL(p_node);
+	for (int i = exception_paths.size() - 1; i >= 0; i--) {
+		if (is_inside_tree() && get_node_or_null(exception_paths[i]) == p_node) {
+			exception_paths.remove_at(i);
+		}
+	}
+	exception_objects.erase(p_node->get_instance_id());
+	_update_exceptions();
+}
+
+void LensFlare3D::clear_occlusion_exceptions() {
+	exception_paths.clear();
+	exception_objects.clear();
+	_update_exceptions();
+}
+
+TypedArray<VisualInstance3D> LensFlare3D::get_occlusion_exception_nodes() const {
+	LocalVector<VisualInstance3D *> nodes;
+	_collect_exceptions(this, exception_paths, exception_objects, nodes);
+	TypedArray<VisualInstance3D> result;
+	for (VisualInstance3D *node : nodes) {
+		result.push_back(node);
+	}
+	return result;
+}
+
+void LensFlare3D::_notification(int p_what) {
+	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE:
+		case NOTIFICATION_READY: {
+			// Ready too: every node of the scene is in the tree by then, so a
+			// path to a sibling later in the scene resolves.
+			_update_exceptions();
+		} break;
+	}
+}
+
 void LensFlare3D::_update_source() {
 	RenderingServer *rs = RenderingServer::get_singleton();
 	ERR_FAIL_NULL(rs);
@@ -257,6 +359,9 @@ void LensFlare3D::_validate_property(PropertyInfo &p_property) const {
 	if (p_property.name == "occlusion_angle" && (!occlusion_enabled || !directional)) {
 		p_property.usage = PROPERTY_USAGE_NO_EDITOR;
 	}
+	if (p_property.name == "occlusion_exceptions" && !occlusion_enabled) {
+		p_property.usage = PROPERTY_USAGE_NO_EDITOR;
+	}
 
 	// Distance and angle both need a source that is somewhere, and a directional
 	// one is only a direction.
@@ -287,6 +392,12 @@ void LensFlare3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_occlusion_radius"), &LensFlare3D::get_occlusion_radius);
 	ClassDB::bind_method(D_METHOD("set_occlusion_angle", "radians"), &LensFlare3D::set_occlusion_angle);
 	ClassDB::bind_method(D_METHOD("get_occlusion_angle"), &LensFlare3D::get_occlusion_angle);
+	ClassDB::bind_method(D_METHOD("set_occlusion_exceptions", "paths"), &LensFlare3D::set_occlusion_exceptions);
+	ClassDB::bind_method(D_METHOD("get_occlusion_exceptions"), &LensFlare3D::get_occlusion_exceptions);
+	ClassDB::bind_method(D_METHOD("add_occlusion_exception", "node"), &LensFlare3D::add_occlusion_exception);
+	ClassDB::bind_method(D_METHOD("remove_occlusion_exception", "node"), &LensFlare3D::remove_occlusion_exception);
+	ClassDB::bind_method(D_METHOD("clear_occlusion_exceptions"), &LensFlare3D::clear_occlusion_exceptions);
+	ClassDB::bind_method(D_METHOD("get_occlusion_exception_nodes"), &LensFlare3D::get_occlusion_exception_nodes);
 
 	ClassDB::bind_method(D_METHOD("set_fade_distance_begin", "distance"), &LensFlare3D::set_fade_distance_begin);
 	ClassDB::bind_method(D_METHOD("get_fade_distance_begin"), &LensFlare3D::get_fade_distance_begin);
@@ -309,6 +420,7 @@ void LensFlare3D::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "occlusion_enabled"), "set_occlusion_enabled", "is_occlusion_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "occlusion_radius", PROPERTY_HINT_RANGE, "0,8,0.001,or_greater,suffix:m"), "set_occlusion_radius", "get_occlusion_radius");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "occlusion_angle", PROPERTY_HINT_RANGE, "0,45,0.01,radians_as_degrees"), "set_occlusion_angle", "get_occlusion_angle");
+	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "occlusion_exceptions", PROPERTY_HINT_ARRAY_TYPE, "NodePath"), "set_occlusion_exceptions", "get_occlusion_exceptions");
 
 	ADD_GROUP("Fade", "");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "fade_distance_begin", PROPERTY_HINT_RANGE, "0,4096,0.01,or_greater,suffix:m"), "set_fade_distance_begin", "get_fade_distance_begin");

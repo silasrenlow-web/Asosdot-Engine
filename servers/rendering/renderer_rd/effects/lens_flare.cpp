@@ -71,6 +71,7 @@ LensFlare::LensFlare() {
 
 	flare_buffer = RD::get_singleton()->storage_buffer_create(sizeof(FlareData) * MAX_FLARES);
 	quad_buffer = RD::get_singleton()->storage_buffer_create(sizeof(QuadData) * MAX_QUADS);
+	exception_buffer = RD::get_singleton()->storage_buffer_create(sizeof(float) * 4 * (4 + 2 * MAX_EXCEPTION_BOXES));
 
 	_create_builtin_textures();
 }
@@ -130,6 +131,9 @@ LensFlare::~LensFlare() {
 	if (quad_buffer.is_valid()) {
 		RD::get_singleton()->free_rid(quad_buffer);
 	}
+	if (exception_buffer.is_valid()) {
+		RD::get_singleton()->free_rid(exception_buffer);
+	}
 	for (int i = 0; i < RSE::LENS_FLARE_ELEMENT_BUILTIN_COUNT; i++) {
 		if (builtin_textures[i].is_valid()) {
 			RD::get_singleton()->free_rid(builtin_textures[i]);
@@ -145,6 +149,10 @@ bool LensFlare::_build_draw_data(const LocalVector<RendererSceneRender::LensFlar
 	flare_data.clear();
 	quad_data.clear();
 	batches.clear();
+	// The first four vec4 are the inverse view projection, which draw() fills
+	// in; the boxes follow it.
+	exception_data.clear();
+	exception_data.resize(16);
 
 	RID white_texture = texture_storage->texture_rd_get_default(TextureStorage::DEFAULT_RD_TEXTURE_WHITE);
 
@@ -190,8 +198,31 @@ bool LensFlare::_build_draw_data(const LocalVector<RendererSceneRender::LensFlar
 
 		flare.params2[0] = flare_storage->lens_flare_get_angle_fade(instance.flare);
 		flare.params2[1] = flare_storage->lens_flare_get_scale(instance.flare);
-		flare.params2[2] = 0.0f;
-		flare.params2[3] = 0.0f;
+		// How much light the source puts into the frame, for sharing the ghosts
+		// out between flares in proportion to it.
+		flare.params2[2] = source_intensity * source_color.get_luminance();
+
+		// Where this flare's excluded bounds sit in the buffer, packed as
+		// first box * 16 + count into a float, which holds it exactly.
+		const uint32_t first_box = (exception_data.size() - 16) / 8;
+		uint32_t box_count = 0;
+		for (const AABB &bounds : instance.occlusion_exceptions) {
+			if (box_count >= (uint32_t)MAX_EXCEPTIONS_PER_FLARE || first_box + box_count >= (uint32_t)MAX_EXCEPTION_BOXES) {
+				break;
+			}
+			// The surface the depth buffer holds sits on the bounds, so they
+			// grow a little to catch it despite the rounding of a reconstructed
+			// position.
+			const AABB padded = bounds.grow(0.03f + 0.02f * bounds.size[bounds.get_longest_axis_index()]);
+			const Vector3 min = padded.position;
+			const Vector3 max = padded.position + padded.size;
+			const float box[8] = { min.x, min.y, min.z, 0.0f, max.x, max.y, max.z, 0.0f };
+			for (int k = 0; k < 8; k++) {
+				exception_data.push_back(box[k]);
+			}
+			box_count++;
+		}
+		flare.params2[3] = float(first_box * 16 + box_count);
 
 		flare_data.push_back(flare);
 
@@ -271,7 +302,7 @@ bool LensFlare::_build_draw_data(const LocalVector<RendererSceneRender::LensFlar
 	return !quad_data.is_empty();
 }
 
-void LensFlare::draw(RID p_dest_fb, RID p_depth_texture, const LocalVector<RendererSceneRender::LensFlareInstance> &p_flares, const Projection &p_view_projection, const Transform3D &p_camera_transform, float p_aspect, float p_luminance_multiplier) {
+void LensFlare::draw(RID p_dest_fb, RID p_depth_texture, const LocalVector<RendererSceneRender::LensFlareInstance> &p_flares, const Projection &p_view_projection, const Transform3D &p_camera_transform, float p_aspect, float p_luminance_multiplier, float p_ghost_limit) {
 	if (p_flares.is_empty()) {
 		return;
 	}
@@ -289,8 +320,20 @@ void LensFlare::draw(RID p_dest_fb, RID p_depth_texture, const LocalVector<Rende
 	RD::get_singleton()->buffer_update(flare_buffer, 0, uint32_t(sizeof(FlareData)) * flare_data.size(), flare_data.ptr());
 	RD::get_singleton()->buffer_update(quad_buffer, 0, uint32_t(sizeof(QuadData)) * quad_data.size(), quad_data.ptr());
 
+	const Projection view_projection = p_view_projection * Projection(p_camera_transform.affine_inverse());
+	{
+		// Lets the shader turn a depth sample back into a world position.
+		const Projection inverse = view_projection.inverse();
+		for (int column = 0; column < 4; column++) {
+			for (int row = 0; row < 4; row++) {
+				exception_data[column * 4 + row] = inverse.columns[column][row];
+			}
+		}
+	}
+	RD::get_singleton()->buffer_update(exception_buffer, 0, uint32_t(sizeof(float)) * exception_data.size(), exception_data.ptr());
+
 	PushConstant push_constant;
-	MaterialStorage::store_camera(p_view_projection * Projection(p_camera_transform.affine_inverse()), push_constant.view_projection);
+	MaterialStorage::store_camera(view_projection, push_constant.view_projection);
 
 	const Vector3 camera_right = p_camera_transform.basis.get_column(Vector3::AXIS_X).normalized();
 	push_constant.camera_right[0] = camera_right.x;
@@ -303,9 +346,9 @@ void LensFlare::draw(RID p_dest_fb, RID p_depth_texture, const LocalVector<Rende
 	push_constant.camera_position[2] = p_camera_transform.origin.z;
 	push_constant.camera_position[3] = p_aspect;
 
-	push_constant.pad[0] = 0;
-	push_constant.pad[1] = 0;
-	push_constant.pad[2] = 0;
+	push_constant.flare_count = flare_data.size();
+	push_constant.ghost_limit = CLAMP(p_ghost_limit, 0.0f, 1.0f);
+	push_constant.pad = 0;
 
 	RID depth_sampler = material_storage->sampler_rd_get_default(RSE::CANVAS_ITEM_TEXTURE_FILTER_NEAREST, RSE::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED);
 	RID flare_sampler = material_storage->sampler_rd_get_default(RSE::CANVAS_ITEM_TEXTURE_FILTER_LINEAR_WITH_MIPMAPS, RSE::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED);
@@ -313,6 +356,7 @@ void LensFlare::draw(RID p_dest_fb, RID p_depth_texture, const LocalVector<Rende
 	RD::Uniform u_flares(RD::UNIFORM_TYPE_STORAGE_BUFFER, 0, flare_buffer);
 	RD::Uniform u_quads(RD::UNIFORM_TYPE_STORAGE_BUFFER, 1, quad_buffer);
 	RD::Uniform u_depth(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 2, Vector<RID>({ depth_sampler, p_depth_texture }));
+	RD::Uniform u_exceptions(RD::UNIFORM_TYPE_STORAGE_BUFFER, 4, exception_buffer);
 
 	RID version_shader = shader.version_get_shader(shader_version, 0);
 	RD::FramebufferFormatID fb_format = RD::get_singleton()->framebuffer_get_format(p_dest_fb);
@@ -324,7 +368,7 @@ void LensFlare::draw(RID p_dest_fb, RID p_depth_texture, const LocalVector<Rende
 
 		const Pipeline pipeline = batch.blend_mode == RSE::LENS_FLARE_BLEND_SCREEN ? PIPELINE_SCREEN : PIPELINE_ADD;
 		RD::get_singleton()->draw_list_bind_render_pipeline(draw_list, pipelines[pipeline].get_render_pipeline(RD::INVALID_ID, fb_format, false, RD::get_singleton()->draw_list_get_current_pass()));
-		RD::get_singleton()->draw_list_bind_uniform_set(draw_list, uniform_set_cache->get_cache(version_shader, 0, u_flares, u_quads, u_depth, u_texture), 0);
+		RD::get_singleton()->draw_list_bind_uniform_set(draw_list, uniform_set_cache->get_cache(version_shader, 0, u_flares, u_quads, u_depth, u_texture, u_exceptions), 0);
 
 		push_constant.quad_offset = batch.offset;
 		RD::get_singleton()->draw_list_set_push_constant(draw_list, &push_constant, sizeof(PushConstant));

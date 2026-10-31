@@ -683,6 +683,10 @@ void Camera3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_lens_flare_enabled"), &Camera3D::is_lens_flare_enabled);
 	ClassDB::bind_method(D_METHOD("set_lens_flare_cull_mask", "mask"), &Camera3D::set_lens_flare_cull_mask);
 	ClassDB::bind_method(D_METHOD("get_lens_flare_cull_mask"), &Camera3D::get_lens_flare_cull_mask);
+	ClassDB::bind_method(D_METHOD("set_lens_flare_ghost_limit", "limit"), &Camera3D::set_lens_flare_ghost_limit);
+	ClassDB::bind_method(D_METHOD("get_lens_flare_ghost_limit"), &Camera3D::get_lens_flare_ghost_limit);
+	ClassDB::bind_method(D_METHOD("set_lens_flare_max_count", "count"), &Camera3D::set_lens_flare_max_count);
+	ClassDB::bind_method(D_METHOD("get_lens_flare_max_count"), &Camera3D::get_lens_flare_max_count);
 	ClassDB::bind_method(D_METHOD("set_lens_flare_cull_mask_value", "layer_number", "value"), &Camera3D::set_lens_flare_cull_mask_value);
 	ClassDB::bind_method(D_METHOD("get_lens_flare_cull_mask_value", "layer_number"), &Camera3D::get_lens_flare_cull_mask_value);
 
@@ -707,6 +711,8 @@ void Camera3D::_bind_methods() {
 	ADD_GROUP("Lens Flare", "lens_flare_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "lens_flare_enabled", PROPERTY_HINT_GROUP_ENABLE), "set_lens_flare_enabled", "is_lens_flare_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "lens_flare_cull_mask", PROPERTY_HINT_LAYERS_3D_RENDER), "set_lens_flare_cull_mask", "get_lens_flare_cull_mask");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "lens_flare_max_count", PROPERTY_HINT_RANGE, "0,32,1"), "set_lens_flare_max_count", "get_lens_flare_max_count");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "lens_flare_ghost_limit", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_lens_flare_ghost_limit", "get_lens_flare_ghost_limit");
 
 	BIND_ENUM_CONSTANT(PROJECTION_PERSPECTIVE);
 	BIND_ENUM_CONSTANT(PROJECTION_ORTHOGONAL);
@@ -823,6 +829,25 @@ void Camera3D::set_lens_flare_cull_mask(uint32_t p_layers) {
 
 uint32_t Camera3D::get_lens_flare_cull_mask() const {
 	return lens_flare_layers;
+}
+
+void Camera3D::set_lens_flare_ghost_limit(float p_limit) {
+	lens_flare_ghost_limit = CLAMP(p_limit, 0.0f, 1.0f);
+	RenderingServer::get_singleton()->camera_set_lens_flare_ghost_limit(camera, lens_flare_ghost_limit);
+}
+
+float Camera3D::get_lens_flare_ghost_limit() const {
+	return lens_flare_ghost_limit;
+}
+
+void Camera3D::set_lens_flare_max_count(int p_count) {
+	ERR_FAIL_COND_MSG(p_count < 0, "The lens flare limit can not be negative; use 0 for no limit.");
+	lens_flare_max_count = p_count;
+	RenderingServer::get_singleton()->camera_set_lens_flare_max_count(camera, lens_flare_max_count);
+}
+
+int Camera3D::get_lens_flare_max_count() const {
+	return lens_flare_max_count;
 }
 
 void Camera3D::set_lens_flare_cull_mask_value(int p_layer_number, bool p_value) {
