@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="LightCatcher3D" inherits="Node3D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		Measures how brightly the scene's lights light a point, so gameplay can react to light and shadow.
+	</brief_description>
+	<description>
+		[LightCatcher3D] measures how brightly lit its [member sample_points] are, the way the renderer lights them: the same energy, colour, range, attenuation and spot cone as [OmniLight3D], [SpotLight3D], [DirectionalLight3D] and [AreaLight3D] draw with, physical light units, [member Light3D.light_projector] cookies and distance fade included. Walls block light, either through physics raycasts against [member occlusion_mask] or, with [member occlusion_source], through the meshes that cast shadows on screen.
+		Put one on a player and enemies can tell whether the player is standing in the light, caught in a flashlight's beam, or hiding in the dark; put one on a stealth pickup, a plant that grows towards light, or a vampire. The [signal light_entered] and [signal light_exited] signals say when a particular light, such as a flashlight, lands on it or leaves.
+		[codeblock]
+		# On an enemy: see the player only where they're lit.
+		@export var player_light: LightCatcher3D
+
+		func can_see_player() -> bool:
+		    return has_line_of_sight() and player_light.is_lit()
+		[/codeblock]
+		Brightness is in the units diffuse shading uses: a white surface facing a light of energy [code]1.0[/code] at full strength reads [code]1.0[/code], and its colour on screen is its albedo times this, before exposure and tonemapping. The environment's ambient light and global illumination aren't counted, only lights.
+		A flashlight's cookie shapes what it lights, as on screen: its dark ring and dark spots light nothing. As in the renderer, a cookie only applies to a light with [member Light3D.shadow_enabled] on, and an [OmniLight3D]'s cookie is a panorama. The cookie is read at full resolution, where the renderer may blur it with mipmaps far away, so the two can differ right at a cookie's edges. Lights fading out with distance ([member Light3D.distance_fade_enabled]) fade by their distance from the current camera, as they do on screen.
+		To find where a flashlight's beam lands, so an enemy can investigate a lit spot while the player stays out of sight, raycast along the light and measure the hit with its normal:
+		[codeblock]
+		var hit := get_world_3d().direct_space_state.intersect_ray(
+		        PhysicsRayQueryParameters3D.create(flashlight.global_position,
+		        flashlight.global_position - flashlight.global_basis.z * flashlight.spot_range))
+		if hit and catcher.measure_point(hit.position, hit.normal) &gt; catcher.threshold:
+		    investigate(hit.position)
+		[/codeblock]
+		It updates on physics frames. In the editor it updates a few times a second, so its gizmo shows how lit each sample point is while you place lights: dark grey in shadow, bright yellow at [member threshold], with a line to each light that reaches it when selected.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_brightest_light" qualifiers="const">
+			<return type="Light3D" />
+			<description>
+				Returns the light that gave the most light at the last update, or [code]null[/code] in the dark.
+			</description>
+		</method>
+		<method name="get_brightness" qualifiers="const">
+			<return type="float" />
+			<description>
+				Returns how brightly lit the sample points were at the last update, as luminance, combined as [member combine] says and smoothed by [member response_time]. Negative lights can bring it down, but never below [code]0.0[/code].
+			</description>
+		</method>
+		<method name="get_light_color" qualifiers="const">
+			<return type="Color" />
+			<description>
+				Returns the colour of the light at the last update, in linear units, so a red lamp gives a red colour. Its luminance is [method get_brightness] before smoothing.
+			</description>
+		</method>
+		<method name="get_light_contribution" qualifiers="const">
+			<return type="float" />
+			<param index="0" name="light" type="Light3D" />
+			<description>
+				Returns how much [param light] gave at the last update, combined over the sample points as [member combine] says. [code]0.0[/code] if it didn't reach.
+			</description>
+		</method>
+		<method name="get_lights" qualifiers="const">
+			<return type="Light3D[]" />
+			<description>
+				Returns every light that reached a sample point at the last update.
+			</description>
+		</method>
+		<method name="get_point_brightness" qualifiers="const">
+			<return type="float" />
+			<param index="0" name="point" type="int" />
+			<description>
+				Returns how brightly the sample point at index [param point] was lit at the last update, before smoothing.
+			</description>
+		</method>
+		<method name="is_lit" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] while [method get_brightness] is at or above [member threshold]. Once lit, it stays lit until the brightness falls under 80% of the threshold, so a light flickering around the threshold doesn't toggle it every frame.
+			</description>
+		</method>
+		<method name="measure_point" qualifiers="const">
+			<return type="float" />
+			<param index="0" name="global_position" type="Vector3" />
+			<param index="1" name="normal" type="Vector3" default="Vector3(0, 0, 0)" />
+			<description>
+				Measures how brightly the lights light [param global_position] right now, with this node's settings, without changing what it caught. With a [param normal], the point is a surface facing that way, lit less by light arriving at a slant; without, it faces each light. Use it to ask about places rather than this node: is the spot a noise came from lit, is a hiding place dark?
+			</description>
+		</method>
+		<method name="measure_point_color" qualifiers="const">
+			<return type="Color" />
+			<param index="0" name="global_position" type="Vector3" />
+			<param index="1" name="normal" type="Vector3" default="Vector3(0, 0, 0)" />
+			<description>
+				Like [method measure_point], but returns the light's colour in linear units.
+			</description>
+		</method>
+		<method name="update_now">
+			<return type="void" />
+			<description>
+				Measures right away instead of waiting for the next physics frame, and emits any signals that follows.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="active" type="bool" setter="set_active" getter="is_active" default="true">
+			If [code]false[/code], it stops measuring and keeps what it last caught.
+		</member>
+		<member name="combine" type="int" setter="set_combine" getter="get_combine" enum="LightCatcher3D.Combine" default="0">
+			How the sample points' brightness becomes one: the brightest of them, or their average.
+		</member>
+		<member name="directional_distance" type="float" setter="set_directional_distance" getter="get_directional_distance" default="200.0">
+			How far towards a [DirectionalLight3D] the occlusion ray looks for something blocking it.
+		</member>
+		<member name="exclude_parent_bodies" type="bool" setter="set_exclude_parent_bodies" getter="is_excluding_parent_bodies" default="true">
+			If [code]true[/code], the [CollisionObject3D]s this node is inside, such as the player's own body, don't block light. Collision objects a light is inside, such as a lamp's fitting, never block that light.
+		</member>
+		<member name="light_mask" type="int" setter="set_light_mask" getter="get_light_mask" default="4294967295">
+			Only lights on these render layers ([member VisualInstance3D.layers]) count, so lights that are only for looks can be left out.
+		</member>
+		<member name="occlusion" type="int" setter="set_occlusion" getter="get_occlusion" enum="LightCatcher3D.Occlusion" default="0">
+			Whether walls block light. See [enum Occlusion].
+		</member>
+		<member name="occlusion_margin" type="float" setter="set_occlusion_margin" getter="get_occlusion_margin" default="0.2">
+			How far short of a light the occlusion ray stops, so the light's own lamp shade or bulb mesh doesn't count as blocking it. Rays also leave from just off the measured point, so a point on a surface, such as where a beam lands on a wall, isn't shadowed by that surface.
+		</member>
+		<member name="occlusion_mask" type="int" setter="set_occlusion_mask" getter="get_occlusion_mask" default="1">
+			The physics layers that block light, when [member occlusion_source] uses colliders.
+		</member>
+		<member name="occlusion_source" type="int" setter="set_occlusion_source" getter="get_occlusion_source" enum="LightCatcher3D.OcclusionSource" default="0">
+			What blocks light: collision shapes, the meshes that cast shadows on screen, or both. See [enum OcclusionSource].
+		</member>
+		<member name="response_time" type="float" setter="set_response_time" getter="get_response_time" default="0.0">
+			How many seconds [method get_brightness] takes to follow a change, roughly. [code]0.0[/code] follows at once; a little smooths over flicker and lets eyes "adjust".
+		</member>
+		<member name="sample_points" type="PackedVector3Array" setter="set_sample_points" getter="get_sample_points" default="PackedVector3Array(0, 0, 0)">
+			The points it measures at, in this node's space. A few spread over a character, such as head, chest and feet, catch light falling on any part of them.
+		</member>
+		<member name="threshold" type="float" setter="set_threshold" getter="get_threshold" default="0.1">
+			The brightness at which it counts as lit, and at which a single light counts as having reached it for [signal light_entered].
+		</member>
+		<member name="update_interval" type="float" setter="set_update_interval" getter="get_update_interval" default="0.0">
+			Seconds between measurements. [code]0.0[/code] measures every physics frame; a larger value saves raycasts for catchers that don't need to react at once.
+		</member>
+	</members>
+	<signals>
+		<signal name="light_entered">
+			<param index="0" name="light" type="Light3D" />
+			<description>
+				Emitted when [param light] alone starts giving at least [member threshold]: a flashlight beam landing, a lamp walked under.
+			</description>
+		</signal>
+		<signal name="light_exited">
+			<param index="0" name="light" type="Light3D" />
+			<description>
+				Emitted when [param light] stops giving at least [member threshold], or goes away.
+			</description>
+		</signal>
+		<signal name="lit_changed">
+			<param index="0" name="lit" type="bool" />
+			<description>
+				Emitted when [method is_lit] changes.
+			</description>
+		</signal>
+	</signals>
+	<constants>
+		<constant name="COMBINE_MAXIMUM" value="0" enum="Combine">
+			The brightest sample point counts: any part of a character in the light shows them.
+		</constant>
+		<constant name="COMBINE_AVERAGE" value="1" enum="Combine">
+			The average of the sample points: how much of a character is lit.
+		</constant>
+		<constant name="OCCLUSION_ALWAYS" value="0" enum="Occlusion">
+			Walls block every light, whether it casts shadows or not, which is what players expect of a light behind a wall.
+		</constant>
+		<constant name="OCCLUSION_SHADOWED_LIGHTS" value="1" enum="Occlusion">
+			Walls only block lights with [member Light3D.shadow_enabled], dimmed by their [member Light3D.shadow_opacity], matching what's drawn: a light without shadows shines through walls on screen too.
+		</constant>
+		<constant name="OCCLUSION_DISABLED" value="2" enum="Occlusion">
+			Nothing blocks light, and no raycasts are made.
+		</constant>
+		<constant name="OCCLUSION_SOURCE_COLLIDERS" value="0" enum="OcclusionSource">
+			Physics raycasts against [member occlusion_mask]. Cheap, but a wall needs collision to block light, and an invisible collider blocks light the screen shows passing.
+		</constant>
+		<constant name="OCCLUSION_SOURCE_SHADOW_CASTERS" value="1" enum="OcclusionSource">
+			The meshes the renderer draws into each light's shadow: visible [GeometryInstance3D]s that cast shadows, on the light's [member Light3D.shadow_caster_mask]. Agrees with the shadows on screen, at the cost of testing triangles; [MeshInstance3D], [MultiMeshInstance3D] and CSG shapes count. The catcher's own body's meshes don't shadow it when [member exclude_parent_bodies] is on.
+		</constant>
+		<constant name="OCCLUSION_SOURCE_BOTH" value="2" enum="OcclusionSource">
+			Either blocks light.
+		</constant>
+	</constants>
+</class>

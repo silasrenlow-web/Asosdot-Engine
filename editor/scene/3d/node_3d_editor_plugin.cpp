@@ -84,6 +84,7 @@
 #include "editor/scene/3d/gizmos/physics/spring_arm_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/physics/vehicle_body_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/reflection_probe_gizmo_plugin.h"
+#include "editor/scene/3d/gizmos/light_catcher_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/rope_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/spring_bone_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/sprite_base_3d_gizmo_plugin.h"
@@ -10263,6 +10264,9 @@ void Node3DEditor::_register_all_gizmos() {
 	add_gizmo_plugin(Ref<DecalGizmoPlugin>(memnew(DecalGizmoPlugin)));
 	add_gizmo_plugin(Ref<VoxelGIGizmoPlugin>(memnew(VoxelGIGizmoPlugin)));
 	add_gizmo_plugin(Ref<LightmapGIGizmoPlugin>(memnew(LightmapGIGizmoPlugin)));
+	if (!ClassDB::is_asosdot_class_group_yielded("light_catcher")) {
+		add_gizmo_plugin(Ref<LightCatcher3DGizmoPlugin>(memnew(LightCatcher3DGizmoPlugin)));
+	}
 	if (!ClassDB::is_asosdot_class_group_yielded("realtime_gi")) {
 		add_gizmo_plugin(Ref<RealtimeGIGizmoPlugin>(memnew(RealtimeGIGizmoPlugin)));
 	}

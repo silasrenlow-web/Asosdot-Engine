@@ -264,6 +264,7 @@
 #include "scene/3d/reflection_probe.h"
 #include "scene/3d/remote_transform_3d.h"
 #include "scene/3d/retarget_modifier_3d.h"
+#include "scene/3d/light_catcher_3d.h"
 #include "scene/3d/rope_3d.h"
 #include "scene/3d/skeleton_3d.h"
 #include "scene/3d/skeleton_modifier_3d.h"
@@ -756,6 +757,8 @@ void register_scene_types() {
 	GDREGISTER_CLASS(MultiMeshInstance3D);
 	GDREGISTER_CLASS(Rope3D);
 	ClassDB::add_asosdot_class_group("rope", { "Rope3D" });
+	GDREGISTER_CLASS(LightCatcher3D);
+	ClassDB::add_asosdot_class_group("light_catcher", { "LightCatcher3D" });
 
 	GDREGISTER_CLASS(Curve3D);
 	GDREGISTER_CLASS(Path3D);

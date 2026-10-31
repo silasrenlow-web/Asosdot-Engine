@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/templates/local_vector.h"
 #include "scene/3d/visual_instance_3d.h"
 
 class Light3D : public VisualInstance3D {
@@ -86,6 +87,12 @@ private:
 	Ref<Texture2D> projector;
 	Color correlated_color = Color(1.0, 1.0, 1.0);
 	float temperature = 6500.0;
+
+	// Every light in a tree, so gameplay code such as LightCatcher3D can ask
+	// what lights a point without walking the scene. Nodes enter and leave
+	// the tree on the main thread, which is the only place this changes.
+	static inline LocalVector<Light3D *> lights_in_tree;
+	int32_t tree_index = -1;
 	// bind helpers
 
 	virtual void owner_changed_notify() override;
@@ -147,6 +154,8 @@ public:
 	void set_temperature(const float p_temperature);
 	float get_temperature() const;
 	Color get_correlated_color() const;
+
+	static const LocalVector<Light3D *> &get_lights_in_tree() { return lights_in_tree; }
 
 	virtual AABB get_aabb() const override;
 	virtual PackedStringArray get_configuration_warnings() const override;

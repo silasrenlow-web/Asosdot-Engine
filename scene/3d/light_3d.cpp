@@ -210,6 +210,10 @@ Light3D::BakeMode Light3D::get_bake_mode() const {
 }
 
 void Light3D::set_projector(const Ref<Texture2D> &p_texture) {
+	// The renderer takes the old texture out of the decal atlas when it gets
+	// the new one, so the old one must outlive that call. Replacing a cookie
+	// nothing else held used to free it first and error.
+	const Ref<Texture2D> previous = projector;
 	projector = p_texture;
 	RID tex_id = projector.is_valid() ? projector->get_rid() : RID();
 
@@ -318,9 +322,23 @@ void Light3D::_notification(int p_what) {
 		case NOTIFICATION_TRANSFORM_CHANGED: {
 			update_configuration_warnings();
 		} break;
-		case NOTIFICATION_VISIBILITY_CHANGED:
-		case NOTIFICATION_ENTER_TREE: {
+		case NOTIFICATION_VISIBILITY_CHANGED: {
 			_update_visibility();
+		} break;
+		case NOTIFICATION_ENTER_TREE: {
+			tree_index = lights_in_tree.size();
+			lights_in_tree.push_back(this);
+			_update_visibility();
+		} break;
+		case NOTIFICATION_EXIT_TREE: {
+			if (tree_index >= 0) {
+				// Swap with the last light so removal stays constant time.
+				Light3D *last = lights_in_tree[lights_in_tree.size() - 1];
+				lights_in_tree[tree_index] = last;
+				last->tree_index = tree_index;
+				lights_in_tree.resize(lights_in_tree.size() - 1);
+				tree_index = -1;
+			}
 		} break;
 	}
 }
