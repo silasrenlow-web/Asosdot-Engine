@@ -17,8 +17,11 @@ added on top.
 pass that draws into the HDR colour buffer before glow and tonemapping, so a
 flare blooms and is exposed with the rest of the frame instead of being painted
 over a finished image. Six analytic element shapes plus nine bundled textures,
-per camera filtering, depth buffer occlusion, and a **Generate flare** button in
-the 3D toolbar that sets a flare up from whatever light is selected.
+per camera filtering (layers, plus `Camera3D.lens_flare_max_count` to keep only
+the nearest few, and `lens_flare_ghost_limit` so the rings of many lights do not
+pile up in the middle of the screen), depth buffer occlusion with per-object exceptions, and a
+**Generate flare** button in the 3D toolbar that sets a flare up from whatever
+light is selected.
 
 **Ray traced lighting.** Ambient occlusion, sun shadows, one bounce global
 illumination and reflections, traced against a top level acceleration structure
@@ -39,6 +42,18 @@ large surfaces and a patch budget, so a 450 by 600 metre level bakes in under
 20 seconds. Static lights are drawn into the lightmap entirely and cost nothing
 per pixel. Forward+ and Mobile; check it with
 `python misc/scripts/test_realtime_gi.py --engine <editor>`.
+
+**LightCatcher3D.** Tells gameplay how lit something is, for stealth and horror
+games where enemies should notice a player in the light or caught in a
+flashlight beam. It measures a few points with the renderer's own light
+formulas (energy, colour, range, attenuation, spot cones, cookies, distance
+fade, physical units), checked pixel for pixel against the screen, with walls
+blocking light through physics raycasts or through the meshes that cast
+shadows, and signals when the player
+becomes lit and when a particular light lands on them or leaves. `measure_point()`
+answers the same for any spot, and in the editor its gizmo shows how lit each
+point is while you place lights. Check it with
+`python misc/scripts/test_light_catcher.py --engine <editor>`.
 
 **Rope3D.** Verlet simulated rope that can pin either end to any `Node3D`, drawn
 either as a generated tube or as a mesh instanced per segment.
