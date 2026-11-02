@@ -36,6 +36,7 @@
 #include "servers/rendering/renderer_rd/effects/debug_effects.h"
 #include "servers/rendering/renderer_rd/effects/fsr.h"
 #include "servers/rendering/renderer_rd/effects/lens_flare.h"
+#include "servers/rendering/renderer_rd/effects/motion_blur.h"
 #include "servers/rendering/renderer_rd/effects/luminance.h"
 #include "servers/rendering/renderer_rd/effects/resolve.h"
 #include "servers/rendering/renderer_rd/effects/smaa.h"
@@ -65,6 +66,7 @@ protected:
 	RendererRD::CopyEffects *copy_effects = nullptr;
 	RendererRD::DebugEffects *debug_effects = nullptr;
 	RendererRD::LensFlare *lens_flare = nullptr;
+	RendererRD::MotionBlur *motion_blur = nullptr;
 	RendererRD::Luminance *luminance = nullptr;
 	RendererRD::SMAA *smaa = nullptr;
 	RendererRD::ToneMapper *tone_mapper = nullptr;

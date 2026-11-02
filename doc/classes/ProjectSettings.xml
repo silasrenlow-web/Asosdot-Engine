@@ -3536,6 +3536,33 @@
 			- 8×8 = rgb(255, 255, 0) - #ffff00 - Not supported on most hardware
 			[/codeblock]
 		</member>
+		<member name="save/backups" type="int" setter="" getter="" default="1">
+			How many earlier copies of a slot are kept when it is saved over. If a save is damaged, [method Saves.load] reads the newest copy that is not. [code]0[/code] keeps none. See [Saves].
+		</member>
+		<member name="save/compression" type="bool" setter="" getter="" default="true">
+			If [code]true[/code], saves are compressed. Not applied to JSON saves, which are there to be read.
+		</member>
+		<member name="save/encryption/enabled" type="bool" setter="" getter="" default="true">
+			If [code]true[/code], saves are encrypted and authenticated, and a save that is not is refused, so one cannot be swapped for a file edited by hand. See [Saves].
+		</member>
+		<member name="save/encryption/key" type="String" setter="" getter="" default="&quot;&quot;">
+			The project's key for encrypting saves. The editor makes one the first time a [SaveState] is added to a scene. If it is empty, a key made from the project's name is used. [b]Note:[/b] the key is in the project and in the exported game, so it keeps a player from editing a save by hand and does not hold against someone who goes looking for it. Pass a password to [method Saves.save] for that.
+		</member>
+		<member name="save/format" type="int" setter="" getter="" default="0">
+			How a save is stored: [code]0[/code] is the engine's binary format, [code]1[/code] is JSON, which is readable and, with encryption off, can be looked at and edited while a game is made.
+		</member>
+		<member name="save/path" type="String" setter="" getter="" default="&quot;user://saves&quot;">
+			The folder saves are written to.
+		</member>
+		<member name="save/thumbnail/enabled" type="bool" setter="" getter="" default="true">
+			If [code]true[/code], a screenshot is saved in the header of every save, for [method Saves.get_info] to return as [code]thumbnail[/code].
+		</member>
+		<member name="save/thumbnail/size" type="Vector2i" setter="" getter="" default="Vector2i(320, 180)">
+			The size a screenshot is shrunk to fit inside, keeping its shape.
+		</member>
+		<member name="save/version" type="int" setter="" getter="" default="1">
+			The version of the game's save format, the starting value of [member Saves.save_version]. Raise it when a change would break old saves.
+		</member>
 		<member name="threading/worker_pool/low_priority_thread_ratio" type="float" setter="" getter="" default="0.3">
 			The ratio of [WorkerThreadPool]'s threads that will be reserved for low-priority tasks. For example, if 10 threads are available and this value is set to [code]0.3[/code], 3 of the worker threads will be reserved for low-priority tasks. The actual value won't exceed the number of CPU cores minus one, and if possible, at least one worker thread will be dedicated to low-priority tasks.
 		</member>

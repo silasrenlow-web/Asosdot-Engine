@@ -191,6 +191,15 @@ void RendererSceneCull::occluder_set_mesh(RID p_occluder, const PackedVector3Arr
 
 /* SCENARIO API */
 
+// Whether a decal puts itself on an object: by the layers, or, when it has been
+// limited to some objects, only if this is one of them.
+bool RendererSceneCull::_decal_affects(const InstanceDecalData *p_decal, const Instance *p_object) {
+	if (!p_decal->filter_ids.is_empty()) {
+		return p_object->decal_object_id != 0 && p_decal->filter_ids.has(p_object->decal_object_id);
+	}
+	return (p_decal->cull_mask & p_object->layer_mask) != 0;
+}
+
 void RendererSceneCull::_instance_pair(Instance *p_A, Instance *p_B) {
 	RendererSceneCull *self = (RendererSceneCull *)singleton;
 	Instance *A = p_A;
@@ -259,7 +268,7 @@ void RendererSceneCull::_instance_pair(Instance *p_A, Instance *p_B) {
 		InstanceDecalData *decal = static_cast<InstanceDecalData *>(B->base_data);
 		InstanceGeometryData *geom = static_cast<InstanceGeometryData *>(A->base_data);
 
-		if (!(decal->cull_mask & A->layer_mask)) {
+		if (!_decal_affects(decal, A)) {
 			// Early return if the object's layer mask doesn't match the decal's cull mask.
 			return;
 		}
@@ -392,8 +401,10 @@ void RendererSceneCull::_instance_unpair(Instance *p_A, Instance *p_B) {
 		InstanceDecalData *decal = static_cast<InstanceDecalData *>(B->base_data);
 		InstanceGeometryData *geom = static_cast<InstanceGeometryData *>(A->base_data);
 
-		if (!(decal->cull_mask & A->layer_mask)) {
-			// Early return if the object's layer mask doesn't match the decal's cull mask.
+		if (!geom->decals.has(B)) {
+			// Early return if they were never paired. This can't ask whether the decal affects
+			// the object: a filter that has just changed answers for what comes next, not for
+			// the pair that is being taken apart.
 			return;
 		}
 
@@ -673,6 +684,7 @@ void RendererSceneCull::instance_set_base(RID p_instance, RID p_base) {
 			} break;
 			case RSE::INSTANCE_DECAL: {
 				InstanceDecalData *decal = static_cast<InstanceDecalData *>(instance->base_data);
+				filtered_decals.erase(instance);
 				RSG::texture_storage->decal_instance_free(decal->instance);
 
 			} break;
@@ -778,7 +790,7 @@ void RendererSceneCull::instance_set_base(RID p_instance, RID p_base) {
 				geom->geometry_instance->set_material_overlay(instance->material_overlay);
 				geom->geometry_instance->set_surface_materials(instance->materials);
 				geom->geometry_instance->set_transform(instance->transform, instance->aabb, instance->transformed_aabb);
-				geom->geometry_instance->set_layer_mask(instance->layer_mask);
+				geom->geometry_instance->set_layer_mask(_geometry_layer_mask(instance));
 				geom->geometry_instance->set_pivot_data(instance->sorting_offset, instance->use_aabb_center);
 				geom->geometry_instance->set_lod_bias(instance->lod_bias);
 				geom->geometry_instance->set_transparency(instance->transparency);
@@ -1007,6 +1019,125 @@ void RendererSceneCull::instance_set_scenario(RID p_instance, RID p_scenario) {
 	}
 }
 
+// What the renderer sees as an object's layer mask: the layers, and above them
+// the id a decal knows the object by.
+uint32_t RendererSceneCull::_geometry_layer_mask(const Instance *p_instance) const {
+	return (p_instance->layer_mask & RendererTextureStorage::DECAL_LAYER_BITS) | (p_instance->decal_object_id << RendererTextureStorage::DECAL_OBJECT_ID_SHIFT);
+}
+
+uint32_t RendererSceneCull::_allocate_decal_object_id(Instance *p_instance) const {
+	if (p_instance->decal_object_id != 0) {
+		return p_instance->decal_object_id;
+	}
+
+	uint32_t id = 0;
+	if (!decal_object_id_free.is_empty()) {
+		id = decal_object_id_free[decal_object_id_free.size() - 1];
+		decal_object_id_free.resize(decal_object_id_free.size() - 1);
+	} else if (decal_object_id_next <= (uint32_t)RendererTextureStorage::DECAL_OBJECT_ID_MAX) {
+		id = decal_object_id_next++;
+	}
+	if (id == 0) {
+		WARN_PRINT_ONCE("More than 4095 objects are limited to by decals at once, so a decal does not affect the rest.");
+		return 0;
+	}
+
+	p_instance->decal_object_id = id;
+
+	// The renderer learns of it with the layer mask.
+	if (((1 << p_instance->base_type) & RSE::INSTANCE_GEOMETRY_MASK) && p_instance->base_data) {
+		InstanceGeometryData *geom = static_cast<InstanceGeometryData *>(p_instance->base_data);
+		if (geom->geometry_instance) {
+			geom->geometry_instance->set_layer_mask(_geometry_layer_mask(p_instance));
+		}
+	}
+	return id;
+}
+
+void RendererSceneCull::_release_decal_object_id(Instance *p_instance) const {
+	const uint32_t id = p_instance->decal_object_id;
+	if (id == 0) {
+		return;
+	}
+	p_instance->decal_object_id = 0;
+	decal_object_id_free.push_back(id);
+
+	// A decal still holding the id would otherwise affect whatever is given it next.
+	for (Instance *decal_instance : filtered_decals) {
+		InstanceDecalData *decal = static_cast<InstanceDecalData *>(decal_instance->base_data);
+		if (decal->filter_ids.has(id)) {
+			decal->filter_ids.erase(id);
+			if (decal->filter_ids.is_empty()) {
+				// Limited to objects, none of which is left: affects nothing.
+				decal->filter_ids.push_back(0xFFFFFFFF);
+			}
+			RSG::texture_storage->decal_instance_set_filter_ids(decal->instance, decal->filter_ids.ptr(), decal->filter_ids.size());
+		}
+	}
+}
+
+// Resolves the objects a decal is limited to into ids, and passes them on.
+void RendererSceneCull::_update_decal_filter(Instance *p_decal) const {
+	InstanceDecalData *decal = static_cast<InstanceDecalData *>(p_decal->base_data);
+
+	LocalVector<uint32_t> ids;
+	for (const RID &object_rid : decal->filter) {
+		Instance *object = instance_owner.get_or_null(object_rid);
+		if (!object || !((1 << object->base_type) & RSE::INSTANCE_GEOMETRY_MASK)) {
+			continue;
+		}
+		if (ids.size() >= (uint32_t)RendererTextureStorage::MAX_DECAL_FILTER_IDS) {
+			WARN_PRINT_ONCE("A decal is limited to eight objects at most; the rest are left out.");
+			break;
+		}
+		const uint32_t id = _allocate_decal_object_id(object);
+		if (id != 0 && !ids.has(id)) {
+			ids.push_back(id);
+		}
+	}
+
+	// A filter that names objects, none of which can be found yet, affects nothing
+	// rather than everything.
+	const bool limited = !decal->filter.is_empty();
+	if (limited && ids.is_empty()) {
+		ids.push_back(0xFFFFFFFF);
+	}
+
+	decal->filter_ids = ids;
+	if (limited) {
+		filtered_decals.insert(p_decal);
+	} else {
+		filtered_decals.erase(p_decal);
+	}
+	RSG::texture_storage->decal_instance_set_filter_ids(decal->instance, ids.ptr(), ids.size());
+}
+
+void RendererSceneCull::instance_set_decal_filter(RID p_instance, const TypedArray<RID> &p_filter) {
+	Instance *instance = instance_owner.get_or_null(p_instance);
+	ERR_FAIL_NULL(instance);
+	if (instance->base_type == RSE::INSTANCE_NONE) {
+		// No decal behind it: a renderer without decals, like the headless one.
+		return;
+	}
+	ERR_FAIL_COND_MSG(instance->base_type != RSE::INSTANCE_DECAL, "A decal filter can only be set on an instance of a decal.");
+
+	InstanceDecalData *decal = static_cast<InstanceDecalData *>(instance->base_data);
+	ERR_FAIL_NULL(decal);
+
+	decal->filter.clear();
+	for (int i = 0; i < p_filter.size(); i++) {
+		decal->filter.push_back(p_filter[i]);
+	}
+
+	// Ids are handed out now, so that what the decal is paired with is worked out
+	// with them, and the decal pairs again from scratch.
+	_update_decal_filter(instance);
+	if (instance->scenario) {
+		_unpair_instance(instance);
+		_instance_queue_update(instance, true, false);
+	}
+}
+
 void RendererSceneCull::instance_set_layer_mask(RID p_instance, uint32_t p_mask) {
 	Instance *instance = instance_owner.get_or_null(p_instance);
 	ERR_FAIL_NULL(instance);
@@ -1031,7 +1162,7 @@ void RendererSceneCull::instance_set_layer_mask(RID p_instance, uint32_t p_mask)
 	if ((1 << instance->base_type) & RSE::INSTANCE_GEOMETRY_MASK && instance->base_data) {
 		InstanceGeometryData *geom = static_cast<InstanceGeometryData *>(instance->base_data);
 		ERR_FAIL_NULL(geom->geometry_instance);
-		geom->geometry_instance->set_layer_mask(p_mask);
+		geom->geometry_instance->set_layer_mask(_geometry_layer_mask(instance));
 
 		if (geom->can_cast_shadows) {
 			for (HashSet<RendererSceneCull::Instance *>::Iterator I = geom->lights.begin(); I != geom->lights.end(); ++I) {
@@ -1742,6 +1873,7 @@ void RendererSceneCull::_update_instance(Instance *p_instance) const {
 
 		RSG::texture_storage->decal_instance_set_transform(decal->instance, *instance_xform);
 		decal->cull_mask = RSG::texture_storage->decal_get_cull_mask(p_instance->base);
+		_update_decal_filter(p_instance);
 	} else if (_is_lightmap_type(p_instance->base_type)) {
 		InstanceLightmapData *lightmap = static_cast<InstanceLightmapData *>(p_instance->base_data);
 
@@ -4721,6 +4853,7 @@ bool RendererSceneCull::free(RID p_rid) {
 		instance_attach_skeleton(p_rid, RID());
 
 		instance->instance_uniforms.free(instance->self);
+		_release_decal_object_id(instance);
 		update_dirty_instances(); //in case something changed this
 
 		instance_owner.free(p_rid);
@@ -4732,6 +4865,10 @@ bool RendererSceneCull::free(RID p_rid) {
 }
 
 TypedArray<Image> RendererSceneCull::bake_render_uv2(RID p_base, const TypedArray<RID> &p_material_overrides, const Size2i &p_image_size) {
+	// Materials and shaders made since the last frame are only built when a frame
+	// draws. Baking from a script's _ready, before the first frame, would render
+	// with materials that have no uniforms yet and capture nothing from them.
+	RSG::utilities->update_dirty_resources();
 	return scene_render->bake_render_uv2(p_base, p_material_overrides, p_image_size);
 }
 

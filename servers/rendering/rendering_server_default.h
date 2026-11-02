@@ -933,6 +933,7 @@ public:
 	FUNC8(camera_attributes_set_dof_blur, RID, bool, float, float, bool, float, float, float)
 	FUNC3(camera_attributes_set_exposure, RID, float, float)
 	FUNC6(camera_attributes_set_auto_exposure, RID, bool, float, float, float, float)
+	FUNC6(camera_attributes_set_motion_blur, RID, bool, float, float, int, float)
 
 	/* LENS FLARE API */
 
@@ -975,6 +976,7 @@ public:
 	FUNC2(instance_set_base, RID, RID)
 	FUNC2(instance_set_scenario, RID, RID)
 	FUNC2(instance_set_layer_mask, RID, uint32_t)
+	FUNC2(instance_set_decal_filter, RID, const TypedArray<RID> &)
 	FUNC3(instance_set_pivot_data, RID, float, bool)
 	FUNC2(instance_set_transform, RID, const Transform3D &)
 	FUNC2(instance_attach_object_instance_id, RID, ObjectID)

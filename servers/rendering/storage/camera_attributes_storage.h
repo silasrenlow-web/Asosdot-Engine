@@ -56,6 +56,12 @@ private:
 		float dof_blur_near_distance = 2;
 		float dof_blur_near_transition = 1;
 		float dof_blur_amount = 0.1;
+
+		bool motion_blur_enabled = false;
+		float motion_blur_intensity = 0.5;
+		float motion_blur_max_length = 5.0;
+		int motion_blur_quality = 1;
+		float motion_blur_target_fps = 60.0;
 	};
 
 	RSE::DOFBlurQuality dof_blur_quality = RSE::DOF_BLUR_QUALITY_MEDIUM;
@@ -95,6 +101,28 @@ public:
 
 		return cam_attributes && (cam_attributes->dof_blur_near_enabled || cam_attributes->dof_blur_far_enabled) && cam_attributes->dof_blur_amount > 0.0;
 	}
+
+	void camera_attributes_set_motion_blur(RID p_camera_attributes, bool p_enable, float p_intensity, float p_max_length, int p_quality, float p_target_fps);
+
+	struct MotionBlurSettings {
+		// How much of the frame the shutter is open for, 0 to 1.
+		float intensity = 0.5;
+		// The longest a streak is, as a percentage of the screen's width.
+		float max_length = 5.0;
+		// Samples along the streak: 0 low, 1 medium, 2 high.
+		int quality = 1;
+		// The frame rate the blur is worked out for, so it looks the same at any
+		// real one. Zero goes by the time the last frame took.
+		float target_fps = 60.0;
+	};
+
+	_FORCE_INLINE_ bool camera_attributes_uses_motion_blur(RID p_camera_attributes) {
+		CameraAttributes *cam_attributes = camera_attributes_owner.get_or_null(p_camera_attributes);
+
+		return cam_attributes && cam_attributes->motion_blur_enabled && cam_attributes->motion_blur_intensity > 0.0 && cam_attributes->motion_blur_max_length > 0.0;
+	}
+
+	MotionBlurSettings camera_attributes_get_motion_blur(RID p_camera_attributes);
 
 	void camera_attributes_set_exposure(RID p_camera_attributes, float p_multiplier, float p_exposure_normalization);
 	float camera_attributes_get_exposure_normalization_factor(RID p_camera_attributes);

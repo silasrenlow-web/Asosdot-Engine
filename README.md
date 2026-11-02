@@ -43,6 +43,40 @@ large surfaces and a patch budget, so a 450 by 600 metre level bakes in under
 per pixel. Forward+ and Mobile; check it with
 `python misc/scripts/test_realtime_gi.py --engine <editor>`.
 
+**Save and load.** A `SaveState` node under any node lists the properties to
+keep, picked from a checklist in the inspector, and the `Saves` singleton does the
+rest: slots on disk with a header a menu can read (time, play time, screenshot,
+your own summary), the scene the save was made in restored on load, nodes that
+come and go (enemies, pickups) brought back or removed as the save says, typed
+arrays, node references and resources kept, version migration, autosave, a
+backup if a save is damaged, and writes that never leave half a file. Saves are
+encrypted with AES-256 and authenticated with HMAC-SHA256 under a project key and
+an optional password, so a save that has been edited, or opened with the wrong
+password, is refused rather than decoded to nonsense. Check it with
+`python misc/scripts/test_saves.py --engine <editor>`.
+
+**Motion blur.** Tick Motion Blur on a `CameraAttributes` (on a `WorldEnvironment`
+or a `Camera3D`) and anything that moves across the screen is smeared the way a
+camera's shutter smears it: a turn or a run blurs the whole view, sky included,
+and every moving object blurs against a still background, from the same velocity
+buffer temporal anti-aliasing uses. Streaks stay in front of or behind what they
+belong to, intensity is the shutter fraction (half is a film camera's 180
+degrees), the longest streak is capped as a share of the screen, and a target
+frame rate keeps it looking the same at 60 and at 144 frames a second. It works
+on the HDR image before glow and tonemapping, so bright things leave bright
+streaks. Forward+ only; check it with
+`python misc/scripts/test_motion_blur.py --engine <editor>`.
+
+**Decals you can aim.** A `Decal` can be limited to chosen nodes: put them in
+`affected_nodes` (or call `add_affected_node`) and only they are painted, with no
+layers to set up, however the decal's box sits. A node stands for everything
+visible in it, and a body hit by a ray stands for its mesh. `Decal.create_at()`
+puts a texture on a surface in one call, shaped like the texture, limited to the
+object that was hit, and fading away after a lifetime if you give one: bullet
+holes and scorch marks are one line. The inspector has Fit to Texture and Limit to
+Selected Nodes. Works in Forward+ and Mobile; check it with
+`python misc/scripts/test_decal_filter.py --engine <editor> --rendering-method mobile`.
+
 **LightCatcher3D.** Tells gameplay how lit something is, for stealth and horror
 games where enemies should notice a player in the light or caught in a
 flashlight beam. It measures a few points with the renderer's own light

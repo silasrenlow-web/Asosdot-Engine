@@ -47,6 +47,7 @@ STATIC_ASSERT_INCOMPLETE_TYPE(class, RenderingServer);
 #include "scene/gui/control.h"
 #include "scene/main/multiplayer_api.h"
 #include "scene/main/node.h"
+#include "scene/main/saves.h"
 #include "scene/main/viewport.h"
 #include "scene/main/window.h"
 #include "scene/resources/environment.h"
@@ -728,6 +729,10 @@ bool SceneTree::process(double p_time) {
 
 	process_timers(p_time, false); //go through timers
 	process_tweens(p_time, false);
+
+	if (Saves *saves = Saves::get_singleton()) {
+		saves->_tick(p_time, paused);
+	}
 
 	flush_transform_notifications(); // Additional transforms after timers update.
 

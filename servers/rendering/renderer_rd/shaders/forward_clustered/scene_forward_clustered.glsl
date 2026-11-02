@@ -1578,7 +1578,16 @@ void fragment_shader(in SceneData scene_data) {
 
 				uint decal_index = 32 * i + bit;
 
-				if (!bool(decals.data[decal_index].mask & instances.data[instance_index].layer_mask)) {
+				// By layers, or, for a decal limited to some objects, only if this is one
+				// of them: the object's id is in the top bits of its layer mask.
+				uint object_layers = instances.data[instance_index].layer_mask;
+				bool decal_applies = bool(decals.data[decal_index].mask & object_layers & 0xFFFFFu);
+				if (!decal_applies && any(notEqual(decals.data[decal_index].filter_ids, uvec4(0)))) {
+					uint object_id = object_layers >> 20;
+					uvec4 ids = decals.data[decal_index].filter_ids;
+					decal_applies = object_id != 0u && (((ids.x & 0xFFFFu) == object_id) || ((ids.x >> 16) == object_id) || ((ids.y & 0xFFFFu) == object_id) || ((ids.y >> 16) == object_id) || ((ids.z & 0xFFFFu) == object_id) || ((ids.z >> 16) == object_id) || ((ids.w & 0xFFFFu) == object_id) || ((ids.w >> 16) == object_id));
+				}
+				if (!decal_applies) {
 					continue; //not masked
 				}
 

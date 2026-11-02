@@ -111,6 +111,18 @@
 				[/codeblock]
 			</description>
 		</method>
+		<method name="camera_attributes_set_motion_blur">
+			<return type="void" />
+			<param index="0" name="camera_attributes" type="RID" />
+			<param index="1" name="enable" type="bool" />
+			<param index="2" name="intensity" type="float" />
+			<param index="3" name="max_length" type="float" />
+			<param index="4" name="quality" type="int" />
+			<param index="5" name="target_fps" type="float" />
+			<description>
+				Sets the motion blur of a camera attributes resource: whether it is on, how much of the frame the shutter is open for ([code]0[/code] to [code]1[/code]), the longest a streak is as a percentage of the screen's width, the quality ([code]0[/code] to [code]2[/code]), and the frame rate the blur is scaled for ([code]0[/code] for none). This is what [member CameraAttributes.motion_blur_enabled] and its neighbours call. Forward+ only.
+			</description>
+		</method>
 		<method name="camera_create">
 			<return type="RID" />
 			<description>
@@ -2031,6 +2043,14 @@
 			<param index="1" name="aabb" type="AABB" />
 			<description>
 				Sets a custom AABB to use when culling objects from the view frustum. Equivalent to setting [member GeometryInstance3D.custom_aabb].
+			</description>
+		</method>
+		<method name="instance_set_decal_filter">
+			<return type="void" />
+			<param index="0" name="instance" type="RID" />
+			<param index="1" name="filter" type="RID[]" />
+			<description>
+				Limits a decal instance to the given instances (as made by [method instance_create]): only they are painted, whatever their layers, and the decal's cull mask is not looked at. An empty array removes the limit. A decal can be limited to eight objects. The instances are given ids the renderer compares in the decal's shader; a decal limited to instances that do not exist affects nothing. See [member Decal.affected_nodes].
 			</description>
 		</method>
 		<method name="instance_set_extra_visibility_margin">

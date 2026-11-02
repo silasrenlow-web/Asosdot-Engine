@@ -434,6 +434,9 @@ public:
 		RSE::ShadowCastingSetting cast_shadows;
 
 		uint32_t layer_mask;
+		// Set once a decal has been limited to this object. What the renderer gets as
+		// the object's layer mask has it in the bits above the layers.
+		uint32_t decal_object_id = 0;
 		// Fit in 32 bits.
 		bool mirror : 1;
 		bool receive_shadows : 1;
@@ -670,6 +673,10 @@ public:
 		Instance *owner = nullptr;
 		RID instance;
 		uint32_t cull_mask = 0xFFFFFFFF;
+		// The objects the decal is limited to, as instances, and their ids. When there
+		// are any, only they are affected and the cull mask is not looked at.
+		LocalVector<RID> filter;
+		LocalVector<uint32_t> filter_ids;
 
 		HashSet<Instance *> geometries;
 
@@ -1074,6 +1081,17 @@ public:
 	virtual void instance_set_base(RID p_instance, RID p_base);
 	virtual void instance_set_scenario(RID p_instance, RID p_scenario);
 	virtual void instance_set_layer_mask(RID p_instance, uint32_t p_mask);
+	virtual void instance_set_decal_filter(RID p_instance, const TypedArray<RID> &p_filter);
+
+	static bool _decal_affects(const InstanceDecalData *p_decal, const Instance *p_object);
+	uint32_t _geometry_layer_mask(const Instance *p_instance) const;
+	uint32_t _allocate_decal_object_id(Instance *p_instance) const;
+	void _release_decal_object_id(Instance *p_instance) const;
+	void _update_decal_filter(Instance *p_decal) const;
+	mutable LocalVector<uint32_t> decal_object_id_free;
+	mutable uint32_t decal_object_id_next = 1;
+	// Decals limited to some objects, so that an id given up is taken from them.
+	mutable HashSet<Instance *> filtered_decals;
 	virtual void instance_set_pivot_data(RID p_instance, float p_sorting_offset, bool p_use_aabb_center);
 	virtual void instance_set_transform(RID p_instance, const Transform3D &p_transform);
 	virtual void instance_attach_object_instance_id(RID p_instance, ObjectID p_id);

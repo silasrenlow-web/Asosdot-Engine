@@ -920,6 +920,7 @@ void Main::test_cleanup() {
 
 	unregister_platform_apis();
 	unregister_driver_types();
+	unregister_scene_singletons();
 	unregister_scene_types();
 
 	finalize_theme_db();
@@ -5311,6 +5312,8 @@ void Main::cleanup(bool p_force) {
 	message_queue->flush();
 
 	OS::get_singleton()->delete_main_loop();
+
+	unregister_scene_singletons();
 
 	OS::get_singleton()->_cmdline.clear();
 	OS::get_singleton()->_user_args.clear();

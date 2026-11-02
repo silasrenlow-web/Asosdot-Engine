@@ -14,4 +14,6 @@ struct DecalData {
 	mat3x4 normal_xform;
 	vec3 normal;
 	float normal_fade;
+	// Ids of the objects the decal is limited to, two to a word. All zero: not limited.
+	uvec4 filter_ids;
 };

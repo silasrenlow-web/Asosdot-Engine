@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="SaveState" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		Marks a node as part of the saved game.
+	</brief_description>
+	<description>
+		Put a [SaveState] under any node, choose the properties to keep, and [Saves] writes them into a save and puts them back on load. Nothing needs a script.
+		[codeblock]
+		Player (CharacterBody3D)
+		└─ SaveState   properties: position, rotation, health
+		[/codeblock]
+		The node whose properties are kept is the [member target], the parent unless a path says otherwise. A property can reach inside another with a path, such as [code]scale:x[/code]. Plain values, arrays and dictionaries of them are kept as they are, a typed array stays typed, a resource is kept as the path it loads from, and a reference to another node is kept as where that node sits and found again on load.
+		A node that can come and go, an enemy that is killed or an item that is picked up, is [member spawnable]. Loading brings it back when the save has it and removes it when the save does not.
+		[codeblock]
+		Enemy (scene root)
+		└─ SaveState   properties: position, health   spawnable: on
+		[/codeblock]
+		Everything is found by an id. By default it is where the target sits in the scene, which is stable as long as the scene is. For a node that comes from somewhere else, give it a [member save_id].
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_state_id" qualifiers="const">
+			<return type="String" />
+			<description>
+				Returns the id this node is saved under: the [member save_id] if there is one, else where its target sits in the scene. A node a script added to the scene after it was built, which has no place in the scene file, is given an id of its own that starts with [code]spawn-[/code].
+			</description>
+		</method>
+		<method name="get_target_node" qualifiers="const">
+			<return type="Node" />
+			<description>
+				Returns the node whose properties are kept, or [code]null[/code] when [member target] leads nowhere.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="properties" type="PackedStringArray" setter="set_properties" getter="get_properties" default="PackedStringArray()">
+			The properties of the target that are saved. In the inspector this is a list with a tick beside each property; in a script it is the property names, with [code]:[/code] to reach inside one, such as [code]"position:y"[/code]. A name the target does not have is warned about and left out.
+		</member>
+		<member name="save_id" type="StringName" setter="set_save_id" getter="get_save_id" default="&amp;&quot;&quot;">
+			The id the state is saved under. Leave it empty to use where the target sits in the scene. Set it for a node that is not in a scene file, or when scenes get rearranged and the saves must still match. Two nodes with the same id are a mistake, and the inspector says so.
+		</member>
+		<member name="spawnable" type="bool" setter="set_spawnable" getter="is_spawnable" default="false">
+			If [code]true[/code], the target can come and go. Loading creates it again from its scene when the save has it and it is not in the tree, and frees it when the save was made in this scene and does not have it. The target has to be the root of an instanced scene, so that loading can create it again.
+			A spawnable node made by a script is saved under an id of its own, so enemies a game spawns while it runs come back too.
+		</member>
+		<member name="target" type="NodePath" setter="set_target" getter="get_target" default="NodePath(&quot;..&quot;)">
+			The node whose properties are saved, relative to this one. The parent by default.
+		</member>
+	</members>
+	<signals>
+		<signal name="loaded">
+			<param index="0" name="extra" type="Dictionary" />
+			<description>
+				Emitted after the saved properties have been put back. [param extra] is what was added in [signal saving], so that something no property holds can be restored too.
+			</description>
+		</signal>
+		<signal name="saving">
+			<param index="0" name="extra" type="Dictionary" />
+			<description>
+				Emitted when the node is about to be saved. Anything put into [param extra] is saved with it and handed back in [signal loaded].
+				[codeblock]
+				func _on_save_state_saving(extra: Dictionary) -> void:
+				    extra["door_log"] = door_log
+				[/codeblock]
+			</description>
+		</signal>
+	</signals>
+</class>

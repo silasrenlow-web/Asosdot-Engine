@@ -106,6 +106,8 @@
 #include "scene/main/missing_node.h"
 #include "scene/main/multiplayer_api.h"
 #include "scene/main/resource_preloader.h"
+#include "scene/main/save_state.h"
+#include "scene/main/saves.h"
 #include "scene/main/scene_tree.h"
 #include "scene/main/shader_globals_override.h"
 #include "scene/main/status_indicator.h"
@@ -381,6 +383,7 @@
 #endif // PHYSICS_3D_DISABLED
 
 static Ref<ResourceFormatSaverText> resource_saver_text;
+static Saves *saves = nullptr;
 static Ref<ResourceFormatLoaderText> resource_loader_text;
 
 static Ref<ResourceFormatLoaderCompressedTexture2D> resource_loader_stream_texture;
@@ -757,6 +760,8 @@ void register_scene_types() {
 	GDREGISTER_CLASS(MultiMeshInstance3D);
 	GDREGISTER_CLASS(Rope3D);
 	ClassDB::add_asosdot_class_group("rope", { "Rope3D" });
+	GDREGISTER_CLASS(SaveState);
+	ClassDB::add_asosdot_class_group("save_state", { "SaveState" });
 	GDREGISTER_CLASS(LightCatcher3D);
 	ClassDB::add_asosdot_class_group("light_catcher", { "LightCatcher3D" });
 
@@ -1403,12 +1408,28 @@ void unregister_scene_types() {
 	OS::get_singleton()->benchmark_end_measure("Scene", "Unregister Types");
 }
 
+void unregister_scene_singletons() {
+	// Before the script languages shut down: scripts connect to Saves, and what is
+	// connected to a signal has to be able to be let go of when it dies.
+	if (saves) {
+		if (Engine::get_singleton()->has_singleton("Saves")) {
+			Engine::get_singleton()->remove_singleton("Saves");
+		}
+		memdelete(saves);
+		saves = nullptr;
+	}
+}
+
 void register_scene_singletons() {
 	OS::get_singleton()->benchmark_begin_measure("Scene", "Register Singletons");
 
 	GDREGISTER_CLASS(ThemeDB);
 
 	Engine::get_singleton()->add_singleton(Engine::Singleton("ThemeDB", ThemeDB::get_singleton()));
+
+	GDREGISTER_CLASS(Saves);
+	saves = memnew(Saves);
+	Engine::get_singleton()->add_singleton(Engine::Singleton("Saves", Saves::get_singleton()));
 
 	OS::get_singleton()->benchmark_end_measure("Scene", "Register Singletons");
 }

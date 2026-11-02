@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/variant/typed_array.h"
 #include "scene/3d/visual_instance_3d.h"
 
 class Decal : public VisualInstance3D {
@@ -59,7 +60,17 @@ private:
 	real_t distance_fade_begin = 40.0;
 	real_t distance_fade_length = 10.0;
 
+	// The nodes the decal is limited to. Paths are what a scene saves; objects are
+	// for nodes a script adds before the decal is in the tree.
+	Vector<NodePath> affected_paths;
+	Vector<ObjectID> affected_objects;
+
+	void _collect_visuals(Node *p_node, LocalVector<VisualInstance3D *> &r_visuals) const;
+	void _collect_affected(LocalVector<VisualInstance3D *> &r_visuals) const;
+	void _update_affected();
+
 protected:
+	void _notification(int p_what);
 	static void _bind_methods();
 	void _validate_property(PropertyInfo &p_property) const;
 #ifndef DISABLE_DEPRECATED
@@ -105,6 +116,18 @@ public:
 
 	void set_cull_mask(uint32_t p_layers);
 	uint32_t get_cull_mask() const;
+
+	void set_affected_nodes(const TypedArray<NodePath> &p_paths);
+	TypedArray<NodePath> get_affected_nodes() const;
+	void add_affected_node(Node *p_node);
+	void remove_affected_node(Node *p_node);
+	void clear_affected_nodes();
+	TypedArray<VisualInstance3D> get_affected_visuals() const;
+	void refresh_affected_nodes();
+
+	void fit_to_texture(real_t p_width = 0.0);
+
+	static Decal *create_at(Node *p_parent, const Ref<Texture2D> &p_texture, const Vector3 &p_position, const Vector3 &p_normal, real_t p_size = 1.0, Node *p_target = nullptr, real_t p_lifetime = 0.0, real_t p_rotation_degrees = 0.0);
 
 	virtual AABB get_aabb() const override;
 

@@ -38,6 +38,16 @@ private:
 	Color default_clear_color;
 
 public:
+	enum {
+		// How many objects one decal can be limited to.
+		MAX_DECAL_FILTER_IDS = 8,
+		// Object ids live in the top bits of an instance's layer mask, above the 20
+		// layers a node can use, so they ride along with it to the shader.
+		DECAL_OBJECT_ID_SHIFT = 20,
+		DECAL_OBJECT_ID_MAX = (1 << 12) - 1,
+		DECAL_LAYER_BITS = (1 << DECAL_OBJECT_ID_SHIFT) - 1,
+	};
+
 	void set_default_clear_color(const Color &p_color) {
 		default_clear_color = p_color;
 	}
@@ -146,6 +156,9 @@ public:
 	virtual void decal_instance_free(RID p_decal_instance) = 0;
 	virtual void decal_instance_set_transform(RID p_decal_instance, const Transform3D &p_transform) = 0;
 	virtual void decal_instance_set_sorting_offset(RID p_decal_instance, float p_sorting_offset) = 0;
+	// The objects a decal affects, by the ids the scene culler gave them. Empty for
+	// every object its cull mask lets through.
+	virtual void decal_instance_set_filter_ids(RID p_decal_instance, const uint32_t *p_ids, uint32_t p_count) = 0;
 
 	/* RENDER TARGET */
 

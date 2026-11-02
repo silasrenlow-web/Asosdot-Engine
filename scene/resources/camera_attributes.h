@@ -54,7 +54,20 @@ protected:
 	float auto_exposure_scale = 0.4;
 	virtual void _update_auto_exposure() {}
 
+	bool motion_blur_enabled = false;
+	float motion_blur_intensity = 0.5;
+	float motion_blur_max_length = 5.0;
+	int motion_blur_quality = 1;
+	float motion_blur_target_fps = 60.0;
+	void _update_motion_blur();
+
 public:
+	enum MotionBlurQuality {
+		MOTION_BLUR_QUALITY_LOW,
+		MOTION_BLUR_QUALITY_MEDIUM,
+		MOTION_BLUR_QUALITY_HIGH,
+	};
+
 	virtual RID get_rid() const override;
 	virtual float calculate_exposure_normalization() const { return 1.0; }
 
@@ -70,9 +83,22 @@ public:
 	void set_auto_exposure_scale(float p_auto_exposure_scale);
 	float get_auto_exposure_scale() const;
 
+	void set_motion_blur_enabled(bool p_enabled);
+	bool is_motion_blur_enabled() const;
+	void set_motion_blur_intensity(float p_intensity);
+	float get_motion_blur_intensity() const;
+	void set_motion_blur_max_length(float p_percent);
+	float get_motion_blur_max_length() const;
+	void set_motion_blur_quality(MotionBlurQuality p_quality);
+	MotionBlurQuality get_motion_blur_quality() const;
+	void set_motion_blur_target_fps(float p_fps);
+	float get_motion_blur_target_fps() const;
+
 	CameraAttributes();
 	~CameraAttributes();
 };
+
+VARIANT_ENUM_CAST(CameraAttributes::MotionBlurQuality);
 
 class CameraAttributesPractical : public CameraAttributes {
 	GDCLASS(CameraAttributesPractical, CameraAttributes);

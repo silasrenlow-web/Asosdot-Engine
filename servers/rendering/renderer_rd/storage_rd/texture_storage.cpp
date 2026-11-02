@@ -3995,6 +3995,17 @@ void TextureStorage::decal_instance_set_transform(RID p_decal_instance, const Tr
 	di->transform = p_transform;
 }
 
+void TextureStorage::decal_instance_set_filter_ids(RID p_decal_instance, const uint32_t *p_ids, uint32_t p_count) {
+	DecalInstance *decal_instance = decal_instance_owner.get_or_null(p_decal_instance);
+	ERR_FAIL_NULL(decal_instance);
+
+	decal_instance->filter_count = MIN(p_count, (uint32_t)MAX_DECAL_FILTER_IDS);
+	for (uint32_t i = 0; i < (uint32_t)MAX_DECAL_FILTER_IDS; i++) {
+		// 0xFFFFFFFF, an id no object has, is how a filter that matches nothing reaches the shader.
+		decal_instance->filter_ids[i] = i < decal_instance->filter_count ? (p_ids[i] & 0xFFFF) : 0;
+	}
+}
+
 void TextureStorage::decal_instance_set_sorting_offset(RID p_decal_instance, float p_sorting_offset) {
 	DecalInstance *di = decal_instance_owner.get_or_null(p_decal_instance);
 	ERR_FAIL_NULL(di);
@@ -4086,6 +4097,7 @@ void TextureStorage::update_decal_buffer(const PagedArray<RID> &p_decals, const 
 		}
 
 		decal_instance->cull_mask = decal->cull_mask;
+		const bool filtered = decal_instance->filter_count > 0;
 
 		float fade = 1.0;
 
@@ -4192,7 +4204,11 @@ void TextureStorage::update_decal_buffer(const PagedArray<RID> &p_decals, const 
 		dd.modulate[3] = modulate.a * fade;
 		dd.emission_energy = decal->emission_energy * fade;
 		dd.albedo_mix = decal->albedo_mix;
-		dd.mask = decal->cull_mask;
+		// A decal limited to some objects does not look at layers at all.
+		dd.mask = filtered ? 0 : decal->cull_mask;
+		for (int k = 0; k < 4; k++) {
+			dd.filter[k] = (decal_instance->filter_ids[2 * k] & 0xFFFF) | ((decal_instance->filter_ids[2 * k + 1] & 0xFFFF) << 16);
+		}
 		dd.upper_fade = decal->upper_fade;
 		dd.lower_fade = decal->lower_fade;
 

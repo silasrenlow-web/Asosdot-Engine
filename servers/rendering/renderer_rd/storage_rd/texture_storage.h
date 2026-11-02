@@ -356,6 +356,9 @@ private:
 		Transform3D transform;
 		float sorting_offset = 0.0;
 		uint32_t cull_mask = 0;
+		// Objects the decal is limited to, as ids; zero marks an unused place.
+		uint32_t filter_ids[MAX_DECAL_FILTER_IDS] = {};
+		uint32_t filter_count = 0;
 		RendererRD::ForwardID forward_id = -1;
 	};
 
@@ -379,6 +382,8 @@ private:
 		float normal_xform[12];
 		float normal[3];
 		float normal_fade;
+		// Up to eight object ids, two to a word, 16 bits each.
+		uint32_t filter[4];
 	};
 
 	struct DecalInstanceSort {
@@ -810,6 +815,7 @@ public:
 	virtual void decal_instance_free(RID p_decal_instance) override;
 	virtual void decal_instance_set_transform(RID p_decal_instance, const Transform3D &p_transform) override;
 	virtual void decal_instance_set_sorting_offset(RID p_decal_instance, float p_sorting_offset) override;
+	virtual void decal_instance_set_filter_ids(RID p_decal_instance, const uint32_t *p_ids, uint32_t p_count) override;
 
 	_FORCE_INLINE_ RID decal_instance_get_base(RID p_decal_instance) const {
 		DecalInstance *di = decal_instance_owner.get_or_null(p_decal_instance);

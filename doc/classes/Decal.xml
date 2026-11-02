@@ -14,6 +14,56 @@
 	<tutorials>
 	</tutorials>
 	<methods>
+		<method name="add_affected_node">
+			<return type="void" />
+			<param index="0" name="node" type="Node" />
+			<description>
+				Limits the decal to [param node]: from then on only the nodes named are painted, and the decal's [member cull_mask] is not looked at. A node stands for everything visible in it, so naming an object names all its parts. A body named for its collider stands for the mesh it belongs to, the parent it hangs under or the mesh beside it, which is what a ray cast hits.
+				[codeblock]
+				# Shoot a bullet hole into just the wall that was hit.
+				var hole := Decal.create_at(get_tree().current_scene, bullet_hole, hit.position, hit.normal, 0.2, hit.collider)
+				[/codeblock]
+				A decal can be limited to eight objects. Nodes that are added to a named node after this is called are not picked up until [method refresh_affected_nodes].
+			</description>
+		</method>
+		<method name="clear_affected_nodes">
+			<return type="void" />
+			<description>
+				Removes the limit, so the decal paints everything its [member cull_mask] lets through again.
+			</description>
+		</method>
+		<method name="create_at" qualifiers="static">
+			<return type="Decal" />
+			<param index="0" name="parent" type="Node" />
+			<param index="1" name="texture" type="Texture2D" />
+			<param index="2" name="position" type="Vector3" />
+			<param index="3" name="normal" type="Vector3" />
+			<param index="4" name="size" type="float" default="1.0" />
+			<param index="5" name="target" type="Node" default="null" />
+			<param index="6" name="lifetime" type="float" default="0.0" />
+			<param index="7" name="rotation_degrees" type="float" default="0.0" />
+			<description>
+				Puts a decal of [param texture] on a surface, in one call: [param position] and [param normal] are where a ray hit, [param size] is how wide it is in metres (its height follows the texture), and the decal is added to [param parent]. Its [member normal_fade] is set so that it stops at a corner.
+				If [param target] is given, the decal is limited to it, see [method add_affected_node], so it paints the object that was hit and not a thing that happens to stand behind it. If [param lifetime] is more than [code]0[/code] the decal fades out over its last second, at most half its life, and frees itself. [param rotation_degrees] turns it about the normal; pass a random angle so marks that repeat don't look alike.
+				[codeblock]
+				func _on_hit(hit: Dictionary) -&gt; void:
+				    Decal.create_at(self, scorch_texture, hit.position, hit.normal, 0.6, hit.collider, 30.0, randf() * 360.0)
+				[/codeblock]
+			</description>
+		</method>
+		<method name="fit_to_texture">
+			<return type="void" />
+			<param index="0" name="width" type="float" default="0.0" />
+			<description>
+				Gives the decal the shape of its texture, so that a texture that is not square is not squashed: the size along X becomes [param width] (it stays what it was if [param width] is [code]0[/code]) and the size along Z follows the texture's height. The depth is left alone.
+			</description>
+		</method>
+		<method name="get_affected_visuals" qualifiers="const">
+			<return type="VisualInstance3D[]" />
+			<description>
+				Returns the visible nodes the decal is limited to, with everything the named nodes stand for worked out. Empty if the decal is not limited, or the nodes it is limited to have nothing visible.
+			</description>
+		</method>
 		<method name="get_texture" qualifiers="const">
 			<return type="Texture2D" />
 			<param index="0" name="type" type="int" enum="Decal.DecalTexture" />
@@ -33,6 +83,19 @@
 				}
 				[/csharp]
 				[/codeblocks]
+			</description>
+		</method>
+		<method name="refresh_affected_nodes">
+			<return type="void" />
+			<description>
+				Looks again at what the nodes the decal is limited to hold. Call it after meshes are added to or removed from one of them.
+			</description>
+		</method>
+		<method name="remove_affected_node">
+			<return type="void" />
+			<param index="0" name="node" type="Node" />
+			<description>
+				Stops limiting the decal to [param node]. If it was the last one, the decal paints everything its [member cull_mask] lets through again.
 			</description>
 		</method>
 		<method name="set_texture">
@@ -59,10 +122,15 @@
 		</method>
 	</methods>
 	<members>
+		<member name="affected_nodes" type="NodePath[]" setter="set_affected_nodes" getter="get_affected_nodes" default="[]">
+			The nodes the decal is limited to, as paths from the decal. When there are any, only they are painted, however the decal's box sits and whatever layers anything is on: no layers to manage. A node stands for everything visible in it. Nothing found is the same as nothing painted, so a path that leads nowhere does not make the decal paint everything. When empty, the decal paints whatever its [member cull_mask] lets through.
+			See [method add_affected_node].
+		</member>
 		<member name="albedo_mix" type="float" setter="set_albedo_mix" getter="get_albedo_mix" default="1.0">
 			Blends the albedo [Color] of the decal with albedo [Color] of the underlying mesh. This can be set to [code]0.0[/code] to create a decal that only affects normal or ORM. In this case, an albedo texture is still required as its alpha channel will determine where the normal and ORM will be overridden. See also [member modulate].
 		</member>
 		<member name="cull_mask" type="int" setter="set_cull_mask" getter="get_cull_mask" default="1048575">
+			[b]Not used while the decal is limited to nodes[/b], see [member affected_nodes].
 			Specifies which [member VisualInstance3D.layers] this decal will project on. By default, Decals affect all layers. This is used so you can specify which types of objects receive the Decal and which do not. This is especially useful so you can ensure that dynamic objects don't accidentally receive a Decal intended for the terrain under them.
 		</member>
 		<member name="distance_fade_begin" type="float" setter="set_distance_fade_begin" getter="get_distance_fade_begin" default="40.0" keywords="lod_begin">

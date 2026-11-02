@@ -30,5 +30,33 @@
 			If [member auto_exposure_enabled] is [code]true[/code], this can be used as a method of exposure compensation, doubling the value will increase the exposure value (measured in EV100) by 1 stop.
 			[b]Note:[/b] Only available when [member ProjectSettings.rendering/lights_and_shadows/use_physical_light_units] is enabled.
 		</member>
+		<member name="motion_blur_enabled" type="bool" setter="set_motion_blur_enabled" getter="is_motion_blur_enabled" default="false">
+			If [code]true[/code], things that move across the screen are smeared along the way they move, as they are by a camera's shutter. The camera's own motion counts, a turn or a run blurs the whole view including the sky, and so does the motion of every object, so a car blurs against a still background and a still car blurs against a moving camera.
+			It is made from the velocity buffer, the one temporal anti-aliasing uses, so it follows whatever the renderer drew: skeletons, instanced meshes and moving lights included. It works on the HDR image before glow and tonemapping, so a bright thing leaves a bright streak, and what is in front smears over what is behind it, not the other way about.
+			[b]Note:[/b] Motion blur is only available in the Forward+ renderer. It needs a camera and a frame before it: nothing blurs on the first frame of a game or after the camera was moved by hand to somewhere new, until the next frame says how it moved.
+		</member>
+		<member name="motion_blur_intensity" type="float" setter="set_motion_blur_intensity" getter="get_motion_blur_intensity" default="0.5">
+			How much of the time between frames the shutter is open, from [code]0[/code] to [code]1[/code]. At [code]0.5[/code], a half shutter, a thing is smeared over half of what it moved in the frame, which is what film cameras do (a 180 degree shutter). At [code]1[/code] it is smeared over all of it.
+		</member>
+		<member name="motion_blur_max_length" type="float" setter="set_motion_blur_max_length" getter="get_motion_blur_max_length" default="5.0">
+			The longest a streak may be, as a percentage of the screen's width. Faster things are smeared no further, so a hard turn doesn't turn the screen to soup. Up to about 6.7% on a 1080p screen is possible; more is cut to what the blur can reach.
+		</member>
+		<member name="motion_blur_quality" type="int" setter="set_motion_blur_quality" getter="get_motion_blur_quality" enum="CameraAttributes.MotionBlurQuality" default="1">
+			How many samples are taken along a streak. More are smoother and cost more.
+		</member>
+		<member name="motion_blur_target_fps" type="float" setter="set_motion_blur_target_fps" getter="get_motion_blur_target_fps" default="60.0">
+			The frame rate the blur is made for. A velocity is how far a pixel moved in a frame, which is less the faster the game runs, so with this set the streak is scaled to the length it would be at this rate: the game looks the same at 60 frames a second and at 144. At [code]0[/code] the blur is scaled by [member motion_blur_intensity] alone, and gets shorter as the frame rate rises.
+		</member>
 	</members>
+	<constants>
+		<constant name="MOTION_BLUR_QUALITY_LOW" value="0" enum="MotionBlurQuality">
+			9 samples along a streak.
+		</constant>
+		<constant name="MOTION_BLUR_QUALITY_MEDIUM" value="1" enum="MotionBlurQuality">
+			15 samples along a streak.
+		</constant>
+		<constant name="MOTION_BLUR_QUALITY_HIGH" value="2" enum="MotionBlurQuality">
+			23 samples along a streak.
+		</constant>
+	</constants>
 </class>

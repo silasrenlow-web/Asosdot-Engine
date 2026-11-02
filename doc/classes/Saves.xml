@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="Saves" inherits="Object" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		Saves the game to slots on disk and loads it back.
+	</brief_description>
+	<description>
+		A save and load framework. A slot is a file with a name; saving writes the state of every [SaveState] in the game and whatever the game keeps in [member data], and loading puts it back.
+		[codeblock]
+		# Anywhere in the game.
+		Saves.data["quest"] = 3
+		Saves.save("slot1", {"chapter": "The Mill"})
+
+		# Later.
+		Saves.load("slot1")
+		print(Saves.data["quest"])
+		[/codeblock]
+		[b]What a save holds.[/b] The state of the [SaveState] nodes that are in the tree, the states of any that were not when the game was loaded or [method stash]ed, [member data], the scene the game was in, the play time, a header with the time and a screenshot, and an [code]info[/code] dictionary the game fills in for its menus.
+		[b]Loading.[/b] Loading goes back to the scene the save was made in if the game is somewhere else, puts the states on the nodes, brings spawnable nodes back and removes the ones that were gone. States for a scene that is not loaded wait, and are put on its nodes when it comes in. [signal loaded] is emitted when all of that is done, which for a scene change is a frame later.
+		[b]Files.[/b] A save is written beside its slot and moved into place, so a crash in the middle leaves the old save whole, and the save before it is kept as a backup that is read if the new one is damaged. Slot names are letters, digits, space, dot, dash and underscore.
+		[b]Encryption.[/b] Saves are encrypted with AES-256 and authenticated with HMAC-SHA256 under a key made from the project's key and an optional password, and a file that has been changed, or opened with the wrong password, is refused, not decoded to nonsense. The project key is in the project and so in the exported game: it keeps players from editing a save by hand, which is what it is for, and a password the player or developer supplies is what keeps a save from anyone with the game. See the [code]save/*[/code] project settings.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="copy_slot">
+			<return type="int" enum="Error" />
+			<param index="0" name="from" type="String" />
+			<param index="1" name="to" type="String" />
+			<description>
+				Copies a save to another slot, the way it is, so it still needs its password.
+			</description>
+		</method>
+		<method name="delete_slot">
+			<return type="int" enum="Error" />
+			<param index="0" name="slot" type="String" />
+			<description>
+				Deletes a slot and its backups. Returns [constant ERR_FILE_NOT_FOUND] if there is no such slot.
+			</description>
+		</method>
+		<method name="get_info" qualifiers="const">
+			<return type="Dictionary" />
+			<param index="0" name="slot" type="String" />
+			<description>
+				Returns what a menu needs to show a slot without loading it, or an empty dictionary if there is none: [code]slot[/code], [code]version[/code], [code]timestamp[/code] (Unix time), [code]play_time[/code] (seconds), [code]scene[/code], [code]info[/code] (what was given to [method save]), [code]thumbnail[/code] (an [Image], or [code]null[/code]), [code]encrypted[/code], [code]password_required[/code], [code]size[/code] (bytes) and [code]path[/code].
+				It reads the header only, so it is quick and needs no password. [b]Note:[/b] the header is not checked until the save is loaded.
+			</description>
+		</method>
+		<method name="get_slot_path" qualifiers="const">
+			<return type="String" />
+			<param index="0" name="slot" type="String" />
+			<description>
+				Returns the path of the file a slot is saved to.
+			</description>
+		</method>
+		<method name="has_slot" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="slot" type="String" />
+			<description>
+				Returns [code]true[/code] if there is a save in the slot.
+			</description>
+		</method>
+		<method name="list_slots" qualifiers="const">
+			<return type="PackedStringArray" />
+			<description>
+				Returns the slots there are saves in, newest first.
+			</description>
+		</method>
+		<method name="load">
+			<return type="int" enum="Error" />
+			<param index="0" name="slot" type="String" />
+			<param index="1" name="password" type="String" default="&quot;&quot;" />
+			<param index="2" name="restore_scene" type="bool" default="true" />
+			<description>
+				Loads a save. Returns [constant OK] when it was read, and [signal loaded] follows once it has been put on the game.
+				The errors are [constant ERR_FILE_NOT_FOUND] when there is no such slot, [constant ERR_UNAUTHORIZED] when it needs a password and none was given, [constant ERR_FILE_CORRUPT] when it has been changed or the password is wrong (and so is its backup), and [constant ERR_FILE_UNRECOGNIZED] when it was made by a newer version of the game, see [member save_version]. [signal load_failed] is emitted with the error.
+				If [param password] is empty, [member password] is used. If [param restore_scene] is [code]false[/code] the game stays where it is, and the states of nodes that are not in the scene wait for their scene.
+			</description>
+		</method>
+		<method name="read" qualifiers="const">
+			<return type="Dictionary" />
+			<param index="0" name="slot" type="String" />
+			<param index="1" name="password" type="String" default="&quot;&quot;" />
+			<description>
+				Reads a save without loading it: what [method get_info] returns, plus [code]data[/code] and [code]states[/code], and [code]error[/code], which is [constant OK] or what went wrong. Useful for checking a save, or for a menu that shows what is in one.
+			</description>
+		</method>
+		<method name="reset">
+			<return type="void" />
+			<description>
+				Forgets the world and [member data] and starts the play time again. For a new game.
+			</description>
+		</method>
+		<method name="restore">
+			<return type="void" />
+			<param index="0" name="snapshot" type="Dictionary" />
+			<description>
+				Puts back the states from a [method snapshot], as loading a save would, without a file.
+			</description>
+		</method>
+		<method name="save">
+			<return type="int" enum="Error" />
+			<param index="0" name="slot" type="String" />
+			<param index="1" name="info" type="Dictionary" default="{}" />
+			<param index="2" name="password" type="String" default="&quot;&quot;" />
+			<description>
+				Saves the game to a slot. [param info] is shown by [method get_info] and is not encrypted, for a chapter name or a character level a menu lists. [param password] is asked for to load the save; if it is empty, [member password] is used.
+				[signal saving] is emitted first, so [member data] can be brought up to date, and [signal saved] after.
+				Returns [constant ERR_INVALID_PARAMETER] for a slot name that is not allowed.
+			</description>
+		</method>
+		<method name="snapshot">
+			<return type="Dictionary" />
+			<description>
+				Returns the state of the game in memory, to be put back with [method restore]: for a checkpoint, a quick save or a rewind. It does not include [member data].
+			</description>
+		</method>
+		<method name="stash">
+			<return type="void" />
+			<description>
+				Remembers the states of the nodes in the tree, so they are kept when their scene is left. A save only has the states of nodes that are in the tree and the ones remembered from a load. Call this before changing scene so that the scene being left is put back as it was, when the game goes back to it, and saved with the game meanwhile.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="autosave_interval" type="float" setter="set_autosave_interval" getter="get_autosave_interval" default="0.0">
+			If more than [code]0[/code], the game is saved to [member autosave_slot] every this many seconds, while it is not paused.
+		</member>
+		<member name="autosave_slot" type="String" setter="set_autosave_slot" getter="get_autosave_slot" default="&quot;autosave&quot;">
+			The slot [member autosave_interval] saves to.
+		</member>
+		<member name="data" type="Dictionary" setter="set_data" getter="get_data" default="{}">
+			What the game keeps that no node holds: a quest log, the player's name, a counter. It is saved with every save and put back on load. It holds the same things [SaveState] can: plain values, arrays and dictionaries of them, resources that are files, and nodes that are in the tree.
+		</member>
+		<member name="password" type="String" setter="set_password" getter="get_password" default="&quot;&quot;">
+			The password used when a method is not given one. Empty for none.
+		</member>
+		<member name="play_time" type="float" setter="set_play_time" getter="get_play_time" default="0.0">
+			Seconds played, counted while the game is not paused. Saved and put back on load.
+		</member>
+		<member name="save_version" type="int" setter="set_save_version" getter="get_save_version" default="1">
+			The version of the game's save format, from [member ProjectSettings.save/version]. Every save is stamped with it. A save from an older version is passed to [signal migrate] before it is used, and one from a newer version is refused.
+		</member>
+	</members>
+	<signals>
+		<signal name="load_failed">
+			<param index="0" name="slot" type="String" />
+			<param index="1" name="error" type="int" />
+			<description>
+				Emitted when a slot could not be loaded, with the error [method load] returned.
+			</description>
+		</signal>
+		<signal name="loaded">
+			<param index="0" name="slot" type="String" />
+			<description>
+				Emitted when a save has been put on the game. When the game had to change scene for it, that is a frame after [method load] returned.
+			</description>
+		</signal>
+		<signal name="loading">
+			<param index="0" name="slot" type="String" />
+			<description>
+				Emitted when [method load] starts.
+			</description>
+		</signal>
+		<signal name="migrate">
+			<param index="0" name="content" type="Dictionary" />
+			<param index="1" name="from_version" type="int" />
+			<description>
+				Emitted when a save made with an older [member save_version] is loaded, before anything is put on the game. [param content] has [code]data[/code] and [code]states[/code], which can be changed in place to bring the save up to date: rename a key, give a new property a value.
+				[codeblock]
+				func _ready() -&gt; void:
+				    Saves.save_version = 2
+				    Saves.migrate.connect(_migrate)
+
+				func _migrate(content: Dictionary, from_version: int) -&gt; void:
+				    if from_version &lt; 2:
+				        var data: Dictionary = content["data"]
+				        data["gold"] = data.get("coins", 0)
+				        content["data"] = data
+				[/codeblock]
+			</description>
+		</signal>
+		<signal name="saved">
+			<param index="0" name="slot" type="String" />
+			<param index="1" name="error" type="int" />
+			<description>
+				Emitted when [method save] is done, with its result.
+			</description>
+		</signal>
+		<signal name="saving">
+			<param index="0" name="slot" type="String" />
+			<description>
+				Emitted when [method save] starts, before anything is collected. A good place to bring [member data] up to date.
+			</description>
+		</signal>
+	</signals>
+</class>

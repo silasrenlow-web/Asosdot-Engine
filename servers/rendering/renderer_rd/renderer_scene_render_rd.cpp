@@ -771,6 +771,48 @@ void RendererSceneRenderRD::_render_buffers_post_process_and_tonemap(const Rende
 		RD::get_singleton()->draw_command_end_label();
 	}
 
+	// Motion blur goes after depth of field and before everything that works on how
+	// bright the frame is, as in a camera: the shutter blurs the light before it is
+	// measured, bloomed and tonemapped, so a bright thing leaves a bright streak.
+	if (can_use_effects && can_use_storage && motion_blur && motion_blur->is_supported() && RSG::camera_attributes->camera_attributes_uses_motion_blur(p_render_data->camera_attributes) && rb->has_velocity_buffer(false)) {
+		RENDER_TIMESTAMP("Motion Blur");
+		RD::get_singleton()->draw_command_begin_label("Motion Blur");
+
+		// Where the camera was and is, the way the scene's own velocities are made, for
+		// what the scene did not draw.
+		const RenderSceneDataRD *scene_data = p_render_data->scene_data;
+		Projection current_correction;
+		current_correction.set_depth_correction(scene_data->flip_y);
+		Projection previous_correction;
+		previous_correction.set_depth_correction(true);
+		const Projection current_projection = current_correction * scene_data->cam_projection;
+		const Projection previous_projection = previous_correction * scene_data->prev_cam_projection;
+		const Projection reprojection = previous_projection * Projection(scene_data->prev_cam_transform.affine_inverse()) * Projection(scene_data->cam_transform) * current_projection.inverse();
+
+		const RendererCameraAttributes::MotionBlurSettings settings = RSG::camera_attributes->camera_attributes_get_motion_blur(p_render_data->camera_attributes);
+
+		for (uint32_t v = 0; v < rb->get_view_count(); v++) {
+			RID view_color = use_upscaled_texture ? rb->get_upscaled_texture(v) : rb->get_internal_texture(v);
+
+			RendererRD::MotionBlur::Parameters parameters;
+			parameters.render_buffers = rb;
+			parameters.view = v;
+			parameters.color_dest = view_color;
+			parameters.depth = p_use_msaa && rb->has_texture(RB_SCOPE_BUFFERS, RB_TEX_BACK_DEPTH) ? rb->get_texture_slice(RB_SCOPE_BUFFERS, RB_TEX_BACK_DEPTH, v, 0) : rb->get_depth_texture(v);
+			parameters.velocity = rb->get_velocity_buffer(false, v);
+			parameters.size = color_size;
+			parameters.reprojection = reprojection;
+			parameters.z_near = scene_data->view_projection[v].get_z_near();
+			parameters.z_far = scene_data->view_projection[v].get_z_far();
+			parameters.orthogonal = scene_data->cam_orthogonal;
+			parameters.settings = settings;
+			parameters.time_step = float(time_step);
+			motion_blur->process(parameters);
+		}
+
+		RD::get_singleton()->draw_command_end_label();
+	}
+
 	float auto_exposure_scale = 1.0;
 
 	if (can_use_effects && RSG::camera_attributes->camera_attributes_uses_auto_exposure(p_render_data->camera_attributes)) {
@@ -2133,6 +2175,10 @@ void RendererSceneRenderRD::init() {
 	copy_effects = memnew(RendererRD::CopyEffects(raster_effects));
 	debug_effects = memnew(RendererRD::DebugEffects);
 	lens_flare = memnew(RendererRD::LensFlare);
+	if (can_use_storage) {
+		// Compute only.
+		motion_blur = memnew(RendererRD::MotionBlur);
+	}
 	luminance = memnew(RendererRD::Luminance(!can_use_storage));
 	smaa = memnew(RendererRD::SMAA);
 	tone_mapper = memnew(RendererRD::ToneMapper(!can_use_storage));
@@ -2184,6 +2230,9 @@ RendererSceneRenderRD::~RendererSceneRenderRD() {
 	}
 	if (lens_flare) {
 		memdelete(lens_flare);
+	}
+	if (motion_blur) {
+		memdelete(motion_blur);
 	}
 	if (luminance) {
 		memdelete(luminance);
