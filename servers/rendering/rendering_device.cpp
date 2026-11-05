@@ -4775,9 +4775,9 @@ RID RenderingDevice::uniform_set_create(const VectorView<RD::Uniform> &p_uniform
 			HashMap<String, uint32_t> counts;
 			const LocalVector<RID> sets = uniform_set_owner.get_owned_list();
 			for (const RID &set_rid : sets) {
-				const UniformSet *set = uniform_set_owner.get_or_null(set_rid);
-				const Shader *set_shader = set ? shader_owner.get_or_null(set->shader_id) : nullptr;
-				counts[set_shader ? vformat("%s, set %d", set_shader->name, set->shader_set) : String("unknown shader")] += 1;
+				const UniformSet *owned_set = uniform_set_owner.get_or_null(set_rid);
+				const Shader *set_shader = owned_set ? shader_owner.get_or_null(owned_set->shader_id) : nullptr;
+				counts[set_shader ? vformat("%s, set %d", set_shader->name, owned_set->shader_set) : String("unknown shader")] += 1;
 			}
 			LocalVector<Pair<uint32_t, String>> ranked;
 			for (const KeyValue<String, uint32_t> &E : counts) {

@@ -28,10 +28,12 @@ class EditorFreezeWatchdog {
 	String report_path;
 	String finished_report; // Read and cleared by the main thread.
 
-	// The main thread, for its call stack.
+#ifdef WINDOWS_ENABLED
+	// The main thread, for its call stack. Only Windows takes one.
 	uint64_t main_thread_os_id = 0;
 	void *main_thread_handle = nullptr;
 	bool symbols_ready = false;
+#endif
 
 	static void _thread_func(void *p_self);
 	void _watch();

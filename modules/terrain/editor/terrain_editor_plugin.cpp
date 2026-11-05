@@ -54,6 +54,8 @@
 #include "scene/gui/tab_container.h"
 #include "scene/resources/image_texture.h"
 
+#include <iterator>
+
 namespace {
 
 struct ToolInfo {
@@ -362,7 +364,7 @@ void AsosdotTerrainEditor::_update_tool_ui() {
 	hint_label->set_text(hint);
 
 	// Voxel terrain gets the tools that work in three dimensions; the
-	// heightmap-only ones are hidden rather than greyed out, since they will
+	// heightmap-only ones are hidden rather than grayed out, since they will
 	// never apply to it.
 	const bool voxel = _is_voxel();
 	const Terrain3D *terrain = _get_terrain();
@@ -779,7 +781,7 @@ void AsosdotTerrainEditor::_export_selected(const String &p_path) {
 		return;
 	}
 	if (p_path.get_extension().to_lower() == "exr") {
-		_show_message(vformat(TTR("Exported %d x %d heights in metres."), heights->get_width(), heights->get_height()));
+		_show_message(vformat(TTR("Exported %d x %d heights in meters."), heights->get_width(), heights->get_height()));
 	} else {
 		_show_message(vformat(TTR("Exported %d x %d heights. The file stores them as 0 to 1; to import it again, use a lowest height of %s m and a highest of %s m."), heights->get_width(), heights->get_height(), String::num(range.x, 3), String::num(range.y, 3)));
 	}
@@ -2276,7 +2278,7 @@ AsosdotTerrainEditor::AsosdotTerrainEditor() {
 	export_dialog = memnew(EditorFileDialog);
 	export_dialog->set_file_mode(EditorFileDialog::FILE_MODE_SAVE_FILE);
 	export_dialog->set_access(EditorFileDialog::ACCESS_FILESYSTEM);
-	export_dialog->add_filter("*.exr", TTR("OpenEXR (metres)"));
+	export_dialog->add_filter("*.exr", TTR("OpenEXR (meters)"));
 	export_dialog->add_filter("*.png", TTR("PNG, 16-bit"));
 	export_dialog->add_filter("*.r16", TTR("Raw 16-bit"));
 	export_dialog->connect("file_selected", callable_mp(this, &AsosdotTerrainEditor::_export_selected));

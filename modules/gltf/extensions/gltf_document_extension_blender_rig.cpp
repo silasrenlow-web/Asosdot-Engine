@@ -458,7 +458,7 @@ struct AsosdotGLTFDocumentExtensionBlenderRig::Builder {
 				// IK sets its whole chain, and a stand-in pole rides with a bone.
 				const int chain = item.constraint.get("chain_count", 0);
 				int bone = skeleton->get_bone_parent(item.bone);
-				for (int i = 1; bone >= 0 && (chain <= 0 || i < chain); i++) {
+				for (int link = 1; bone >= 0 && (chain <= 0 || link < chain); link++) {
 					item.modifies.push_back(bone);
 					bone = skeleton->get_bone_parent(bone);
 				}

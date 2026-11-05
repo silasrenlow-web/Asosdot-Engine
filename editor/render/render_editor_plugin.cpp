@@ -132,7 +132,7 @@ Dictionary AsosdotRenderShot::get_defaults() {
 	d["animation"] = String();
 	d["animation_speed"] = 1.0;
 	d["animation_start"] = 0.0;
-	d["dialogue"] = String();
+	d["dialogue"] = String(); // codespell:ignore dialogue
 	d["dialogue_offset"] = 0.0;
 	d["dialogue_volume_db"] = 0.0;
 	d["music"] = String();
@@ -275,8 +275,8 @@ void AsosdotRenderShot::_get_property_list(List<PropertyInfo> *p_list) const {
 	p_list->push_back(PropertyInfo(Variant::STRING, "animation", PROPERTY_HINT_ENUM_SUGGESTION, names, player ? shown : hidden));
 	p_list->push_back(PropertyInfo(Variant::FLOAT, "animation_speed", PROPERTY_HINT_RANGE, "0.01,10,0.01,or_greater", player ? shown : hidden));
 	p_list->push_back(PropertyInfo(Variant::FLOAT, "animation_start", PROPERTY_HINT_RANGE, "0,3600,0.01,or_greater,suffix:s", player ? shown : hidden));
-	p_list->push_back(PropertyInfo(Variant::NIL, "Dialogue", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_GROUP));
-	p_list->push_back(PropertyInfo(Variant::STRING, "dialogue", PROPERTY_HINT_FILE, "*.wav,*.ogg,*.mp3"));
+	p_list->push_back(PropertyInfo(Variant::NIL, "Dialogue", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_GROUP)); // codespell:ignore dialogue
+	p_list->push_back(PropertyInfo(Variant::STRING, "dialogue", PROPERTY_HINT_FILE, "*.wav,*.ogg,*.mp3")); // codespell:ignore dialogue
 	p_list->push_back(PropertyInfo(Variant::FLOAT, "dialogue_offset", PROPERTY_HINT_RANGE, "0,3600,0.01,or_greater,suffix:s"));
 	p_list->push_back(PropertyInfo(Variant::FLOAT, "dialogue_volume_db", PROPERTY_HINT_RANGE, "-80,24,0.1,suffix:dB"));
 }
@@ -992,26 +992,28 @@ void AsosdotRenderEditor::_preview_input(const Ref<InputEvent> &p_event) {
 			return;
 		}
 		bool handled = true;
-		switch (k->get_keycode_with_modifiers()) {
-			case Key::R:
+		// An int, since the shifted and alted cases are not keys of the enum, which clang
+		// refuses in a switch over it.
+		switch ((int)k->get_keycode_with_modifiers()) {
+			case (int)Key::R:
 				_set_pose_tool(POSE_TOOL_ROTATE);
 				break;
-			case Key::G:
+			case (int)Key::G:
 				_set_pose_tool(POSE_TOOL_MOVE);
 				break;
-			case Key::E:
+			case (int)Key::E:
 				_set_pose_tool(POSE_TOOL_REACH);
 				break;
-			case Key::I:
+			case (int)Key::I:
 				_key(KEY_POSED);
 				break;
-			case KeyModifierMask::SHIFT | Key::I:
+			case (int)(KeyModifierMask::SHIFT | Key::I):
 				_key(KEY_SKELETON);
 				break;
-			case KeyModifierMask::ALT | Key::I:
+			case (int)(KeyModifierMask::ALT | Key::I):
 				_key(KEY_DELETE);
 				break;
-			case Key::UP:
+			case (int)Key::UP:
 				_select_parent();
 				break;
 			default:
@@ -1156,7 +1158,7 @@ void AsosdotRenderEditor::_pick(const Point2 &p_point) {
 		best = best->get_parent();
 	}
 	// Selected for the Inspector only, so the Render tab stays open while
-	// its materials and colours are changed and the preview follows.
+	// its materials and colors are changed and the preview follows.
 	EditorNode::get_singleton()->get_editor_selection()->clear();
 	EditorNode::get_singleton()->get_editor_selection()->add_node(best);
 	EditorNode::get_singleton()->push_item(best, String(), true);

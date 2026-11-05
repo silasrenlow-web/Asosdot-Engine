@@ -629,7 +629,7 @@ struct RealtimeGI::Baker {
 			Vector3 dir = (t * Math::cos(phi) * sr + b * Math::sin(phi) * sr + n * Math::sqrt(MAX(0.0f, 1.0f - u2))).normalized();
 
 			// Leave from anywhere on the patch, so it sees what its whole
-			// footprint sees rather than what its centre does.
+			// footprint sees rather than what its center does.
 			float ox = (_random_float(seed) - 0.5f) * radius;
 			float oy = (_random_float(seed) - 0.5f) * radius;
 			int32_t hit = trace(origin + t * ox + b * oy, dir);
@@ -1021,7 +1021,7 @@ RealtimeGI::BakeError RealtimeGI::bake(Node *p_from_node, const String &p_save_p
 
 	// Charts: a square per mesh, sized so a texel covers about one patch.
 	// A one texel border around each keeps filtering from reading its
-	// neighbours.
+	// neighbors.
 	//
 	// Resolution goes where it shows. A chart is at most MAX_CHART_SIDE
 	// texels across, so a terrain or a long road gets coarser patches while
@@ -1119,7 +1119,7 @@ RealtimeGI::BakeError RealtimeGI::bake(Node *p_from_node, const String &p_save_p
 			}
 		}
 
-		// Rasterize the triangles in UV2: every texel whose centre a triangle
+		// Rasterize the triangles in UV2: every texel whose center a triangle
 		// covers becomes a patch on that triangle.
 		const int side = bm.side;
 		const uint32_t triangle_count = bm.uv2.size() / 3;
@@ -1177,7 +1177,7 @@ RealtimeGI::BakeError RealtimeGI::bake(Node *p_from_node, const String &p_save_p
 				}
 			}
 			if (!covered) {
-				// Too small to cover a texel centre: put it where its centroid
+				// Too small to cover a texel center: put it where its centroid
 				// falls, so thin things still bounce light.
 				Vector2 centroid = (a + b + c) / 3.0;
 				place(CLAMP(int(centroid.x), 0, side - 1), CLAMP(int(centroid.y), 0, side - 1), 1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0);
@@ -1422,8 +1422,8 @@ RealtimeGI::BakeError RealtimeGI::bake(Node *p_from_node, const String &p_save_p
 			for (uint32_t q = 0; q < queue.size(); q++) {
 				const uint32_t i = queue[q];
 				const int x = i % counts.x, y = (i / counts.x) % counts.y, z = i / (counts.x * counts.y);
-				const Vector3i neighbours[6] = { Vector3i(x - 1, y, z), Vector3i(x + 1, y, z), Vector3i(x, y - 1, z), Vector3i(x, y + 1, z), Vector3i(x, y, z - 1), Vector3i(x, y, z + 1) };
-				for (const Vector3i &n : neighbours) {
+				const Vector3i neighbors[6] = { Vector3i(x - 1, y, z), Vector3i(x + 1, y, z), Vector3i(x, y - 1, z), Vector3i(x, y + 1, z), Vector3i(x, y, z - 1), Vector3i(x, y, z + 1) };
+				for (const Vector3i &n : neighbors) {
 					if (n.x < 0 || n.y < 0 || n.z < 0 || n.x >= counts.x || n.y >= counts.y || n.z >= counts.z) {
 						continue;
 					}
@@ -1635,7 +1635,8 @@ float RealtimeGI::get_patch_size() const {
 }
 
 void RealtimeGI::set_bake_quality(BakeQuality p_quality) {
-	ERR_FAIL_INDEX(p_quality, 4);
+	// An int, since the enum can only hold 0 to 3 and clang rejects comparing it to 4.
+	ERR_FAIL_INDEX(int(p_quality), 4);
 	bake_quality = p_quality;
 }
 
