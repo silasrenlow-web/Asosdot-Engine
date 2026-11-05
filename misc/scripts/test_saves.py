@@ -389,7 +389,9 @@ def main() -> None:
             "player.gd": PLAYER,
             "enemy.gd": ENEMY,
             "door.gd": DOOR,
-            "enemy.tscn": ENEMY_SCENE.replace('[ext_resource type="Script" path="res://save_state_holder.gd" id="2"]\n', "").replace("load_steps=3", "load_steps=2"),
+            "enemy.tscn": ENEMY_SCENE.replace(
+                '[ext_resource type="Script" path="res://save_state_holder.gd" id="2"]\n', ""
+            ).replace("load_steps=3", "load_steps=2"),
             "level_a.tscn": LEVEL_A,
             "level_b.tscn": LEVEL_B,
             "item.tres": ITEM,

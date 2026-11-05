@@ -120,7 +120,7 @@
 			<param index="4" name="quality" type="int" />
 			<param index="5" name="target_fps" type="float" />
 			<description>
-				Sets the motion blur of a camera attributes resource: whether it is on, how much of the frame the shutter is open for ([code]0[/code] to [code]1[/code]), the longest a streak is as a percentage of the screen's width, the quality ([code]0[/code] to [code]2[/code]), and the frame rate the blur is scaled for ([code]0[/code] for none). This is what [member CameraAttributes.motion_blur_enabled] and its neighbours call. Forward+ only.
+				Sets the motion blur of a camera attributes resource: whether it is on, how much of the frame the shutter is open for ([code]0[/code] to [code]1[/code]), the longest a streak is as a percentage of the screen's width, the quality ([code]0[/code] to [code]2[/code]), and the frame rate the blur is scaled for ([code]0[/code] for none). This is what [member CameraAttributes.motion_blur_enabled] and its neighbors call. Forward+ only.
 			</description>
 		</method>
 		<method name="camera_create">

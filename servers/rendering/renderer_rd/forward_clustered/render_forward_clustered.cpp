@@ -30,9 +30,8 @@
 
 #include "render_forward_clustered.h"
 
-#include "core/os/os.h"
-
 #include "core/config/project_settings.h"
+#include "core/os/os.h"
 #include "servers/rendering/renderer_rd/environment/fog.h"
 #include "servers/rendering/renderer_rd/framebuffer_cache_rd.h"
 #include "servers/rendering/renderer_rd/storage_rd/light_storage.h"
@@ -1629,7 +1628,7 @@ void RenderForwardClustered::_process_asos_rtao(Ref<RenderSceneBuffersRD> p_rend
 				asos_rtao->render_shadow(tlas, depth, rt_shadow, size, view_proj.inverse(), cam.origin,
 						sun_dir, sun_angular_radius, asos_rays * 2u, asos_rtao_frame);
 
-				// Neighbouring pixels on the same surface estimate the same
+				// Neighboring pixels on the same surface estimate the same
 				// visibility, so blurring across them recovers most of the quality
 				// of a much larger ray budget for a fraction of the cost.
 				const RID rt_shadow_blur = p_render_buffers->get_texture_slice(RB_SCOPE_ASOS, RB_RT_SHADOW_BLUR, v, 0);

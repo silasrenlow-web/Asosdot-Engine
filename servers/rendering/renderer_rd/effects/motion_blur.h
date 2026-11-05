@@ -47,7 +47,7 @@ public:
 		Ref<RenderSceneBuffersRD> render_buffers;
 		uint32_t view = 0;
 
-		// The frame is blurred in place. Every pixel needs its neighbours as they were,
+		// The frame is blurred in place. Every pixel needs its neighbors as they were,
 		// so the first pass keeps a copy of it, packed with what else is needed.
 		RID color_dest;
 		RID depth;

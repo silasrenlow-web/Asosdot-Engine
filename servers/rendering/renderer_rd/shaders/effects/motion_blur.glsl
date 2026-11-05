@@ -44,7 +44,7 @@ params;
 
 // A pixel, in half floats like everything it is made of:
 //   x  red, green
-//   y  blue, metres from the camera
+//   y  blue, meters from the camera
 //   z  one over the length of the streak in pixels, alpha
 //   w  the velocity in pixels
 // Half precision is plenty for the distance, which the gather compares by a tenth
@@ -60,16 +60,16 @@ layout(rg16f, set = 0, binding = 4) uniform restrict writeonly image2D out_group
 
 shared vec2 group_velocity[BLOCK_SIZE * BLOCK_SIZE];
 
-// Metres from the camera.
+// Meters from the camera.
 float linear_depth(float p_depth) {
 	float depth = p_depth * 2.0 - 1.0;
-	float metres;
+	float meters;
 	if (params.orthogonal != 0u) {
-		metres = -(depth * (params.z_far - params.z_near) - (params.z_far + params.z_near)) / 2.0;
+		meters = -(depth * (params.z_far - params.z_near) - (params.z_far + params.z_near)) / 2.0;
 	} else {
-		metres = 2.0 * params.z_near * params.z_far / (params.z_far + params.z_near + depth * (params.z_far - params.z_near));
+		meters = 2.0 * params.z_near * params.z_far / (params.z_far + params.z_near + depth * (params.z_far - params.z_near));
 	}
-	return clamp(metres, 0.0, 60000.0);
+	return clamp(meters, 0.0, 60000.0);
 }
 
 void main() {

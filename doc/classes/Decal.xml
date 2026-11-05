@@ -43,7 +43,7 @@
 			<param index="6" name="lifetime" type="float" default="0.0" />
 			<param index="7" name="rotation_degrees" type="float" default="0.0" />
 			<description>
-				Puts a decal of [param texture] on a surface, in one call: [param position] and [param normal] are where a ray hit, [param size] is how wide it is in metres (its height follows the texture), and the decal is added to [param parent]. Its [member normal_fade] is set so that it stops at a corner.
+				Puts a decal of [param texture] on a surface, in one call: [param position] and [param normal] are where a ray hit, [param size] is how wide it is in meters (its height follows the texture), and the decal is added to [param parent]. Its [member normal_fade] is set so that it stops at a corner.
 				If [param target] is given, the decal is limited to it, see [method add_affected_node], so it paints the object that was hit and not a thing that happens to stand behind it. If [param lifetime] is more than [code]0[/code] the decal fades out over its last second, at most half its life, and frees itself. [param rotation_degrees] turns it about the normal; pass a random angle so marks that repeat don't look alike.
 				[codeblock]
 				func _on_hit(hit: Dictionary) -&gt; void:

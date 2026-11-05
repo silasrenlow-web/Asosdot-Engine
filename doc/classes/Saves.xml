@@ -41,7 +41,7 @@
 			<return type="Dictionary" />
 			<param index="0" name="slot" type="String" />
 			<description>
-				Returns what a menu needs to show a slot without loading it, or an empty dictionary if there is none: [code]slot[/code], [code]version[/code], [code]timestamp[/code] (Unix time), [code]play_time[/code] (seconds), [code]scene[/code], [code]info[/code] (what was given to [method save]), [code]thumbnail[/code] (an [Image], or [code]null[/code]), [code]encrypted[/code], [code]password_required[/code], [code]size[/code] (bytes) and [code]path[/code].
+				Returns what a menu needs to show a slot without loading it, or an empty dictionary if there is none: [code skip-lint]slot[/code], [code]version[/code], [code]timestamp[/code] (Unix time), [code skip-lint]play_time[/code] (seconds), [code]scene[/code], [code]info[/code] (what was given to [method save]), [code]thumbnail[/code] (an [Image], or [code]null[/code]), [code]encrypted[/code], [code]password_required[/code], [code]size[/code] (bytes) and [code]path[/code].
 				It reads the header only, so it is quick and needs no password. [b]Note:[/b] the header is not checked until the save is loaded.
 			</description>
 		</method>
@@ -81,7 +81,7 @@
 			<param index="0" name="slot" type="String" />
 			<param index="1" name="password" type="String" default="&quot;&quot;" />
 			<description>
-				Reads a save without loading it: what [method get_info] returns, plus [code]data[/code] and [code]states[/code], and [code]error[/code], which is [constant OK] or what went wrong. Useful for checking a save, or for a menu that shows what is in one.
+				Reads a save without loading it: what [method get_info] returns, plus [code skip-lint]data[/code] and [code]states[/code], and [code]error[/code], which is [constant OK] or what went wrong. Useful for checking a save, or for a menu that shows what is in one.
 			</description>
 		</method>
 		<method name="reset">
@@ -165,7 +165,7 @@
 			<param index="0" name="content" type="Dictionary" />
 			<param index="1" name="from_version" type="int" />
 			<description>
-				Emitted when a save made with an older [member save_version] is loaded, before anything is put on the game. [param content] has [code]data[/code] and [code]states[/code], which can be changed in place to bring the save up to date: rename a key, give a new property a value.
+				Emitted when a save made with an older [member save_version] is loaded, before anything is put on the game. [param content] has [code skip-lint]data[/code] and [code]states[/code], which can be changed in place to bring the save up to date: rename a key, give a new property a value.
 				[codeblock]
 				func _ready() -&gt; void:
 				    Saves.save_version = 2

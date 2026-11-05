@@ -300,7 +300,7 @@ bool Saves::_is_valid_slot(const String &p_slot) const {
 }
 
 String Saves::_get_slot_path(const String &p_slot) const {
-	return _get_directory().path_join(p_slot + ".sav");
+	return _get_directory().path_join(p_slot + ".save");
 }
 
 String Saves::get_slot_path(const String &p_slot) const {
@@ -617,7 +617,7 @@ Error Saves::_read_slot(const String &p_slot, const String &p_password, bool p_h
 			first_error = err;
 		}
 		// Only a damaged file has a backup worth trying: a missing password or an
-		// unrecognised format would be the same in every copy.
+		// unrecognized format would be the same in every copy.
 		if (err != ERR_FILE_CORRUPT) {
 			return err;
 		}
@@ -989,7 +989,7 @@ PackedStringArray Saves::list_slots() const {
 	}
 	dir->list_dir_begin();
 	for (String file = dir->get_next(); !file.is_empty(); file = dir->get_next()) {
-		if (dir->current_is_dir() || file.get_extension() != "sav") {
+		if (dir->current_is_dir() || file.get_extension() != "save") {
 			continue;
 		}
 		const String slot = file.get_basename();
