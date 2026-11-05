@@ -192,7 +192,8 @@ EditorPropertyNameProcessor::EditorPropertyNameProcessor() {
 	capitalize_string_remaps["fs"] = "FS";
 	capitalize_string_remaps["fsr"] = "FSR";
 	capitalize_string_remaps["fxaa"] = "FXAA";
-	capitalize_string_remaps["gdscript"] = "GDScript";
+	// Asosdot's name for it; the setting paths keep "gdscript".
+	capitalize_string_remaps["gdscript"] = "ADScript";
 	capitalize_string_remaps["ggx"] = "GGX";
 	capitalize_string_remaps["gi"] = "GI";
 	capitalize_string_remaps["gl"] = "GL";

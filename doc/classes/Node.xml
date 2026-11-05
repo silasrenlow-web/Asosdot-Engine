@@ -313,6 +313,21 @@
 				[b]Note:[/b] To find a single descendant node matching a pattern, see [method find_child].
 			</description>
 		</method>
+		<method name="find_node" qualifiers="const">
+			<return type="Node" />
+			<param index="0" name="name" type="String" />
+			<param index="1" name="inside_this_node" type="bool" default="false" />
+			<description>
+				Finds a node called [param name] anywhere in the current scene, however deep, and returns it, or [code]null[/code] if there isn't one. Unlike [method find_child], it isn't limited to nodes with an [member owner], so it also finds nodes inside instanced scenes. The name is matched exactly, not as a pattern.
+				The scene is searched level by level, so if several nodes share the name, the one nearest the top is returned. If the current scene has none, the rest of the tree is searched, which includes autoloads. In a [code]@tool[/code] script in the editor, only the scene being edited is searched.
+				If [param inside_this_node] is [code]true[/code], only the nodes inside this one are searched, however deep, the same way: nearest first, owned or not. This node itself doesn't count, and nothing outside it is looked at. Use it when several parts of the scene have a node by the same name, such as every enemy having a [code]Hitbox[/code].
+				[codeblock]
+				var player = find_node("Player")
+				var hitbox = enemy.find_node("Hitbox", true)
+				[/codeblock]
+				[b]Note:[/b] This looks through the whole scene. In code that runs every frame, find the node once, for example in an [code]@onready[/code] variable, and keep it.
+			</description>
+		</method>
 		<method name="find_parent" qualifiers="const">
 			<return type="Node" />
 			<param index="0" name="pattern" type="String" />
@@ -495,6 +510,19 @@
 			<param index="0" name="path" type="NodePath" />
 			<description>
 				Fetches a node by [NodePath]. Similar to [method get_node], but does not generate an error if [param path] does not point to a valid node.
+			</description>
+		</method>
+		<method name="get_node_safe" qualifiers="const">
+			<return type="Node" />
+			<param index="0" name="path" type="String" />
+			<description>
+				Fetches a node by a path or just a name, and returns [code]null[/code] instead of an error if there is no such node.
+				[param path] is first followed from this node, as [method get_node_or_null] does, so relative paths, absolute paths and [code]%UniqueName[/code] all work. If nothing is there, the first name in the path is looked for anywhere in the scene with [method find_node], and the rest of the path is followed from the node found. So [code]"Player"[/code] finds the player wherever it is, and [code]"Player/Camera3D"[/code] finds the camera inside it.
+				[codeblock]
+				var score_label = get_node_safe("HUD/Score")
+				if score_label:
+					score_label.text = str(score)
+				[/codeblock]
 			</description>
 		</method>
 		<method name="get_node_rpc_config" qualifiers="const">
@@ -1054,6 +1082,23 @@
 			<return type="void" />
 			<description>
 				Refreshes the warnings displayed for this node in the Scene dock. Use [method _get_configuration_warnings] to customize the warning messages to display.
+			</description>
+		</method>
+		<method name="wait">
+			<return type="Signal" />
+			<param index="0" name="seconds" type="float" />
+			<param index="1" name="callback" type="Callable" default="Callable()" />
+			<description>
+				Waits [param seconds], then calls [param callback] with no arguments if one is given. Returns a signal that is emitted when the time is up, so [code]await wait(1.5)[/code] pauses the function until then. It is a shorter way to write [code]await get_tree().create_timer(1.5).timeout[/code], and a safer one.
+				The wait belongs to this node. If the node is freed or leaves the scene tree before the time is up, nothing happens: [param callback] isn't called, and a function awaiting the wait doesn't carry on in a node that's gone. The wait also stops while the game is paused if this node does (see [member process_mode]), so it doesn't run out behind a pause menu. It follows [member Engine.time_scale].
+				[codeblock]
+				await wait(1.5)
+				$Door.open()
+
+				wait(3.0, queue_free)
+				wait(0.5, explode.bind(2.0))
+				[/codeblock]
+				[b]Note:[/b] The node must be in the scene tree.
 			</description>
 		</method>
 	</methods>

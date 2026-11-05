@@ -694,7 +694,7 @@ void ScriptEditorDebugger::_msg_error(uint64_t p_thread_id, const Array &p_data)
 	for (int i = 0; i < ScriptServer::get_language_count(); ++i) {
 		ScriptLanguage *script_language = ScriptServer::get_language(i);
 		if (source_file_extension == script_language->get_extension()) {
-			source_language_name = script_language->get_name();
+			source_language_name = script_language->get_display_name();
 			break;
 		}
 	}

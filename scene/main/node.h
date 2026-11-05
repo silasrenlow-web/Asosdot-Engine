@@ -340,6 +340,9 @@ private:
 	void _propagate_suspend_notification(bool p_enable);
 
 	_FORCE_INLINE_ bool _can_process(bool p_paused) const;
+
+	static Node *_find_node_breadth_first(Node *p_from, const StringName &p_name, const Node *p_skip, bool p_match_from = true);
+	static void _wait_finished(uint64_t p_node, const Ref<RefCounted> &p_waiter, const Callable &p_callback);
 	_FORCE_INLINE_ bool _is_enabled() const;
 
 	void _release_unique_name_in_owner();
@@ -545,6 +548,10 @@ public:
 	Node *get_node_or_null(const NodePath &p_path) const;
 	Node *find_child(const String &p_pattern, bool p_recursive = true, bool p_owned = true) const;
 	TypedArray<Node> find_children(const String &p_pattern, const String &p_type = "", bool p_recursive = true, bool p_owned = true) const;
+	// Asosdot: getting at nodes and waiting, without the usual ways to trip up.
+	Node *find_node(const String &p_name, bool p_inside_this_node = false) const;
+	Node *get_node_safe(const String &p_path) const;
+	Signal wait(double p_seconds, const Callable &p_callback = Callable());
 	bool has_node_and_resource(const NodePath &p_path) const;
 	Node *get_node_and_resource(const NodePath &p_path, Ref<Resource> &r_res, Vector<StringName> &r_leftover_subpath, bool p_last_is_property = true) const;
 

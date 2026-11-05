@@ -508,7 +508,7 @@ void ConnectDialog::_update_warning_label() {
 		return;
 	}
 
-	warning_label->set_text(vformat(TTR("%s: Callback code won't be generated, please add it manually."), language->get_name()));
+	warning_label->set_text(vformat(TTR("%s: Callback code won't be generated, please add it manually."), language->get_display_name()));
 	warning_label->set_visible(true);
 }
 

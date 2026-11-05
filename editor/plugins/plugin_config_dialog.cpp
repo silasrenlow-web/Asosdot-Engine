@@ -134,7 +134,7 @@ void PluginConfigDialog::_on_required_text_changed() {
 		validation_panel->set_message(MSG_ID_SCRIPT, vformat(TTR("Script extension must match chosen language extension (.%s)."), ext), EditorValidationPanel::MSG_ERROR);
 	}
 	if (language->get_name() == "GDScript") {
-		validation_panel->set_message(MSG_ID_ENABLE_WARNINGS, TTRC("Consider enabling GDScript warnings for this plugin by adding an entry for it to the project setting Debug > GDScript > Warnings > Directory Rules."), EditorValidationPanel::MSG_INFO);
+		validation_panel->set_message(MSG_ID_ENABLE_WARNINGS, TTRC("Consider enabling ADScript warnings for this plugin by adding an entry for it to the project setting Debug > ADScript > Warnings > Directory Rules."), EditorValidationPanel::MSG_INFO);
 	}
 }
 
@@ -291,7 +291,7 @@ PluginConfigDialog::PluginConfigDialog() {
 	int default_lang = 0;
 	for (int i = 0; i < ScriptServer::get_language_count(); i++) {
 		ScriptLanguage *lang = ScriptServer::get_language(i);
-		script_option_edit->add_item(lang->get_name());
+		script_option_edit->add_item(lang->get_display_name());
 		if (lang->get_name() == "GDScript") {
 			default_lang = i;
 		}

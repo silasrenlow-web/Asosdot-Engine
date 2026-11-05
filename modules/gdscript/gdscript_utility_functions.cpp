@@ -315,7 +315,7 @@ struct GDScriptUtilityFunctionsDefinitions {
 
 		*r_ret = gdscr->_new(nullptr, -1 /* skip initializer */, r_error);
 		if (r_error.error != Callable::CallError::CALL_OK) {
-			*r_ret = RTR("Cannot instantiate GDScript class.");
+			*r_ret = RTR("Cannot instantiate ADScript class.");
 			return;
 		}
 

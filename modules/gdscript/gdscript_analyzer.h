@@ -176,6 +176,7 @@ public:
 	static bool check_type_compatibility(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, bool p_allow_implicit_conversion = false, const GDScriptParser::Node *p_source_node = nullptr);
 	static GDScriptParser::DataType type_from_metatype(const GDScriptParser::DataType &p_meta_type);
 	static bool class_exists(const StringName &p_class);
+	static bool is_asosdot_node_helper(const StringName &p_native_class, const StringName &p_method);
 
 	GDScriptAnalyzer(GDScriptParser *p_parser);
 };

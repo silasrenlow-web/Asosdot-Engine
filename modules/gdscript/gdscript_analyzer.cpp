@@ -52,6 +52,18 @@
 #define UNNAMED_ENUM "<anonymous enum>"
 #define ENUM_SEPARATOR "."
 
+// Asosdot added find_node(), get_node_safe() and wait() to Node, and projects
+// written for Godot often have a method by one of those names of their own, such
+// as `func wait(seconds)`. Theirs wins: it is not held to the native signature or
+// warned about as an override, and calls to it are never compiled into direct calls
+// to the native one, so those projects keep working as they were.
+bool GDScriptAnalyzer::is_asosdot_node_helper(const StringName &p_native_class, const StringName &p_method) {
+	if (p_native_class != SNAME("Node")) {
+		return false;
+	}
+	return p_method == SNAME("find_node") || p_method == SNAME("get_node_safe") || p_method == SNAME("wait");
+}
+
 static MethodInfo info_from_utility_func(const StringName &p_function) {
 	ERR_FAIL_COND_V(!Variant::has_utility_function(p_function), MethodInfo());
 
@@ -1875,7 +1887,7 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 		int default_par_count = 0;
 		BitField<MethodFlags> method_flags = {};
 		StringName native_base;
-		if (!p_is_lambda && get_function_signature(p_function, false, base_type, function_name, parent_return_type, parameters_types, default_par_count, method_flags, &native_base)) {
+		if (!p_is_lambda && get_function_signature(p_function, false, base_type, function_name, parent_return_type, parameters_types, default_par_count, method_flags, &native_base) && !is_asosdot_node_helper(native_base, function_name)) {
 			bool valid = p_function->is_static == method_flags.has_flag(METHOD_FLAG_STATIC);
 
 			if (p_function->return_type == nullptr) {

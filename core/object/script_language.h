@@ -213,6 +213,9 @@ protected:
 
 public:
 	virtual String get_name() const = 0;
+	// What the editor and messages call the language. get_name() is what code finds
+	// it by, and stays the same.
+	virtual String get_display_name() const { return get_name(); }
 
 	/* LANGUAGE FUNCTIONS */
 	virtual void init() = 0;

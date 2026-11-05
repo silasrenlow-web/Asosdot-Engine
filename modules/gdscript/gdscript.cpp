@@ -2091,6 +2091,13 @@ String GDScriptLanguage::get_name() const {
 	return "GDScript";
 }
 
+// Asosdot calls it ADScript wherever a person reads the name. Files stay .gd, and
+// the class, resource type and get_name() stay GDScript, so every project, addon
+// and tool written for GDScript keeps working.
+String GDScriptLanguage::get_display_name() const {
+	return "ADScript";
+}
+
 /* LANGUAGE FUNCTIONS */
 
 void GDScriptLanguage::_add_global(const StringName &p_name, const Variant &p_value) {

@@ -741,7 +741,7 @@ Dictionary GDScriptSyntaxHighlighter::_get_line_syntax_highlighting_impl(int p_l
 }
 
 String GDScriptSyntaxHighlighter::_get_name() const {
-	return "GDScript";
+	return GDScriptLanguage::get_singleton()->get_display_name();
 }
 
 PackedStringArray GDScriptSyntaxHighlighter::_get_supported_languages() const {

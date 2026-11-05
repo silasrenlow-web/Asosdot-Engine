@@ -1928,8 +1928,8 @@ ProjectExportDialog::ProjectExportDialog() {
 	script_vb->set_name(TTRC("Scripts"));
 
 	script_mode = memnew(OptionButton);
-	script_mode->set_accessibility_name(TTRC("GDScript Export Mode:"));
-	script_vb->add_margin_child(TTRC("GDScript Export Mode:"), script_mode);
+	script_mode->set_accessibility_name(TTRC("ADScript Export Mode:"));
+	script_vb->add_margin_child(TTRC("ADScript Export Mode:"), script_mode);
 	script_mode->add_item(TTRC("Text (easier debugging)"), (int)EditorExportPreset::MODE_SCRIPT_TEXT);
 	script_mode->add_item(TTRC("Binary tokens (faster loading)"), (int)EditorExportPreset::MODE_SCRIPT_BINARY_TOKENS);
 	script_mode->add_item(TTRC("Compressed binary tokens (smaller files)"), (int)EditorExportPreset::MODE_SCRIPT_BINARY_TOKENS_COMPRESSED);

@@ -38,7 +38,7 @@ with traced shadows, bounces that through the baked transport, and writes a
 lightmap the static meshes sample; repeated frames converge on every bounce.
 Dynamic objects take the bounce from a grid of probes. Meshes imported without
 UV2 get it generated during the bake, and large scenes get coarser patches on
-large surfaces and a patch budget, so a 450 by 600 metre level bakes in under
+large surfaces and a patch budget, so a 450 by 600 meter level bakes in under
 20 seconds. Static lights are drawn into the lightmap entirely and cost nothing
 per pixel. Forward+ and Mobile; check it with
 `python misc/scripts/test_realtime_gi.py --engine <editor>`.
@@ -66,6 +66,22 @@ frame rate keeps it looking the same at 60 and at 144 frames a second. It works
 on the HDR image before glow and tonemapping, so bright things leave bright
 streaks. Forward+ only; check it with
 `python misc/scripts/test_motion_blur.py --engine <editor>`.
+
+**ADScript.** Asosdot's GDScript is called ADScript in the editor and in its
+messages. It is the same language with more on top, and only the name people read
+changed: scripts are still `.gd` files and `GDScript` resources, so Godot projects,
+addons and editor extensions for GDScript work as they are.
+
+**Getting nodes and waiting.** Every node has `find_node("Player")`, which finds a
+node by name anywhere in the scene (the one nearest the top if several share it,
+then autoloads), or only inside one node with `enemy.find_node("Hitbox", true)`;
+`get_node_safe("HUD/Score")`, which takes a path or a bare name
+and gives `null` instead of an error; and `wait(1.5)`, which is
+`await get_tree().create_timer(1.5).timeout` made short, takes a function to call
+when the time is up, stops while its node is paused, and does nothing at all if
+its node is freed first instead of failing with "class instance is gone". A
+project's own `func wait()` and the like keep working, and win. Check them with
+`python misc/scripts/test_adscript.py --engine <editor>`.
 
 **Decals you can aim.** A `Decal` can be limited to chosen nodes: put them in
 `affected_nodes` (or call `add_affected_node`) and only they are painted, with no
@@ -124,11 +140,11 @@ classes is new, so nothing a Godot 4.7 project or GDExtension uses has changed.
 Run the check with `python misc/scripts/test_godot_compat.py --engine
 bin/asosdot.windows.editor.x86_64.exe --godot <Godot 4.7 editor>`.
 
-## Licence
+## License
 
-Asosdot Engine is released under the [MIT licence](LICENSE.txt), the same terms
+Asosdot Engine is released under the [MIT license](LICENSE.txt), the same terms
 as the Godot Engine it is built on. Godot's copyright notices are retained in
-`LICENSE.txt` and `COPYRIGHT.txt`, as that licence requires, and the About
+`LICENSE.txt` and `COPYRIGHT.txt`, as that license requires, and the About
 dialog lists every third-party component the engine ships.
 
 Godot Engine is © 2014-present Godot Engine contributors and © 2007-2014 Juan

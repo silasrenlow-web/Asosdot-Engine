@@ -119,7 +119,9 @@ void ScriptCreateDialog::_notification(int p_what) {
 			String last_language = EditorSettings::get_singleton()->get_project_metadata("script_setup", "last_selected_language", "");
 			if (!last_language.is_empty()) {
 				for (int i = 0; i < language_menu->get_item_count(); i++) {
-					if (language_menu->get_item_text(i) == last_language) {
+					// Saved by the language's name; older settings saved what the menu showed.
+					const bool is_language = i < ScriptServer::get_language_count() && ScriptServer::get_language(i)->get_name() == last_language;
+					if (is_language || language_menu->get_item_text(i) == last_language) {
 						language_menu->select(i);
 						break;
 					}
@@ -430,7 +432,9 @@ void ScriptCreateDialog::_language_changed(int l) {
 	_path_changed(path);
 	file_path->set_text(path);
 
-	EditorSettings::get_singleton()->set_project_metadata("script_setup", "last_selected_language", language_menu->get_item_text(language_menu->get_selected()));
+	if (language_menu->get_selected() >= 0 && language_menu->get_selected() < ScriptServer::get_language_count()) {
+		EditorSettings::get_singleton()->set_project_metadata("script_setup", "last_selected_language", ScriptServer::get_language(language_menu->get_selected())->get_name());
+	}
 
 	_parent_name_changed(parent_name->get_text());
 	validation_panel->update();
@@ -901,7 +905,7 @@ ScriptCreateDialog::ScriptCreateDialog() {
 	default_language = -1;
 	for (int i = 0; i < ScriptServer::get_language_count(); i++) {
 		String lang = ScriptServer::get_language(i)->get_name();
-		language_menu->add_item(lang);
+		language_menu->add_item(ScriptServer::get_language(i)->get_display_name());
 		if (lang == "GDScript") {
 			default_language = i;
 		}

@@ -638,11 +638,17 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				} else {
 					if (callee->type == GDScriptParser::Node::IDENTIFIER) {
 						// Self function call.
-						if (ClassDB::has_method(codegen.script->native->get_name(), call->function_name)) {
+						MethodBind *self_native_method = ClassDB::get_method(codegen.script->native->get_name(), call->function_name);
+						if (self_native_method && GDScriptAnalyzer::is_asosdot_node_helper(self_native_method->get_instance_class(), call->function_name)) {
+							// The script may have its own by this name, and that is the one to
+							// call; an ordinary self call still reaches Node's otherwise.
+							self_native_method = nullptr;
+						}
+						if (self_native_method) {
 							// Native method, use faster path.
 							GDScriptCodeGenerator::Address self;
 							self.mode = GDScriptCodeGenerator::Address::SELF;
-							MethodBind *method = ClassDB::get_method(codegen.script->native->get_name(), call->function_name);
+							MethodBind *method = self_native_method;
 
 							if (_can_use_validate_call(method, arguments)) {
 								// Exact arguments, use validated call.
@@ -700,8 +706,14 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 									} else {
 										class_name = base.type.native_type == StringName() ? base.type.script_type->get_instance_base_type() : base.type.native_type;
 									}
-									if (GDScriptAnalyzer::class_exists(class_name) && ClassDB::has_method(class_name, call->function_name)) {
-										MethodBind *method = ClassDB::get_method(class_name, call->function_name);
+									MethodBind *native_method = GDScriptAnalyzer::class_exists(class_name) ? ClassDB::get_method(class_name, call->function_name) : nullptr;
+									if (native_method && GDScriptAnalyzer::is_asosdot_node_helper(native_method->get_instance_class(), call->function_name)) {
+										// The object's script may have its own by this name, and that is
+										// the one to call.
+										native_method = nullptr;
+									}
+									if (native_method) {
+										MethodBind *method = native_method;
 										if (_can_use_validate_call(method, arguments)) {
 											// Exact arguments, use validated call.
 											gen->write_call_method_bind_validated(result, base, method, arguments);

@@ -582,6 +582,7 @@ public:
 	_FORCE_INLINE_ static GDScriptLanguage *get_singleton() { return singleton; }
 
 	virtual String get_name() const override;
+	virtual String get_display_name() const override;
 
 	/* LANGUAGE FUNCTIONS */
 	virtual void init() override;

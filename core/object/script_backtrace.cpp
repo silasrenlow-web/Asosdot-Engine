@@ -76,6 +76,7 @@ void ScriptBacktrace::_bind_methods() {
 
 ScriptBacktrace::ScriptBacktrace(ScriptLanguage *p_language, bool p_include_variables) {
 	language_name = p_language->get_name();
+	language_display_name = p_language->get_display_name();
 
 	Vector<ScriptLanguage::StackInfo> stack_infos = p_language->debug_get_current_stack_info();
 	stack_frames.reserve(stack_infos.size());
@@ -184,7 +185,7 @@ String ScriptBacktrace::format(int p_indent_all, int p_indent_frames) const {
 	String indent_frames = space.repeat(p_indent_frames);
 	String indent_total = indent_all + indent_frames;
 
-	String result = indent_all + language_name + " backtrace (most recent call first):";
+	String result = indent_all + language_display_name + " backtrace (most recent call first):";
 	for (int i = 0; i < (int)stack_frames.size(); i++) {
 		const StackFrame &stack_frame = stack_frames[i];
 		result += "\n" + indent_total + "[" + itos(i) + "] " + stack_frame.function;

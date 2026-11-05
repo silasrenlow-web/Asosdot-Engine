@@ -42,6 +42,7 @@ STATIC_ASSERT_INCOMPLETE_TYPE(class, Engine);
 #include "core/config/project_settings.h"
 #include "core/io/resource.h"
 #include "core/io/resource_loader.h"
+#include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
 #include "core/object/message_queue.h"
 #include "core/object/script_language.h"
@@ -2051,6 +2052,148 @@ TypedArray<Node> Node::find_children(const String &p_pattern, const String &p_ty
 	return ret;
 }
 
+// Shallowest first, so a name that is also used deep inside an instanced scene
+// finds the one near the top. Owned or not, internal or not: any node. With
+// p_match_from false, p_from itself is passed over and only what is in it counts.
+Node *Node::_find_node_breadth_first(Node *p_from, const StringName &p_name, const Node *p_skip, bool p_match_from) {
+	// Kept between calls so a search doesn't allocate. Nothing in it calls out, so
+	// it can't be entered twice at once on a thread.
+	thread_local LocalVector<Node *> queue;
+	queue.clear();
+	queue.push_back(p_from);
+
+	for (uint32_t i = 0; i < queue.size(); i++) {
+		Node *node = queue[i];
+		if (node == p_skip) {
+			continue;
+		}
+		if (node->data.name == p_name && (i > 0 || p_match_from)) {
+			queue.clear();
+			return node;
+		}
+		node->_update_children_cache();
+		for (Node *child : node->data.children_cache) {
+			queue.push_back(child);
+		}
+	}
+
+	queue.clear();
+	return nullptr;
+}
+
+Node *Node::find_node(const String &p_name, bool p_inside_this_node) const {
+	ERR_THREAD_GUARD_V(nullptr);
+	if (p_name.is_empty()) {
+		return nullptr;
+	}
+	const StringName name = p_name;
+
+	if (p_inside_this_node) {
+		// Only what is under this node, however deep, in or out of the tree.
+		return _find_node_breadth_first(const_cast<Node *>(this), name, nullptr, false);
+	}
+
+	Node *top = const_cast<Node *>(this);
+	while (top->data.parent) {
+		top = top->data.parent;
+	}
+
+	if (data.tree && Engine::get_singleton()->is_editor_hint()) {
+		// A tool script in the editor looks in the scene being edited, never in the
+		// editor around it.
+		Node *edited = data.tree->get_edited_scene_root();
+		return edited ? _find_node_breadth_first(edited, name, nullptr) : nullptr;
+	}
+
+	// The current scene first, then the rest of the tree: autoloads, and anything
+	// added next to the scene.
+	Node *scene = data.tree ? data.tree->get_current_scene() : nullptr;
+	if (scene) {
+		Node *found = _find_node_breadth_first(scene, name, nullptr);
+		if (found) {
+			return found;
+		}
+	}
+	return _find_node_breadth_first(top, name, scene);
+}
+
+Node *Node::get_node_safe(const String &p_path) const {
+	ERR_THREAD_GUARD_V(nullptr);
+	if (p_path.is_empty()) {
+		return nullptr;
+	}
+
+	const NodePath path = p_path;
+	if (path.is_absolute()) {
+		// Outside the tree there is nothing for an absolute path to start from.
+		return data.tree ? get_node_or_null(path) : nullptr;
+	}
+
+	Node *node = get_node_or_null(path);
+	if (node || path.get_name_count() == 0) {
+		return node;
+	}
+
+	// Not where the path says, from here: its first name can be anywhere in the
+	// scene, and the rest of the path is followed from there.
+	const StringName first = path.get_name(0);
+	String first_name = first;
+	if (first_name == "." || first_name == "..") {
+		return nullptr;
+	}
+	if (first.is_node_unique_name()) {
+		first_name = first_name.substr(1);
+	}
+
+	Node *start = find_node(first_name);
+	if (!start || path.get_name_count() == 1) {
+		return start;
+	}
+
+	Vector<StringName> rest;
+	for (int i = 1; i < path.get_name_count(); i++) {
+		rest.push_back(path.get_name(i));
+	}
+	return start->get_node_or_null(NodePath(rest, false));
+}
+
+Signal Node::wait(double p_seconds, const Callable &p_callback) {
+	ERR_THREAD_GUARD_V(Signal());
+	ERR_FAIL_NULL_V_MSG(data.tree, Signal(), "wait() needs the node to be in the scene tree.");
+
+	// What is awaited. The timer's connection holds it, so it lasts exactly as
+	// long as the wait does.
+	Ref<RefCounted> waiter;
+	waiter.instantiate();
+	waiter->add_user_signal(MethodInfo("finished"));
+
+	// A wait stops while the game is paused if the node does.
+	Ref<SceneTreeTimer> timer = data.tree->create_timer(MAX(p_seconds, 0.0), _can_process(true));
+	timer->connect(SNAME("timeout"), callable_mp_static(&Node::_wait_finished).bind(uint64_t(get_instance_id()), waiter, p_callback), CONNECT_ONE_SHOT);
+
+	return Signal(waiter.ptr(), SNAME("finished"));
+}
+
+void Node::_wait_finished(uint64_t p_node, const Ref<RefCounted> &p_waiter, const Callable &p_callback) {
+	// A wait belongs to its node. If the node has been freed or has left the tree,
+	// nothing happens: the callback isn't called and nothing awaiting it resumes,
+	// rather than resuming in a node that's gone.
+	Node *node = ObjectDB::get_instance<Node>(ObjectID(p_node));
+	if (!node || !node->is_inside_tree()) {
+		return;
+	}
+
+	if (p_callback.is_valid()) {
+		p_callback.call();
+	}
+
+	// The callback may have freed it.
+	node = ObjectDB::get_instance<Node>(ObjectID(p_node));
+	if (node && node->is_inside_tree() && p_waiter.is_valid()) {
+		p_waiter->emit_signal(SNAME("finished"));
+	}
+}
+
 void Node::reparent(RequiredParam<Node> rp_parent, bool p_keep_global_transform) {
 	ERR_THREAD_GUARD
 	EXTRACT_PARAM_OR_FAIL(p_parent, rp_parent);
@@ -3563,8 +3706,24 @@ static void _add_nodes_to_options(const Node *p_base, const Node *p_node, List<S
 
 void Node::get_argument_options(const StringName &p_function, int p_idx, List<String> *r_options) const {
 	const String pf = p_function;
-	if (p_idx == 0 && (pf == "has_node" || pf == "get_node" || pf == "get_node_or_null")) {
+	if (p_idx == 0 && (pf == "has_node" || pf == "get_node" || pf == "get_node_or_null" || pf == "get_node_safe")) {
 		_add_nodes_to_options(this, this, r_options);
+	} else if (p_idx == 0 && pf == "find_node") {
+		// Names, not paths, of every node in the scene this one is in.
+		const Node *scene = get_owner() ? get_owner() : this;
+		HashSet<StringName> names;
+		LocalVector<const Node *> pending = { scene };
+		while (!pending.is_empty()) {
+			const Node *node = pending[pending.size() - 1];
+			pending.remove_at(pending.size() - 1);
+			if (!names.has(node->get_name())) {
+				names.insert(node->get_name());
+				r_options->push_back(String(node->get_name()).quote());
+			}
+			for (int i = 0; i < node->get_child_count(false); i++) {
+				pending.push_back(node->get_child(i, false));
+			}
+		}
 	} else if (p_idx == 0 && (pf == "add_to_group" || pf == "remove_from_group" || pf == "is_in_group")) {
 		HashMap<StringName, String> global_groups(ProjectSettings::get_singleton()->get_global_groups_list());
 		for (const KeyValue<StringName, String> &E : global_groups) {
@@ -3849,6 +4008,9 @@ void Node::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_parent"), &Node::get_parent);
 	ClassDB::bind_method(D_METHOD("find_child", "pattern", "recursive", "owned"), &Node::find_child, DEFVAL(true), DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("find_children", "pattern", "type", "recursive", "owned"), &Node::find_children, DEFVAL(""), DEFVAL(true), DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("find_node", "name", "inside_this_node"), &Node::find_node, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("get_node_safe", "path"), &Node::get_node_safe);
+	ClassDB::bind_method(D_METHOD("wait", "seconds", "callback"), &Node::wait, DEFVAL(Callable()));
 	ClassDB::bind_method(D_METHOD("find_parent", "pattern"), &Node::find_parent);
 	ClassDB::bind_method(D_METHOD("has_node_and_resource", "path"), &Node::has_node_and_resource);
 	ClassDB::bind_method(D_METHOD("get_node_and_resource", "path"), &Node::_get_node_and_resource);
