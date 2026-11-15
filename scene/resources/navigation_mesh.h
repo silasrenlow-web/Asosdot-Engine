@@ -103,6 +103,7 @@ protected:
 	bool filter_ledge_spans = false;
 	bool filter_walkable_low_height_spans = false;
 	bool filter_isolated_regions = false;
+	float filter_isolated_region_min_area = 5.0f;
 	AABB filter_baking_aabb;
 	Vector3 filter_baking_aabb_offset;
 
@@ -179,6 +180,9 @@ public:
 
 	void set_filter_isolated_regions(bool p_value);
 	bool get_filter_isolated_regions() const;
+
+	void set_filter_isolated_region_min_area(float p_value);
+	float get_filter_isolated_region_min_area() const;
 
 	void set_filter_baking_aabb(const AABB &p_aabb);
 	AABB get_filter_baking_aabb() const;

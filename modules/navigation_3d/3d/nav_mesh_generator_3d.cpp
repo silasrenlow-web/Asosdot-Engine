@@ -525,11 +525,13 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 	ERR_FAIL_NULL(detail_mesh);
 	ERR_FAIL_COND(!rcBuildPolyMeshDetail(&ctx, *poly_mesh, *chf, cfg.detailSampleDist, cfg.detailSampleMaxError, *detail_mesh));
 
-	// Optionally remove the polygons of regions that are not connected to the
-	// largest connected area of the mesh. The voxel bake can generate walkable
+	// Optionally remove the polygons of small regions that are not connected
+	// to any larger area of the mesh. The voxel bake can generate walkable
 	// patches in enclosed places an agent can never legitimately reach, e.g. on
 	// the floor inside thick or hollow walls. Agents that get pushed or spawned
 	// onto such a patch are stuck there, so the patch must not be baked at all.
+	// Connected areas of a real level (floors, roofs, balconies) are far above
+	// the size threshold and are always kept, as is the largest area of all.
 	LocalVector<bool> poly_isolated;
 	if (p_navigation_mesh->get_filter_isolated_regions() && poly_mesh->npolys > 0 && detail_mesh->nmeshes == poly_mesh->npolys) {
 		const int nvp = poly_mesh->nvp;
@@ -552,9 +554,9 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 			poly_areas[i] = Math::abs(area2) * 0.5f;
 		}
 
-		// Flood fill the polygon adjacency graph and keep the component with
-		// the largest total area. Everything else is isolated by definition:
-		// no sequence of shared edges leads from it to the main area.
+		// Flood fill the polygon adjacency graph into connected components.
+		// A polygon is isolated when its whole component is small: no sequence
+		// of shared edges leads from it to any area of real size.
 		poly_isolated.resize(npolys);
 		for (int i = 0; i < npolys; i++) {
 			poly_isolated[i] = true;
@@ -564,15 +566,15 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 		for (int i = 0; i < npolys; i++) {
 			poly_visited[i] = false;
 		}
-		LocalVector<int> component_polys;
-		LocalVector<int> largest_component_polys;
+		LocalVector<int> poly_component;
+		poly_component.resize(npolys);
+		LocalVector<float> component_areas;
 		LocalVector<int> flood_stack;
-		float largest_component_area = -1.0f;
 		for (int start = 0; start < npolys; start++) {
 			if (poly_visited[start]) {
 				continue;
 			}
-			component_polys.clear();
+			const int component_index = component_areas.size();
 			flood_stack.clear();
 			flood_stack.push_back(start);
 			poly_visited[start] = true;
@@ -580,7 +582,7 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 			while (!flood_stack.is_empty()) {
 				const int current = flood_stack[flood_stack.size() - 1];
 				flood_stack.resize(flood_stack.size() - 1);
-				component_polys.push_back(current);
+				poly_component[current] = component_index;
 				component_area += poly_areas[current];
 				const unsigned short *p = &poly_mesh->polys[current * nvp * 2];
 				for (int j = 0; j < nvp; j++) {
@@ -597,13 +599,23 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 					}
 				}
 			}
-			if (component_area > largest_component_area) {
-				largest_component_area = component_area;
-				largest_component_polys = component_polys;
+			component_areas.push_back(component_area);
+		}
+		// Keep the largest component unconditionally, and every other component
+		// that reaches the minimum world area. Only small disconnected patches
+		// stay marked isolated and are removed below.
+		int largest_component = 0;
+		for (int i = 1; i < component_areas.size(); i++) {
+			if (component_areas[i] > component_areas[largest_component]) {
+				largest_component = i;
 			}
 		}
-		for (const int kept_poly : largest_component_polys) {
-			poly_isolated[kept_poly] = false;
+		const float min_area_voxels = p_navigation_mesh->get_filter_isolated_region_min_area() / (cfg.cs * cfg.cs);
+		for (int i = 0; i < npolys; i++) {
+			const int component_index = poly_component[i];
+			if (component_index == largest_component || component_areas[component_index] >= min_area_voxels) {
+				poly_isolated[i] = false;
+			}
 		}
 
 		int isolated_count = 0;
@@ -613,7 +625,7 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 			}
 		}
 		if (isolated_count > 0) {
-			WARN_PRINT(vformat("NavigationMesh bake: filter_isolated_regions removed %d of %d polygons that were not connected to the largest navmesh area (e.g. generated inside walls).", isolated_count, npolys));
+			WARN_PRINT(vformat("NavigationMesh bake: filter_isolated_regions removed %d of %d polygons in isolated areas smaller than %.1f m2 (e.g. generated inside walls).", isolated_count, npolys, p_navigation_mesh->get_filter_isolated_region_min_area()));
 		} else {
 			poly_isolated.clear();
 		}
