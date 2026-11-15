@@ -287,6 +287,14 @@ bool NavigationMesh::get_filter_walkable_low_height_spans() const {
 	return filter_walkable_low_height_spans;
 }
 
+void NavigationMesh::set_filter_isolated_regions(bool p_value) {
+	filter_isolated_regions = p_value;
+}
+
+bool NavigationMesh::get_filter_isolated_regions() const {
+	return filter_isolated_regions;
+}
+
 void NavigationMesh::set_filter_baking_aabb(const AABB &p_aabb) {
 	filter_baking_aabb = p_aabb;
 	emit_changed();
@@ -551,6 +559,8 @@ void NavigationMesh::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_filter_walkable_low_height_spans", "filter_walkable_low_height_spans"), &NavigationMesh::set_filter_walkable_low_height_spans);
 	ClassDB::bind_method(D_METHOD("get_filter_walkable_low_height_spans"), &NavigationMesh::get_filter_walkable_low_height_spans);
+	ClassDB::bind_method(D_METHOD("set_filter_isolated_regions", "filter_isolated_regions"), &NavigationMesh::set_filter_isolated_regions);
+	ClassDB::bind_method(D_METHOD("get_filter_isolated_regions"), &NavigationMesh::get_filter_isolated_regions);
 	ClassDB::bind_method(D_METHOD("set_filter_baking_aabb", "baking_aabb"), &NavigationMesh::set_filter_baking_aabb);
 	ClassDB::bind_method(D_METHOD("get_filter_baking_aabb"), &NavigationMesh::get_filter_baking_aabb);
 	ClassDB::bind_method(D_METHOD("set_filter_baking_aabb_offset", "baking_aabb_offset"), &NavigationMesh::set_filter_baking_aabb_offset);
@@ -607,6 +617,7 @@ void NavigationMesh::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "filter_low_hanging_obstacles"), "set_filter_low_hanging_obstacles", "get_filter_low_hanging_obstacles");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "filter_ledge_spans"), "set_filter_ledge_spans", "get_filter_ledge_spans");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "filter_walkable_low_height_spans"), "set_filter_walkable_low_height_spans", "get_filter_walkable_low_height_spans");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "filter_isolated_regions"), "set_filter_isolated_regions", "get_filter_isolated_regions");
 	ADD_PROPERTY(PropertyInfo(Variant::AABB, "filter_baking_aabb"), "set_filter_baking_aabb", "get_filter_baking_aabb");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "filter_baking_aabb_offset"), "set_filter_baking_aabb_offset", "get_filter_baking_aabb_offset");
 

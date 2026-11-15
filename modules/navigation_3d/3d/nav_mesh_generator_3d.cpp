@@ -525,6 +525,100 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 	ERR_FAIL_NULL(detail_mesh);
 	ERR_FAIL_COND(!rcBuildPolyMeshDetail(&ctx, *poly_mesh, *chf, cfg.detailSampleDist, cfg.detailSampleMaxError, *detail_mesh));
 
+	// Optionally remove the polygons of regions that are not connected to the
+	// largest connected area of the mesh. The voxel bake can generate walkable
+	// patches in enclosed places an agent can never legitimately reach, e.g. on
+	// the floor inside thick or hollow walls. Agents that get pushed or spawned
+	// onto such a patch are stuck there, so the patch must not be baked at all.
+	LocalVector<bool> poly_isolated;
+	if (p_navigation_mesh->get_filter_isolated_regions() && poly_mesh->npolys > 0 && detail_mesh->nmeshes == poly_mesh->npolys) {
+		const int nvp = poly_mesh->nvp;
+		const int npolys = poly_mesh->npolys;
+
+		LocalVector<float> poly_areas;
+		poly_areas.resize(npolys);
+		for (int i = 0; i < npolys; i++) {
+			const unsigned short *p = &poly_mesh->polys[i * nvp * 2];
+			float area2 = 0.0f;
+			for (int j = 0; j < nvp; j++) {
+				if (p[j] == RC_MESH_NULL_IDX) {
+					break;
+				}
+				const unsigned short *va = &poly_mesh->verts[p[j] * 3];
+				const int next_j = (j + 1 < nvp && p[j + 1] != RC_MESH_NULL_IDX) ? j + 1 : 0;
+				const unsigned short *vb = &poly_mesh->verts[p[next_j] * 3];
+				area2 += (float)va[0] * (float)vb[2] - (float)vb[0] * (float)va[2];
+			}
+			poly_areas[i] = Math::abs(area2) * 0.5f;
+		}
+
+		// Flood fill the polygon adjacency graph and keep the component with
+		// the largest total area. Everything else is isolated by definition:
+		// no sequence of shared edges leads from it to the main area.
+		poly_isolated.resize(npolys);
+		for (int i = 0; i < npolys; i++) {
+			poly_isolated[i] = true;
+		}
+		LocalVector<bool> poly_visited;
+		poly_visited.resize(npolys);
+		for (int i = 0; i < npolys; i++) {
+			poly_visited[i] = false;
+		}
+		LocalVector<int> component_polys;
+		LocalVector<int> largest_component_polys;
+		LocalVector<int> flood_stack;
+		float largest_component_area = -1.0f;
+		for (int start = 0; start < npolys; start++) {
+			if (poly_visited[start]) {
+				continue;
+			}
+			component_polys.clear();
+			flood_stack.clear();
+			flood_stack.push_back(start);
+			poly_visited[start] = true;
+			float component_area = 0.0f;
+			while (!flood_stack.is_empty()) {
+				const int current = flood_stack[flood_stack.size() - 1];
+				flood_stack.resize(flood_stack.size() - 1);
+				component_polys.push_back(current);
+				component_area += poly_areas[current];
+				const unsigned short *p = &poly_mesh->polys[current * nvp * 2];
+				for (int j = 0; j < nvp; j++) {
+					if (p[j] == RC_MESH_NULL_IDX) {
+						break;
+					}
+					const unsigned short neighbor = p[nvp + j];
+					if (neighbor == RC_MESH_NULL_IDX || (neighbor & 0x8000) != 0) {
+						continue; // No neighbor across this edge, or a tile border portal.
+					}
+					if (neighbor < npolys && !poly_visited[neighbor]) {
+						poly_visited[neighbor] = true;
+						flood_stack.push_back(neighbor);
+					}
+				}
+			}
+			if (component_area > largest_component_area) {
+				largest_component_area = component_area;
+				largest_component_polys = component_polys;
+			}
+		}
+		for (const int kept_poly : largest_component_polys) {
+			poly_isolated[kept_poly] = false;
+		}
+
+		int isolated_count = 0;
+		for (int i = 0; i < npolys; i++) {
+			if (poly_isolated[i]) {
+				isolated_count++;
+			}
+		}
+		if (isolated_count > 0) {
+			WARN_PRINT(vformat("NavigationMesh bake: filter_isolated_regions removed %d of %d polygons that were not connected to the largest navmesh area (e.g. generated inside walls).", isolated_count, npolys));
+		} else {
+			poly_isolated.clear();
+		}
+	}
+
 	rcFreeCompactHeightfield(chf);
 	chf = nullptr;
 	rcFreeContourSet(cset);
@@ -554,6 +648,9 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 	}
 
 	for (int i = 0; i < detail_mesh->nmeshes; i++) {
+		if (!poly_isolated.is_empty() && poly_isolated[i]) {
+			continue; // Polygon of an isolated region, see filter_isolated_regions.
+		}
 		const unsigned int *detail_mesh_m = &detail_mesh->meshes[i * 4];
 		const unsigned int detail_mesh_bverts = detail_mesh_m[0];
 		const unsigned int detail_mesh_m_btris = detail_mesh_m[2];
