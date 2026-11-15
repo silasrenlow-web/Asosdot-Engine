@@ -525,13 +525,14 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 	ERR_FAIL_NULL(detail_mesh);
 	ERR_FAIL_COND(!rcBuildPolyMeshDetail(&ctx, *poly_mesh, *chf, cfg.detailSampleDist, cfg.detailSampleMaxError, *detail_mesh));
 
-	// Optionally remove the polygons of small regions that are not connected
-	// to any larger area of the mesh. The voxel bake can generate walkable
-	// patches in enclosed places an agent can never legitimately reach, e.g. on
-	// the floor inside thick or hollow walls. Agents that get pushed or spawned
-	// onto such a patch are stuck there, so the patch must not be baked at all.
-	// Connected areas of a real level (floors, roofs, balconies) are far above
-	// the size threshold and are always kept, as is the largest area of all.
+	// Optionally remove the polygons of areas that are fully enclosed by
+	// geometry. The voxel bake can generate walkable patches in places an
+	// agent can never legitimately reach, e.g. on the floor inside thick or
+	// hollow walls. Agents that get pushed or spawned onto such a patch are
+	// stuck there, so the patch must not be baked at all. An area counts as
+	// enclosed when it is surrounded on every side by walls standing on its
+	// own level; open areas like roofs, balconies and ledges always have an
+	// open edge and are kept, and so is the largest area of the mesh.
 	LocalVector<bool> poly_isolated;
 	if (p_navigation_mesh->get_filter_isolated_regions() && poly_mesh->npolys > 0 && detail_mesh->nmeshes == poly_mesh->npolys) {
 		const int nvp = poly_mesh->nvp;
@@ -554,9 +555,9 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 			poly_areas[i] = Math::abs(area2) * 0.5f;
 		}
 
-		// Flood fill the polygon adjacency graph into connected components.
-		// A polygon is isolated when its whole component is small: no sequence
-		// of shared edges leads from it to any area of real size.
+		// Flood fill the polygon adjacency graph into connected components and
+		// remember the Recast region ids of every component for the enclosure
+		// test below.
 		poly_isolated.resize(npolys);
 		for (int i = 0; i < npolys; i++) {
 			poly_isolated[i] = true;
@@ -569,12 +570,14 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 		LocalVector<int> poly_component;
 		poly_component.resize(npolys);
 		LocalVector<float> component_areas;
+		LocalVector<LocalVector<int>> component_regs;
 		LocalVector<int> flood_stack;
 		for (int start = 0; start < npolys; start++) {
 			if (poly_visited[start]) {
 				continue;
 			}
 			const int component_index = component_areas.size();
+			component_regs.resize(component_index + 1);
 			flood_stack.clear();
 			flood_stack.push_back(start);
 			poly_visited[start] = true;
@@ -584,6 +587,10 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 				flood_stack.resize(flood_stack.size() - 1);
 				poly_component[current] = component_index;
 				component_area += poly_areas[current];
+				const int poly_reg = poly_mesh->regs[current];
+				if (!component_regs[component_index].has(poly_reg)) {
+					component_regs[component_index].push_back(poly_reg);
+				}
 				const unsigned short *p = &poly_mesh->polys[current * nvp * 2];
 				for (int j = 0; j < nvp; j++) {
 					if (p[j] == RC_MESH_NULL_IDX) {
@@ -601,19 +608,98 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 			}
 			component_areas.push_back(component_area);
 		}
-		// Keep the largest component unconditionally, and every other component
-		// that reaches the minimum world area. Only small disconnected patches
-		// stay marked isolated and are removed below.
+		// The largest component is always kept. Every other component is kept
+		// unless the enclosure test finds it surrounded by walls on all sides.
 		int largest_component = 0;
 		for (int i = 1; i < component_areas.size(); i++) {
 			if (component_areas[i] > component_areas[largest_component]) {
 				largest_component = i;
 			}
 		}
-		const float min_area_voxels = p_navigation_mesh->get_filter_isolated_region_min_area() / (cfg.cs * cfg.cs);
+		// Enclosure test, run on the compact heightfield spans of a component.
+		// For every span and every one of the four directions: skip the apron
+		// (the eroded ring every walkable area has, walkableRadius columns
+		// wide), then look for a gate column with a span near the component's
+		// own level. No gate column means open air or a drop: not enclosed. A
+		// gate column whose level span has another span starting above it,
+		// within wall_band, is the base of a wall standing on the same floor:
+		// blocked. A span connection to another component is a passage out:
+		// not enclosed. Only a component blocked in every direction of every
+		// span is enclosed.
+		const int apron = cfg.walkableRadius;
+		const int max_gap = 2 * cfg.walkableRadius + 2;
+		const int wall_band = (int)(10.0f / cfg.ch);
+		for (int component_index = 0; component_index < component_areas.size(); component_index++) {
+			if (component_index == largest_component) {
+				continue;
+			}
+			const LocalVector<int> &regs = component_regs[component_index];
+			bool enclosed = true;
+			int matched_spans = 0;
+			for (int z = 0; z < chf->height && enclosed; z++) {
+				for (int x = 0; x < chf->width && enclosed; x++) {
+					const rcCompactCell &cell = chf->cells[x + z * chf->width];
+					for (int i = 0; i < (int)cell.count && enclosed; i++) {
+						const rcCompactSpan &span = chf->spans[cell.index + i];
+						if (span.reg == 0 || !regs.has(span.reg)) {
+							continue;
+						}
+						matched_spans++;
+						for (int dir = 0; dir < 4; dir++) {
+							const int dx = rcGetDirOffsetX(dir);
+							const int dz = rcGetDirOffsetY(dir);
+							const int con = rcGetCon(span, dir);
+							if (con != RC_NOT_CONNECTED) {
+								const rcCompactCell &ncell = chf->cells[(x + dx) + (z + dz) * chf->width];
+								const rcCompactSpan &nspan = chf->spans[ncell.index + con];
+								if (nspan.reg != 0 && !regs.has(nspan.reg)) {
+									enclosed = false; // Passage to another component.
+									break;
+								}
+							}
+							bool blocked = false;
+							for (int step = apron + 1; step <= apron + max_gap; step++) {
+								const int nx = x + dx * step;
+								const int nz = z + dz * step;
+								if (nx < 0 || nz < 0 || nx >= chf->width || nz >= chf->height) {
+									break; // The world edge is open.
+								}
+								const rcCompactCell &ncell = chf->cells[nx + nz * chf->width];
+								bool has_gate = false;
+								bool has_above = false;
+								for (int j = 0; j < (int)ncell.count; j++) {
+									const rcCompactSpan &t = chf->spans[ncell.index + j];
+									if ((int)t.y >= (int)span.y - cfg.walkableClimb && (int)t.y < (int)span.y + cfg.walkableHeight) {
+										has_gate = true;
+									} else if ((int)t.y >= (int)span.y + cfg.walkableHeight && (int)t.y < (int)span.y + wall_band) {
+										has_above = true;
+									}
+								}
+								if (!has_gate) {
+									continue; // Empty column, e.g. inside a wall footprint: keep looking.
+								}
+								blocked = has_above; // A wall base blocks; open floor does not.
+								break;
+							}
+							if (!blocked) {
+								enclosed = false;
+								break;
+							}
+						}
+					}
+				}
+			}
+			if (enclosed && matched_spans > 0) {
+				continue; // Fully enclosed: its polygons stay marked isolated.
+			}
+			for (int i = 0; i < npolys; i++) {
+				if (poly_component[i] == component_index) {
+					poly_isolated[i] = false;
+				}
+			}
+		}
 		for (int i = 0; i < npolys; i++) {
-			const int component_index = poly_component[i];
-			if (component_index == largest_component || component_areas[component_index] >= min_area_voxels) {
+			if (poly_component[i] == largest_component) {
 				poly_isolated[i] = false;
 			}
 		}
@@ -625,7 +711,7 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 			}
 		}
 		if (isolated_count > 0) {
-			WARN_PRINT(vformat("NavigationMesh bake: filter_isolated_regions removed %d of %d polygons in isolated areas smaller than %.1f m2 (e.g. generated inside walls).", isolated_count, npolys, p_navigation_mesh->get_filter_isolated_region_min_area()));
+			WARN_PRINT(vformat("NavigationMesh bake: filter_isolated_regions removed %d of %d polygons in areas fully enclosed by geometry (e.g. generated inside walls).", isolated_count, npolys));
 		} else {
 			poly_isolated.clear();
 		}
