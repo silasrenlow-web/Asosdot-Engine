@@ -609,88 +609,123 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 			component_areas.push_back(component_area);
 		}
 		// The largest component is always kept. Every other component is kept
-		// unless the enclosure test finds it surrounded by walls on all sides.
+		// unless the enclosure test finds it sealed inside geometry.
 		int largest_component = 0;
 		for (int i = 1; i < component_areas.size(); i++) {
 			if (component_areas[i] > component_areas[largest_component]) {
 				largest_component = i;
 			}
 		}
-		// Enclosure test, run on the compact heightfield spans of a component.
-		// For every span and every one of the four directions: skip the apron
-		// (the eroded ring every walkable area has, walkableRadius columns
-		// wide), then look for a gate column with a span near the component's
-		// own level. No gate column means open air or a drop: not enclosed. A
-		// gate column whose level span has another span starting above it,
-		// within wall_band, is the base of a wall standing on the same floor:
-		// blocked. A span connection to another component is a passage out:
-		// not enclosed. Only a component blocked in every direction of every
-		// span is enclosed.
-		const int apron = cfg.walkableRadius;
+		// Enclosure test. From a component's spans, flood across every walkable
+		// span of the compact heightfield (the spans the bake's erosion left as
+		// agent-passable floor) to neighboring spans within climbing reach. If
+		// the flood reaches another component's spans, this area is connected to
+		// the rest of the level over open floor and is kept. Then walk outwards
+		// from every flooded span: a direction is open when columns without any
+		// span near the span's level pile up, or the bake border is reached -
+		// open air or a drop. A direction is sealed when spans at that level
+		// keep resuming for the whole walk, which is what a wall standing on the
+		// same floor looks like in the heightfield: the eroded ring, the floor
+		// under the wall, and the floor on the wall's far side. Only a component
+		// the flood cannot leave and that is sealed in every direction counts
+		// as enclosed, e.g. a patch generated inside a wall.
+		const int walk_length = cfg.walkableRadius + 16;
 		const int max_gap = 2 * cfg.walkableRadius + 2;
-		const int wall_band = (int)(10.0f / cfg.ch);
+		LocalVector<int> flood_seen;
+		flood_seen.resize(chf->spanCount);
+		for (int i = 0; i < flood_seen.size(); i++) {
+			flood_seen[i] = 0;
+		}
 		for (int component_index = 0; component_index < component_areas.size(); component_index++) {
 			if (component_index == largest_component) {
 				continue;
 			}
 			const LocalVector<int> &regs = component_regs[component_index];
-			bool enclosed = true;
-			int matched_spans = 0;
-			for (int z = 0; z < chf->height && enclosed; z++) {
-				for (int x = 0; x < chf->width && enclosed; x++) {
+			const int flood_token = component_index + 1;
+			LocalVector<int> flood_spans;
+			LocalVector<int> flood_columns;
+			for (int z = 0; z < chf->height; z++) {
+				for (int x = 0; x < chf->width; x++) {
 					const rcCompactCell &cell = chf->cells[x + z * chf->width];
-					for (int i = 0; i < (int)cell.count && enclosed; i++) {
+					for (int i = 0; i < (int)cell.count; i++) {
 						const rcCompactSpan &span = chf->spans[cell.index + i];
-						if (span.reg == 0 || !regs.has(span.reg)) {
-							continue;
-						}
-						matched_spans++;
-						for (int dir = 0; dir < 4; dir++) {
-							const int dx = rcGetDirOffsetX(dir);
-							const int dz = rcGetDirOffsetY(dir);
-							const int con = rcGetCon(span, dir);
-							if (con != RC_NOT_CONNECTED) {
-								const rcCompactCell &ncell = chf->cells[(x + dx) + (z + dz) * chf->width];
-								const rcCompactSpan &nspan = chf->spans[ncell.index + con];
-								if (nspan.reg != 0 && !regs.has(nspan.reg)) {
-									enclosed = false; // Passage to another component.
-									break;
-								}
-							}
-							bool blocked = false;
-							for (int step = apron + 1; step <= apron + max_gap; step++) {
-								const int nx = x + dx * step;
-								const int nz = z + dz * step;
-								if (nx < 0 || nz < 0 || nx >= chf->width || nz >= chf->height) {
-									break; // The world edge is open.
-								}
-								const rcCompactCell &ncell = chf->cells[nx + nz * chf->width];
-								bool has_gate = false;
-								bool has_above = false;
-								for (int j = 0; j < (int)ncell.count; j++) {
-									const rcCompactSpan &t = chf->spans[ncell.index + j];
-									if ((int)t.y >= (int)span.y - cfg.walkableClimb && (int)t.y < (int)span.y + cfg.walkableHeight) {
-										has_gate = true;
-									} else if ((int)t.y >= (int)span.y + cfg.walkableHeight && (int)t.y < (int)span.y + wall_band) {
-										has_above = true;
-									}
-								}
-								if (!has_gate) {
-									continue; // Empty column, e.g. inside a wall footprint: keep looking.
-								}
-								blocked = has_above; // A wall base blocks; open floor does not.
-								break;
-							}
-							if (!blocked) {
-								enclosed = false;
-								break;
-							}
+						if (span.reg != 0 && regs.has(span.reg)) {
+							flood_seen[cell.index + i] = flood_token;
+							flood_spans.push_back(cell.index + i);
+							flood_columns.push_back(x + z * chf->width);
 						}
 					}
 				}
 			}
-			if (enclosed && matched_spans > 0) {
-				continue; // Fully enclosed: its polygons stay marked isolated.
+			if (flood_spans.is_empty()) {
+				continue; // No spans found for this component: keep it.
+			}
+			bool enclosed = true;
+			for (int head = 0; head < flood_spans.size() && enclosed; head++) {
+				const int x = flood_columns[head] % chf->width;
+				const int z = flood_columns[head] / chf->width;
+				const rcCompactSpan &span = chf->spans[flood_spans[head]];
+				for (int dir = 0; dir < 4 && enclosed; dir++) {
+					const int nx = x + rcGetDirOffsetX(dir);
+					const int nz = z + rcGetDirOffsetY(dir);
+					if (nx < 0 || nz < 0 || nx >= chf->width || nz >= chf->height) {
+						continue;
+					}
+					const rcCompactCell &ncell = chf->cells[nx + nz * chf->width];
+					for (int j = 0; j < (int)ncell.count; j++) {
+						const int nspan_index = ncell.index + j;
+						if (chf->areas[nspan_index] == RC_NULL_AREA || flood_seen[nspan_index] == flood_token) {
+							continue;
+						}
+						const rcCompactSpan &nspan = chf->spans[nspan_index];
+						if (Math::abs((int)nspan.y - (int)span.y) > cfg.walkableClimb) {
+							continue;
+						}
+						if (nspan.reg != 0 && !regs.has(nspan.reg)) {
+							enclosed = false; // Reached another component over open floor.
+							break;
+						}
+						flood_seen[nspan_index] = flood_token;
+						flood_spans.push_back(nspan_index);
+						flood_columns.push_back(nx + nz * chf->width);
+					}
+				}
+			}
+			for (int k = 0; k < flood_spans.size() && enclosed; k++) {
+				const rcCompactSpan &span = chf->spans[flood_spans[k]];
+				const int x = flood_columns[k] % chf->width;
+				const int z = flood_columns[k] / chf->width;
+				for (int dir = 0; dir < 4 && enclosed; dir++) {
+					const int dx = rcGetDirOffsetX(dir);
+					const int dz = rcGetDirOffsetY(dir);
+					int gap = 0;
+					for (int step = 1; step <= walk_length; step++) {
+						const int nx = x + dx * step;
+						const int nz = z + dz * step;
+						if (nx < 0 || nz < 0 || nx >= chf->width || nz >= chf->height) {
+							enclosed = false; // The bake border is open.
+							break;
+						}
+						const rcCompactCell &ncell = chf->cells[nx + nz * chf->width];
+						bool in_band = false;
+						for (int j = 0; j < (int)ncell.count; j++) {
+							const rcCompactSpan &t = chf->spans[ncell.index + j];
+							if ((int)t.y >= (int)span.y - cfg.walkableClimb && (int)t.y <= (int)span.y + cfg.walkableClimb) {
+								in_band = true;
+								break;
+							}
+						}
+						if (in_band) {
+							gap = 0;
+						} else if (++gap > max_gap) {
+							enclosed = false; // Open air or a drop in this direction.
+							break;
+						}
+					}
+				}
+			}
+			if (enclosed) {
+				continue; // Sealed inside geometry: its polygons stay marked isolated.
 			}
 			for (int i = 0; i < npolys; i++) {
 				if (poly_component[i] == component_index) {
