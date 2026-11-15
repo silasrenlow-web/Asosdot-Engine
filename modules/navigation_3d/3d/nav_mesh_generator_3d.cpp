@@ -616,89 +616,55 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 				largest_component = i;
 			}
 		}
-		// Enclosure test. From a component's spans, flood across every walkable
-		// span of the compact heightfield (the spans the bake's erosion left as
-		// agent-passable floor) to neighboring spans within climbing reach. If
-		// the flood reaches another component's spans, this area is connected to
-		// the rest of the level over open floor and is kept. Then walk outwards
-		// from every flooded span: a direction is open when columns without any
-		// span near the span's level pile up, or the bake border is reached -
-		// open air or a drop. A direction is sealed when spans at that level
-		// keep resuming for the whole walk, which is what a wall standing on the
-		// same floor looks like in the heightfield: the eroded ring, the floor
-		// under the wall, and the floor on the wall's far side. Only a component
-		// the flood cannot leave and that is sealed in every direction counts
-		// as enclosed, e.g. a patch generated inside a wall.
+		// Enclosure test, run on the component's own spans in the compact
+		// heightfield. Walk outwards from every span in all four directions. A
+		// column counts as filled when it holds any span near the span's level,
+		// from climbing reach below it to agent height above it, so the floor
+		// under a wall, the wall's own surfaces and rising geometry like stairs
+		// all count. A direction is open when empty columns pile up - open air
+		// or a drop - or when the bake border is reached. A direction is sealed
+		// once filled columns add up to more than the eroded ring around every
+		// walkable area plus a meter of geometry: by then the walk is inside
+		// something solid, and whatever lies beyond it, floor or void, does not
+		// make the area any less enclosed. Only a component sealed in every
+		// direction of every span is enclosed, e.g. a patch generated inside a
+		// wall. Open areas like roofs, balconies and ledges always have a span
+		// near their edge whose outward walk runs out of filled columns.
 		const int walk_length = cfg.walkableRadius + 16;
 		const int max_gap = 2 * cfg.walkableRadius + 2;
-		LocalVector<int> flood_seen;
-		flood_seen.resize(chf->spanCount);
-		for (int i = 0; i < flood_seen.size(); i++) {
-			flood_seen[i] = 0;
-		}
+		const int seal_total = cfg.walkableRadius + 3;
 		for (int component_index = 0; component_index < component_areas.size(); component_index++) {
 			if (component_index == largest_component) {
 				continue;
 			}
 			const LocalVector<int> &regs = component_regs[component_index];
-			const int flood_token = component_index + 1;
-			LocalVector<int> flood_spans;
-			LocalVector<int> flood_columns;
+			LocalVector<int> comp_spans;
+			LocalVector<int> comp_columns;
 			for (int z = 0; z < chf->height; z++) {
 				for (int x = 0; x < chf->width; x++) {
 					const rcCompactCell &cell = chf->cells[x + z * chf->width];
 					for (int i = 0; i < (int)cell.count; i++) {
 						const rcCompactSpan &span = chf->spans[cell.index + i];
 						if (span.reg != 0 && regs.has(span.reg)) {
-							flood_seen[cell.index + i] = flood_token;
-							flood_spans.push_back(cell.index + i);
-							flood_columns.push_back(x + z * chf->width);
+							comp_spans.push_back(cell.index + i);
+							comp_columns.push_back(x + z * chf->width);
 						}
 					}
 				}
 			}
-			if (flood_spans.is_empty()) {
+			if (comp_spans.is_empty()) {
 				continue; // No spans found for this component: keep it.
 			}
 			bool enclosed = true;
-			for (int head = 0; head < flood_spans.size() && enclosed; head++) {
-				const int x = flood_columns[head] % chf->width;
-				const int z = flood_columns[head] / chf->width;
-				const rcCompactSpan &span = chf->spans[flood_spans[head]];
-				for (int dir = 0; dir < 4 && enclosed; dir++) {
-					const int nx = x + rcGetDirOffsetX(dir);
-					const int nz = z + rcGetDirOffsetY(dir);
-					if (nx < 0 || nz < 0 || nx >= chf->width || nz >= chf->height) {
-						continue;
-					}
-					const rcCompactCell &ncell = chf->cells[nx + nz * chf->width];
-					for (int j = 0; j < (int)ncell.count; j++) {
-						const int nspan_index = ncell.index + j;
-						if (chf->areas[nspan_index] == RC_NULL_AREA || flood_seen[nspan_index] == flood_token) {
-							continue;
-						}
-						const rcCompactSpan &nspan = chf->spans[nspan_index];
-						if (Math::abs((int)nspan.y - (int)span.y) > cfg.walkableClimb) {
-							continue;
-						}
-						if (nspan.reg != 0 && !regs.has(nspan.reg)) {
-							enclosed = false; // Reached another component over open floor.
-							break;
-						}
-						flood_seen[nspan_index] = flood_token;
-						flood_spans.push_back(nspan_index);
-						flood_columns.push_back(nx + nz * chf->width);
-					}
-				}
-			}
-			for (int k = 0; k < flood_spans.size() && enclosed; k++) {
-				const rcCompactSpan &span = chf->spans[flood_spans[k]];
-				const int x = flood_columns[k] % chf->width;
-				const int z = flood_columns[k] / chf->width;
+			for (int k = 0; k < comp_spans.size() && enclosed; k++) {
+				const rcCompactSpan &span = chf->spans[comp_spans[k]];
+				const int x = comp_columns[k] % chf->width;
+				const int z = comp_columns[k] / chf->width;
 				for (int dir = 0; dir < 4 && enclosed; dir++) {
 					const int dx = rcGetDirOffsetX(dir);
 					const int dz = rcGetDirOffsetY(dir);
 					int gap = 0;
+					int filled = 0;
 					for (int step = 1; step <= walk_length; step++) {
 						const int nx = x + dx * step;
 						const int nz = z + dz * step;
@@ -710,13 +676,16 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 						bool in_band = false;
 						for (int j = 0; j < (int)ncell.count; j++) {
 							const rcCompactSpan &t = chf->spans[ncell.index + j];
-							if ((int)t.y >= (int)span.y - cfg.walkableClimb && (int)t.y <= (int)span.y + cfg.walkableClimb) {
+							if ((int)t.y >= (int)span.y - cfg.walkableClimb && (int)t.y <= (int)span.y + cfg.walkableHeight) {
 								in_band = true;
 								break;
 							}
 						}
 						if (in_band) {
 							gap = 0;
+							if (++filled >= seal_total) {
+								break; // Inside something solid: sealed.
+							}
 						} else if (++gap > max_gap) {
 							enclosed = false; // Open air or a drop in this direction.
 							break;
