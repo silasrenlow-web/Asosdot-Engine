@@ -101,6 +101,7 @@
 #include "scene/gui/virtual_joystick.h"
 #include "scene/main/canvas_item.h"
 #include "scene/main/canvas_layer.h"
+#include "scene/main/global_transmit.h"
 #include "scene/main/http_request.h"
 #include "scene/main/instance_placeholder.h"
 #include "scene/main/missing_node.h"
@@ -226,6 +227,9 @@
 #endif // NAVIGATION_2D_DISABLED
 
 #ifndef _3D_DISABLED
+#include "scene/3d/acoustic_engine.h"
+#include "scene/3d/acoustic_event.h"
+#include "scene/3d/acoustic_hearing_3d.h"
 #include "scene/3d/aim_modifier_3d.h"
 #include "scene/3d/audio_listener_3d.h"
 #include "scene/3d/audio_stream_player_3d.h"
@@ -384,6 +388,10 @@
 
 static Ref<ResourceFormatSaverText> resource_saver_text;
 static Saves *saves = nullptr;
+static GlobalTransmit *global_transmit = nullptr;
+#ifndef _3D_DISABLED
+static AcousticEngine *acoustic_engine = nullptr;
+#endif // _3D_DISABLED
 static Ref<ResourceFormatLoaderText> resource_loader_text;
 
 static Ref<ResourceFormatLoaderCompressedTexture2D> resource_loader_stream_texture;
@@ -913,6 +921,9 @@ void register_scene_types() {
 
 #ifndef _3D_DISABLED
 	GDREGISTER_CLASS(AudioStreamPlayer3D);
+	GDREGISTER_CLASS(AcousticMaterial);
+	GDREGISTER_CLASS(AcousticEvent);
+	GDREGISTER_CLASS(AcousticHearing3D);
 	GDREGISTER_VIRTUAL_CLASS(PrimitiveMesh);
 	GDREGISTER_CLASS(BoxMesh);
 	GDREGISTER_CLASS(CapsuleMesh);
@@ -1418,6 +1429,22 @@ void unregister_scene_singletons() {
 		memdelete(saves);
 		saves = nullptr;
 	}
+	if (global_transmit) {
+		if (Engine::get_singleton()->has_singleton("GlobalTransmit")) {
+			Engine::get_singleton()->remove_singleton("GlobalTransmit");
+		}
+		memdelete(global_transmit);
+		global_transmit = nullptr;
+	}
+#ifndef _3D_DISABLED
+	if (acoustic_engine) {
+		if (Engine::get_singleton()->has_singleton("AcousticEngine")) {
+			Engine::get_singleton()->remove_singleton("AcousticEngine");
+		}
+		memdelete(acoustic_engine);
+		acoustic_engine = nullptr;
+	}
+#endif // _3D_DISABLED
 }
 
 void register_scene_singletons() {
@@ -1430,6 +1457,16 @@ void register_scene_singletons() {
 	GDREGISTER_CLASS(Saves);
 	saves = memnew(Saves);
 	Engine::get_singleton()->add_singleton(Engine::Singleton("Saves", Saves::get_singleton()));
+
+	GDREGISTER_CLASS(GlobalTransmit);
+	global_transmit = memnew(GlobalTransmit);
+	Engine::get_singleton()->add_singleton(Engine::Singleton("GlobalTransmit", GlobalTransmit::get_singleton()));
+
+#ifndef _3D_DISABLED
+	GDREGISTER_CLASS(AcousticEngine);
+	acoustic_engine = memnew(AcousticEngine);
+	Engine::get_singleton()->add_singleton(Engine::Singleton("AcousticEngine", AcousticEngine::get_singleton()));
+#endif // _3D_DISABLED
 
 	OS::get_singleton()->benchmark_end_measure("Scene", "Register Singletons");
 }

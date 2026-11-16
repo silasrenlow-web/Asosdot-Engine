@@ -205,6 +205,31 @@ class Skeleton3DEditor : public VBoxContainer {
 	Quaternion bone_original_rotation;
 	Vector3 bone_original_scale;
 
+	// Asosdot: several bones can be selected (Shift+click, box select, Ctrl/Shift in the bone
+	// tree). The selection lives outside the editor, which the inspector rebuilds each time a
+	// skeleton is inspected, so it survives that and the animation timeline can read it.
+	// selected_bone is the active bone: the one the transform gizmo and the inspector show.
+	struct BoneSelection {
+		LocalVector<int> bones;
+		int active = -1;
+	};
+	static HashMap<ObjectID, BoneSelection> bone_selections;
+
+	struct BonePose {
+		Vector3 position;
+		Quaternion rotation;
+		Vector3 scale;
+	};
+	HashMap<int, BonePose> bone_originals; // Every selected bone's pose when a transform starts.
+	bool click_appends = false; // Whether the viewport click being handled has Shift held.
+	bool updating_tree_selection = false;
+	bool tree_selection_pending = false;
+	void _joint_tree_multi_selected(Object *p_item, int p_column, bool p_selected);
+	void _apply_tree_selection();
+	void _apply_bone_selection();
+	void _sync_viewport_selection();
+	Vector<int> _get_affected_bones(bool p_all_bones) const;
+
 	void _update_gizmo_visible();
 	void _bone_enabled_changed(const int p_bone_id);
 
@@ -234,6 +259,14 @@ public:
 	void select_bone(int p_idx);
 
 	int get_selected_bone() const;
+
+	static Vector<int> get_selected_bones(const Skeleton3D *p_skeleton);
+	static bool is_bone_selected(const Skeleton3D *p_skeleton, int p_bone);
+	static int get_active_bone(const Skeleton3D *p_skeleton);
+	// Selects these bones on the skeleton (an empty list clears it); p_active becomes the active bone.
+	static void set_selected_bones(Skeleton3D *p_skeleton, const Vector<int> &p_bones, int p_active);
+	bool get_click_appends() const { return click_appends; }
+	bool get_bone_original(int p_bone, Vector3 &r_position, Quaternion &r_rotation, Vector3 &r_scale) const;
 
 	void move_skeleton_bone(NodePath p_skeleton_path, int32_t p_selected_boneidx, int32_t p_target_boneidx);
 
@@ -299,6 +332,8 @@ public:
 	int get_priority() const override;
 
 	virtual int subgizmos_intersect_ray(const EditorNode3DGizmo *p_gizmo, Camera3D *p_camera, const Vector2 &p_point) const override;
+	virtual Vector<int> subgizmos_intersect_frustum(const EditorNode3DGizmo *p_gizmo, const Camera3D *p_camera, const Vector<Plane> &p_frustum) const override;
+	virtual bool wants_subgizmo_region_select(const EditorNode3DGizmo *p_gizmo) const override;
 	virtual Transform3D get_subgizmo_transform(const EditorNode3DGizmo *p_gizmo, int p_id) const override;
 	virtual void set_subgizmo_transform(const EditorNode3DGizmo *p_gizmo, int p_id, Transform3D p_transform) override;
 	virtual void commit_subgizmos(const EditorNode3DGizmo *p_gizmo, const Vector<int> &p_ids, const Vector<Transform3D> &p_restore, bool p_cancel) override;

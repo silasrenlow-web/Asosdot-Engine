@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="GlobalTransmit" inherits="Object" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		Sends transmissions on channels to anything that listens, without sender and receiver knowing of each other.
+	</brief_description>
+	<description>
+		Global Transmit works like signals, without needing a connection between the object that sends and the one that receives. A transmission goes out on a [i]channel[/i], a name ([String] or [StringName]) or a number ([int]), and carries any number of arguments. Everything listening on that channel is called with those arguments.
+		Transmissions can be sent from code with [method transmit], or from an animation with a Transmit track (see [constant Animation.TYPE_TRANSMIT]), whose keys each send a transmission when the animation passes them.
+		Anything can listen: a [Callable] passed to [method listen], usually in [method Node._ready], or a node set up in the editor's [b]Transmit[/b] tab, next to the Signals and Groups tabs, which lists the channels the selected node listens to and the method each one calls. Such a node starts listening when it enters the scene tree while the game runs and stops when it leaves it.
+		[codeblock]
+		# A door that opens when any switch, cutscene or animation transmits "open_vault".
+		func _ready():
+		    GlobalTransmit.listen(&amp;"open_vault", _on_open_vault)
+
+		func _on_open_vault(speed = 1.0):
+		    $AnimationPlayer.play("open", -1, speed)
+
+		# Anywhere else:
+		GlobalTransmit.transmit(&amp;"open_vault", 2.0)
+		GlobalTransmit.transmit(7, "power", true) # Channel number 7.
+		[/codeblock]
+		Delivery is immediate, in the order the listeners started listening; use [method transmit_deferred] to deliver at the end of the frame instead. A listener that takes fewer arguments than were sent receives the first ones, so receivers only declare what they use. There is no fixed limit on the number of arguments; each one costs as much as an argument of a method call. Listeners whose object was freed are dropped automatically.
+		[b]Note:[/b] Name and number channels are separate: the channel [code]7[/code] and the channel [code]"7"[/code] are different channels.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="clear_channel">
+			<return type="void" />
+			<param index="0" name="channel" type="Variant" />
+			<description>
+				Removes every listener of [param channel] and forgets its last arguments and transmission count.
+			</description>
+		</method>
+		<method name="get_arguments" qualifiers="const">
+			<return type="Array" />
+			<param index="0" name="channel" type="Variant" />
+			<description>
+				Returns the arguments of the last transmission on [param channel], or an empty [Array] if nothing was transmitted on it yet. Useful for a receiver that starts listening after the transmission, such as a node entering the scene later.
+			</description>
+		</method>
+		<method name="get_channels" qualifiers="const">
+			<return type="Array" />
+			<description>
+				Returns every channel that has listeners or was transmitted on, names and numbers.
+			</description>
+		</method>
+		<method name="get_listeners" qualifiers="const">
+			<return type="Array" />
+			<param index="0" name="channel" type="Variant" />
+			<description>
+				Returns the [Callable]s listening on [param channel].
+			</description>
+		</method>
+		<method name="get_transmission_count" qualifiers="const">
+			<return type="int" />
+			<param index="0" name="channel" type="Variant" />
+			<description>
+				Returns how many transmissions went out on [param channel] since it was last cleared.
+			</description>
+		</method>
+		<method name="is_listening" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="channel" type="Variant" />
+			<param index="1" name="callable" type="Callable" />
+			<description>
+				Returns [code]true[/code] if [param callable] listens on [param channel].
+			</description>
+		</method>
+		<method name="listen">
+			<return type="void" />
+			<param index="0" name="channel" type="Variant" />
+			<param index="1" name="callable" type="Callable" />
+			<description>
+				Calls [param callable] with the arguments of every transmission on [param channel], a name or a number. Listening twice with the same callable on the same channel has no further effect.
+			</description>
+		</method>
+		<method name="stop_listening">
+			<return type="void" />
+			<param index="0" name="channel" type="Variant" />
+			<param index="1" name="callable" type="Callable" />
+			<description>
+				Stops [param callable] from receiving transmissions on [param channel].
+			</description>
+		</method>
+		<method name="transmit" qualifiers="vararg">
+			<return type="int" enum="Error" />
+			<param index="0" name="channel" type="Variant" />
+			<description>
+				Sends a transmission on [param channel], a name or a number, with the rest of the arguments, and calls every listener of the channel with them at once. Returns [constant ERR_INVALID_PARAMETER] if the channel is neither a name nor a number.
+			</description>
+		</method>
+		<method name="transmit_array">
+			<return type="void" />
+			<param index="0" name="channel" type="Variant" />
+			<param index="1" name="arguments" type="Array" />
+			<description>
+				Like [method transmit], with the arguments given as an [Array].
+			</description>
+		</method>
+		<method name="transmit_deferred" qualifiers="vararg">
+			<return type="int" enum="Error" />
+			<param index="0" name="channel" type="Variant" />
+			<description>
+				Like [method transmit], but the listeners are called at the end of the current frame.
+			</description>
+		</method>
+	</methods>
+	<signals>
+		<signal name="transmitted">
+			<param index="0" name="channel" type="Variant" />
+			<param index="1" name="arguments" type="Array" />
+			<description>
+				Emitted after every transmission, on any channel, once its listeners were called. Useful to log or debug transmissions.
+			</description>
+		</signal>
+	</signals>
+</class>

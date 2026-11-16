@@ -20,6 +20,7 @@ class MenuButton;
 class OptionButton;
 class PopupMenu;
 class ScrollContainer;
+class SplitContainer;
 class SubViewport;
 
 // A camera's picture. It's rendered through a stand-in camera that copies the real one, so the scene
@@ -103,6 +104,9 @@ public:
 	static constexpr int SHORTCUT_CAMERAS = 9;
 
 private:
+	HBoxContainer *header = nullptr;
+	SplitContainer *_get_split() const;
+
 	enum ViewMenu {
 		VIEW_THIRDS,
 		VIEW_CENTER,
@@ -208,6 +212,8 @@ public:
 	int get_camera_count() const { return cameras.size(); }
 
 	void set_active(bool p_active);
+	// For the workspace's float button, at the end of the monitor's own header.
+	void add_header_control(Control *p_control);
 	Dictionary get_layout() const;
 	void set_layout(const Dictionary &p_layout);
 

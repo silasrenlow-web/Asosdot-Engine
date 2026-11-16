@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the animation editor's body-part track groups and the clip browser."""
+"""Check the animation editor's nested skeleton track list (body parts, bone rows) and the clip browser."""
 
 from __future__ import annotations
 
@@ -146,14 +146,22 @@ func run():
 			dropdown.item_selected.emit(i)
 	await frames(6)
 
-	# Bone tracks: one group per body part, not one for the whole skeleton.
+	# Bone tracks: the skeleton's header, then a header per body part and a row per bone.
 	var groups = find_all(editor, "AnimationTrackEditGroup", [])
-	print("Track groups: ", groups.size())
-	assert(groups.size() == 9, "Expected hips, spine, neck and head, two arms, two hands' fingers and two legs")
+	var parts = groups.filter(func(g): return g.tooltip_text.contains(" · ") and not g.tooltip_text.contains("\n"))
+	var bones = groups.filter(func(g): return g.tooltip_text.contains("\n"))
+	print("Track headers: ", groups.size(), ", body parts: ", parts.size(), ", bone rows: ", bones.size())
+	assert(parts.size() == 8, "Expected spine, neck and head, two arms, two hands' fingers and two legs; hips is one bone and needs no part header")
+	assert(bones.size() == 54, "Every keyed bone gets its own row")
 
-	# Fold every body part by clicking its arrow, as a user does. Each fold brings the next header up.
+	# Bone rows start folded, each showing its bone's keys on one line.
+	var shown_rows = find_all(editor, "AnimationTrackEdit", []).filter(func(row): return row.is_visible_in_tree())
+	print("Track rows shown at first: ", shown_rows.size())
+	assert(shown_rows.is_empty(), "Bone rows start folded")
+
+	# Open a bone's row by its arrow, as a user does: its track shows.
 	var viewport = EditorInterface.get_base_control().get_viewport()
-	for group in groups:
+	var press_arrow = func(group: Control):
 		var scroll = group.get_parent()
 		while scroll and not scroll is ScrollContainer:
 			scroll = scroll.get_parent()
@@ -167,9 +175,19 @@ func run():
 			click.global_position = click.position
 			viewport.push_input(click)
 		await frames(2)
-	var shown_rows = find_all(editor, "AnimationTrackEdit", []).filter(func(row): return row.is_visible_in_tree())
-	print("Bone track rows shown with every part folded: ", shown_rows.size())
-	assert(shown_rows.is_empty(), "Every bone track belongs to a part, and each part folds")
+	await press_arrow.call(bones[0])
+	shown_rows = find_all(editor, "AnimationTrackEdit", []).filter(func(row): return row.is_visible_in_tree())
+	print("Track rows shown with one bone open: ", shown_rows.size())
+	assert(shown_rows.size() == 1, "Opening a bone row shows its rotation track")
+
+	# Folding the skeleton hides every part and bone under it.
+	var skeleton_header = groups.filter(func(g): return not g.tooltip_text.contains(" · "))[0]
+	await press_arrow.call(skeleton_header)
+	var shown_headers = groups.filter(func(g): return g.is_visible_in_tree())
+	shown_rows = find_all(editor, "AnimationTrackEdit", []).filter(func(row): return row.is_visible_in_tree())
+	print("Headers shown with the skeleton folded: ", shown_headers.size(), ", rows: ", shown_rows.size())
+	assert(shown_headers.size() == 1 and shown_rows.is_empty(), "Folding the skeleton hides everything under it")
+	await press_arrow.call(skeleton_header)
 
 	# The clip browser.
 	var browser = find_all(editor, "AsosdotAnimationClipBrowser", [])[0]

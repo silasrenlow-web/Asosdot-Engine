@@ -182,6 +182,9 @@
 		</method>
 	</methods>
 	<members>
+		<member name="acoustic_material" type="AcousticMaterial" setter="set_acoustic_material" getter="get_acoustic_material">
+			How sound treats this body, for the [AcousticEngine]. If [code]null[/code], [member ProjectSettings.audio/acoustics/default_material] is used.
+		</member>
 		<member name="collision_layer" type="int" setter="set_collision_layer" getter="get_collision_layer" default="1">
 			The physics layers this CollisionObject3D [b]is in[/b]. Collision objects can exist in one or more of 32 different layers. See also [member collision_mask].
 			[b]Note:[/b] Object A can detect a contact with object B only if object B is in any of the layers that object A scans. See [url=$DOCS_URL/tutorials/physics/physics_introduction.html#collision-layers-and-masks]Collision layers and masks[/url] in the documentation for more information.

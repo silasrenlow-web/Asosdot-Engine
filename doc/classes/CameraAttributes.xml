@@ -12,6 +12,12 @@
 	<tutorials>
 	</tutorials>
 	<members>
+		<member name="auto_exposure_center_weight" type="float" setter="set_auto_exposure_center_weight" getter="get_auto_exposure_center_weight" default="0.0">
+			How much more the middle of the screen counts than its edges when auto exposure measures the scene's brightness. [code]0[/code] measures the whole screen equally. A higher value makes exposure follow what the camera is pointed at, so a flashlight beam in a dark corridor keeps the corridor dark instead of being averaged away, and exposure stops pumping when the view sweeps over bright or dark edges. The measurement stays an average, so the overall brightness does not change when the scene is evenly lit.
+		</member>
+		<member name="auto_exposure_dark_speed" type="float" setter="set_auto_exposure_dark_speed" getter="get_auto_exposure_dark_speed" default="1.0">
+			A multiplier on [member auto_exposure_speed] that applies only while the scene gets darker, that is while exposure is rising. Eyes adjust to bright light within a moment but take much longer to adjust to darkness, so a value below [code]1[/code], such as [code]0.2[/code], makes the image stay dark for a few seconds after the lights go out and then slowly fade up, and still snap back quickly when the lights come on. [code]1[/code] adapts at the same speed in both directions.
+		</member>
 		<member name="auto_exposure_enabled" type="bool" setter="set_auto_exposure_enabled" getter="is_auto_exposure_enabled" default="false">
 			If [code]true[/code], enables the tonemapping auto exposure mode of the scene renderer. If [code]true[/code], the renderer will automatically determine the exposure setting to adapt to the scene's illumination and the observed light.
 			[b]Note:[/b] Auto-exposure is only supported in the Forward+ rendering method, not Mobile or Compatibility.
@@ -20,7 +26,7 @@
 			The scale of the auto exposure effect. Affects the intensity of auto exposure.
 		</member>
 		<member name="auto_exposure_speed" type="float" setter="set_auto_exposure_speed" getter="get_auto_exposure_speed" default="0.5">
-			The speed of the auto exposure effect. Affects the time needed for the camera to perform auto exposure.
+			The speed of the auto exposure effect. Affects the time needed for the camera to perform auto exposure. See also [member auto_exposure_dark_speed], which slows this down while the scene gets darker.
 		</member>
 		<member name="exposure_multiplier" type="float" setter="set_exposure_multiplier" getter="get_exposure_multiplier" default="1.0">
 			Multiplier for the exposure amount. A higher value results in a brighter image.

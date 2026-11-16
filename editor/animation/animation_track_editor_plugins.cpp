@@ -33,6 +33,7 @@
 #include "core/config/engine.h"
 #include "core/io/resource_loader.h"
 #include "core/object/callable_mp.h"
+#include "core/object/class_db.h"
 #include "editor/audio/audio_stream_preview.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
@@ -1105,25 +1106,39 @@ AnimationTrackEditTypeAudio::AnimationTrackEditTypeAudio() {
 	AudioStreamPreviewGenerator::get_singleton()->connect("preview_updated", callable_mp(this, &AnimationTrackEditTypeAudio::_preview_changed));
 }
 
-bool AnimationTrackEditTypeAudio::can_drop_data(const Point2 &p_point, const Variant &p_data) const {
-	if (p_point.x > get_timeline()->get_name_limit() && p_point.x < get_size().width - get_timeline()->get_buttons_width()) {
-		Dictionary drag_data = p_data;
-		if (drag_data.has("type") && String(drag_data["type"]) == "resource") {
-			Ref<AudioStream> res = drag_data["resource"];
-			if (res.is_valid()) {
-				return true;
+// Asosdot: any number of sounds can be dropped at once. A sound that would overlap one already on
+// this lane goes on another lane of the same player (a new one if none has room), so both play.
+static Vector<Ref<AudioStream>> _get_dropped_streams(const Variant &p_data) {
+	Vector<Ref<AudioStream>> streams;
+	if (p_data.get_type() != Variant::DICTIONARY) {
+		return streams;
+	}
+	const Dictionary drag_data = p_data;
+	const String type = drag_data.get("type", String());
+	if (type == "resource") {
+		Ref<AudioStream> stream = drag_data.get("resource", Variant());
+		if (stream.is_valid()) {
+			streams.push_back(stream);
+		}
+	} else if (type == "files") {
+		const Vector<String> files = drag_data.get("files", Vector<String>());
+		for (const String &file : files) {
+			if (!ClassDB::is_parent_class(ResourceLoader::get_resource_type(file), "AudioStream")) {
+				continue;
+			}
+			Ref<AudioStream> stream = ResourceLoader::load(file);
+			if (stream.is_valid()) {
+				streams.push_back(stream);
 			}
 		}
+	}
+	return streams;
+}
 
-		if (drag_data.has("type") && String(drag_data["type"]) == "files") {
-			Vector<String> files = drag_data["files"];
-
-			if (files.size() == 1) {
-				Ref<AudioStream> res = ResourceLoader::load(files[0]);
-				if (res.is_valid()) {
-					return true;
-				}
-			}
+bool AnimationTrackEditTypeAudio::can_drop_data(const Point2 &p_point, const Variant &p_data) const {
+	if (p_point.x > get_timeline()->get_name_limit() && p_point.x < get_size().width - get_timeline()->get_buttons_width()) {
+		if (!_get_dropped_streams(p_data).is_empty()) {
+			return true;
 		}
 	}
 
@@ -1132,34 +1147,15 @@ bool AnimationTrackEditTypeAudio::can_drop_data(const Point2 &p_point, const Var
 
 void AnimationTrackEditTypeAudio::drop_data(const Point2 &p_point, const Variant &p_data) {
 	if (p_point.x > get_timeline()->get_name_limit() && p_point.x < get_size().width - get_timeline()->get_buttons_width()) {
-		Ref<AudioStream> stream;
-		Dictionary drag_data = p_data;
-		if (drag_data.has("type") && String(drag_data["type"]) == "resource") {
-			stream = drag_data["resource"];
-		} else if (drag_data.has("type") && String(drag_data["type"]) == "files") {
-			Vector<String> files = drag_data["files"];
-
-			if (files.size() == 1) {
-				stream = ResourceLoader::load(files[0]);
-			}
-		}
-
-		if (stream.is_valid()) {
+		const Vector<Ref<AudioStream>> streams = _get_dropped_streams(p_data);
+		if (!streams.is_empty()) {
 			int x = p_point.x - get_timeline()->get_name_limit();
 			float ofs = x / get_timeline()->get_zoom_scale();
 			ofs += get_timeline()->get_value();
 
 			ofs = get_editor()->snap_time(ofs);
 
-			while (get_animation()->track_find_key(get_track(), ofs, Animation::FIND_MODE_APPROX) != -1) { //make sure insertion point is valid
-				ofs += 0.0001;
-			}
-
-			EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
-			undo_redo->create_action(TTR("Add Audio Track Clip"));
-			undo_redo->add_do_method(get_animation().ptr(), "audio_track_insert_key", get_track(), ofs, stream);
-			undo_redo->add_undo_method(get_animation().ptr(), "track_remove_key_at_time", get_track(), ofs);
-			undo_redo->commit_action();
+			get_editor()->add_audio_clips(get_animation()->track_get_path(get_track()), streams, ofs, get_track());
 
 			queue_redraw();
 			return;

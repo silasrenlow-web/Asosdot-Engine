@@ -1550,6 +1550,9 @@
 		<member name="AccessibilityServer" type="AccessibilityServer" setter="" getter="">
 			The [AccessibilityServer] singleton.
 		</member>
+		<member name="AcousticEngine" type="AcousticEngine" setter="" getter="">
+			The [AcousticEngine] singleton.
+		</member>
 		<member name="AudioServer" type="AudioServer" setter="" getter="">
 			The [AudioServer] singleton.
 		</member>
@@ -1584,6 +1587,9 @@
 		</member>
 		<member name="Geometry3D" type="Geometry3D" setter="" getter="">
 			The [Geometry3D] singleton.
+		</member>
+		<member name="GlobalTransmit" type="GlobalTransmit" setter="" getter="">
+			The [GlobalTransmit] singleton.
 		</member>
 		<member name="IP" type="IP" setter="" getter="">
 			The [IP] singleton.
@@ -1656,6 +1662,8 @@
 		</member>
 		<member name="ResourceUID" type="ResourceUID" setter="" getter="">
 			The [ResourceUID] singleton.
+		</member>
+		<member name="Saves" type="Saves" setter="" getter="">
 		</member>
 		<member name="TextServerManager" type="TextServerManager" setter="" getter="">
 			The [TextServerManager] singleton.

@@ -39,6 +39,7 @@
 #include "scene/2d/audio_stream_player_2d.h"
 #include "scene/animation/animation_player.h"
 #include "scene/audio/audio_stream_player.h"
+#include "scene/main/global_transmit.h"
 #include "scene/resources/animation.h"
 #include "servers/audio/audio_server.h"
 #include "servers/audio/audio_stream.h"
@@ -1194,6 +1195,12 @@ bool AnimationMixer::_update_caches() {
 						}
 #endif
 					} break;
+					case Animation::TYPE_TRANSMIT: {
+						// Asosdot: nothing to resolve; the cache only marks the track as playable.
+						TrackCacheTransmit *track_transmit = memnew(TrackCacheTransmit);
+						track_transmit->object_id = child->get_instance_id();
+						track = track_transmit;
+					} break;
 					case Animation::TYPE_METHOD: {
 						TrackCacheMethod *track_method = memnew(TrackCacheMethod);
 
@@ -2035,6 +2042,30 @@ void AnimationMixer::_blend_process(double p_delta, bool p_update_only) {
 						}
 					}
 				} break;
+				case Animation::TYPE_TRANSMIT: {
+#ifdef TOOLS_ENABLED
+					if (!can_call) {
+						continue;
+					}
+#endif // TOOLS_ENABLED
+					if (p_update_only || Math::is_zero_approx(blend) || !GlobalTransmit::get_singleton()) {
+						continue;
+					}
+					const bool deferred = callback_mode_method == ANIMATION_CALLBACK_MODE_METHOD_DEFERRED;
+					if (seeked) {
+						int idx = a->track_find_key(i, time, is_external_seeking ? Animation::FIND_MODE_NEAREST : Animation::FIND_MODE_EXACT, true);
+						if (idx < 0) {
+							continue;
+						}
+						_transmit(a->transmit_track_get_channel(i, idx), a->transmit_track_get_arguments(i, idx), deferred);
+					} else {
+						LocalVector<int> indices;
+						a->track_get_key_indices_in_range(i, time, delta, start, end, &indices, looped_flag);
+						for (int &F : indices) {
+							_transmit(a->transmit_track_get_channel(i, F), a->transmit_track_get_arguments(i, F), deferred);
+						}
+					}
+				} break;
 				case Animation::TYPE_AUDIO: {
 					// The end of audio should be observed even if the blend value is 0, build up the information and store to the cache for that.
 					TrackCacheAudio *t = static_cast<TrackCacheAudio *>(track);
@@ -2366,6 +2397,14 @@ void AnimationMixer::_blend_apply() {
 			default: {
 			} // The rest don't matter.
 		}
+	}
+}
+
+void AnimationMixer::_transmit(const Variant &p_channel, const Array &p_arguments, bool p_deferred) {
+	if (p_deferred) {
+		callable_mp(GlobalTransmit::get_singleton(), &GlobalTransmit::transmit_array).call_deferred(p_channel, p_arguments);
+	} else {
+		GlobalTransmit::get_singleton()->transmit_array(p_channel, p_arguments);
 	}
 }
 
@@ -2897,6 +2936,11 @@ AnimationMixer::TrackCache *AnimatedValuesBackup::get_cache_copy(AnimationMixer:
 			AnimationMixer::TrackCacheAudio *src = static_cast<AnimationMixer::TrackCacheAudio *>(p_cache);
 			AnimationMixer::TrackCacheAudio *tc = memnew(AnimationMixer::TrackCacheAudio(*src));
 			return tc;
+		}
+
+		case Animation::TYPE_TRANSMIT: {
+			AnimationMixer::TrackCacheTransmit *src = static_cast<AnimationMixer::TrackCacheTransmit *>(p_cache);
+			return memnew(AnimationMixer::TrackCacheTransmit(*src));
 		}
 
 		case Animation::TYPE_METHOD:

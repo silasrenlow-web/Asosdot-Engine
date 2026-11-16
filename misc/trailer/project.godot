@@ -1,0 +1,33 @@
+; Engine configuration file.
+
+config_version=5
+
+[application]
+
+config/name="Asosdot Trailer"
+config/description="The Asosdot Engine trailer, built and scored entirely in code."
+run/main_scene="res://trailer.tscn"
+
+[audio]
+
+driver/mix_rate=48000
+
+[display]
+
+window/size/viewport_width=1920
+window/size/viewport_height=1080
+
+[editor]
+
+movie_writer/mix_rate=48000
+movie_writer/video_quality=0.92
+movie_writer/fps=60
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+anti_aliasing/quality/msaa_3d=2
+lights_and_shadows/directional_shadow/size=8192
+lights_and_shadows/positional_shadow/atlas_size=8192
+environment/volumetric_fog/volume_size=128
+environment/volumetric_fog/volume_depth=96

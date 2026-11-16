@@ -47,13 +47,18 @@
 class AnimationMarkerEdit;
 class AnimationTrackEditor;
 class AnimationTrackEdit;
+class AnimationTrackEditGroup;
+class AudioStream;
 class CheckBox;
 class ColorPickerButton;
+class EditorFileDialog;
 class EditorSpinSlider;
 class HSlider;
 class OptionButton;
 class PanelContainer;
+class PopupPanel;
 class SceneTreeDialog;
+class Skeleton3D;
 class SpinBox;
 class TextureRect;
 class ViewPanner;
@@ -519,6 +524,13 @@ class AnimationTrackEdit : public Control {
 	bool in_group = false;
 	AnimationTrackEditor *editor = nullptr;
 
+	// Asosdot: rows nest under node, body part and bone headers.
+	friend class AnimationTrackEditor;
+	friend class AnimationTrackEditGroup;
+	String label_override; // Shown instead of the path, such as "Rotation" under a bone's header.
+	int indent = 0;
+	AnimationTrackEditGroup *parent_group = nullptr;
+
 protected:
 	static void _bind_methods();
 	void _notification(int p_what);
@@ -526,6 +538,9 @@ protected:
 	virtual void gui_input(const Ref<InputEvent> &p_event) override;
 
 public:
+	void set_label_override(const String &p_label) { label_override = p_label; }
+	void set_indent(int p_indent) { indent = p_indent; }
+
 	virtual Variant get_drag_data(const Point2 &p_point) override;
 	virtual bool can_drop_data(const Point2 &p_point, const Variant &p_data) const override;
 	virtual void drop_data(const Point2 &p_point, const Variant &p_data) override;
@@ -595,8 +610,57 @@ class AnimationTrackEditGroup : public Control {
 	AnimationTrackEditor *editor = nullptr;
 
 	bool hovered = false;
-	LocalVector<AnimationTrackEdit *> track_edits;
+	LocalVector<AnimationTrackEdit *> track_edits; // Every track under this header, nested ones included.
 	void _zoom_changed();
+
+	// Asosdot: headers nest. A skeleton's header holds its body parts, a part holds its bones,
+	// and a bone holds its Position, Rotation and Scale tracks. Bone rows start folded and then
+	// show all of that bone's keys on one line, which can be clicked, dragged and box selected.
+	enum Kind {
+		KIND_NODE,
+		KIND_BODY_PART,
+		KIND_BONE,
+	};
+	Kind kind = KIND_NODE;
+	int level = 0;
+	AnimationTrackEditGroup *parent_group = nullptr;
+	String fold_key; // Stored in Animation::folded_groups. Rows folded by default store when they are open instead.
+	bool folded_by_default = false;
+	int bone = -1;
+	LocalVector<int> part_bones; // The bones of a body part's header that have tracks.
+
+	// Asosdot: the header of an audio player whose audio tracks are its lanes. Sounds dropped on it,
+	// or picked with its add button, go on the first lane that is free at that time.
+	bool audio = false;
+	Rect2 add_sound_rect;
+	struct AudioClip {
+		int lane = 0;
+		double begin = 0.0;
+		double end = 0.0;
+		bool selected = false;
+	};
+	LocalVector<AudioClip> _get_audio_clips(int &r_lanes) const;
+	static Vector<Ref<AudioStream>> _get_dragged_streams(const Variant &p_data);
+
+	struct SummaryKey {
+		double time = 0.0;
+		LocalVector<Pair<int, int>> keys; // Track and key.
+		bool selected = false; // Every key at this time is selected.
+	};
+	LocalVector<SummaryKey> _get_summary_keys() const;
+	int _summary_key_at(const LocalVector<SummaryKey> &p_keys, float p_x) const;
+	float _summary_key_x(double p_time) const;
+	void _select_summary_key(const SummaryKey &p_key, bool p_single);
+	void _select_rows(bool p_append);
+	Skeleton3D *_get_skeleton() const;
+	bool _shows_summary() const;
+
+	bool moving_attempt = false;
+	bool moving = false;
+	bool moving_effective = false;
+	float moving_pivot = 0.0f;
+	float moving_mouse_begin_x = 0.0f;
+	int select_single_attempt = -1;
 
 protected:
 	void _notification(int p_what);
@@ -604,6 +668,16 @@ protected:
 	virtual void gui_input(const Ref<InputEvent> &p_event) override;
 
 public:
+	virtual bool can_drop_data(const Point2 &p_point, const Variant &p_data) const override;
+	virtual void drop_data(const Point2 &p_point, const Variant &p_data) override;
+	virtual String get_tooltip(const Point2 &p_pos) const override;
+
+	bool is_audio_group() const { return audio; }
+	bool is_folded() const;
+	void set_folded(bool p_folded);
+	bool is_bone_row_selected() const;
+	void append_to_selection(const Rect2 &p_box, bool p_deselection);
+
 	void set_type_and_name(const Ref<Texture2D> &p_type, const String &p_name, const NodePath &p_node);
 	virtual Size2 get_minimum_size() const override;
 	void set_timeline(AnimationTimelineEdit *p_timeline);
@@ -840,6 +914,7 @@ class AnimationTrackEditor : public VBoxContainer {
 	bool _track_passes_filters(int p_track) const;
 	Vector<int> _get_tracks_passing_filters() const;
 	void _refresh_track_visibility();
+	void _build_track_groups(LocalVector<VBoxContainer *> &r_containers);
 	void _selected_filter_toggled();
 	Vector<int> _get_displayed_track_order() const;
 	Vector<int> _get_bulk_edit_tracks() const;
@@ -924,6 +999,15 @@ class AnimationTrackEditor : public VBoxContainer {
 
 	void _toggle_function_names();
 	Button *function_name_toggler = nullptr;
+
+	// Asosdot: the rarely used switches of the bottom bar live in this popup.
+	Button *more_options = nullptr;
+	PopupPanel *more_options_popup = nullptr;
+	void _more_options_pressed();
+
+	EditorFileDialog *add_sound_dialog = nullptr;
+	NodePath add_sound_path;
+	void _add_sound_files_selected(const PackedStringArray &p_paths);
 
 	void _view_group_toggle();
 
@@ -1095,6 +1179,16 @@ public:
 	float snap_time(float p_value, bool p_relative = false);
 	float get_snap_unit();
 	bool is_grouping_tracks();
+	// Asosdot: several sounds on one audio player. Each stream goes on the first audio track of
+	// p_player_path whose clips leave room for it at p_time, and a new track (a lane) is made when
+	// none does, so sounds overlap instead of cutting each other short. One undo step.
+	// p_preferred_track is the lane tried first, such as the one a sound was dropped on.
+	void add_audio_clips(const NodePath &p_player_path, const Vector<Ref<AudioStream>> &p_streams, double p_time, int p_preferred_track = -1);
+	static double get_audio_clip_length(const Ref<Animation> &p_animation, int p_track, int p_key);
+	void popup_add_sound_dialog(const NodePath &p_player_path);
+	double get_playhead_time() const;
+	// Asosdot: the Skeleton3D editor calls this when its bone selection changes.
+	void bone_selection_changed();
 	bool is_sorting_alphabetically();
 	PackedStringArray get_selected_section() const;
 	bool is_marker_selected(const StringName &p_marker) const;

@@ -13,6 +13,12 @@
 		<link title="Audio streams">$DOCS_URL/tutorials/audio/audio_streams.html</link>
 	</tutorials>
 	<methods>
+		<method name="get_acoustic_state" qualifiers="const">
+			<return type="Dictionary" />
+			<description>
+				Returns what the [AcousticEngine] last found of the way this sound gets to the listener, for debugging: [code]valid[/code], [code]apparent_offset[/code] (from the listener to where it seems to come from, as far as it travelled), [code]gain[/code], [code]muffle[/code] and [code]reverb_send[/code].
+			</description>
+		</method>
 		<method name="get_layered_count" qualifiers="const">
 			<return type="int" />
 			<description>
@@ -105,6 +111,9 @@
 		</method>
 	</methods>
 	<members>
+		<member name="acoustics" type="bool" setter="set_acoustics" getter="is_using_acoustics" default="false">
+			If [code]true[/code], the [AcousticEngine] works out the way this sound gets to the listener: it is heard from the doorway it comes round through, as far away as the way round, quieter and muffled through walls, and with the reverb of the room the listener is in. Only for the main viewport's listener.
+		</member>
 		<member name="area_mask" type="int" setter="set_area_mask" getter="get_area_mask" default="0">
 			Determines which [Area3D] layers affect the sound for reverb and audio bus effects. Areas can be used to redirect [AudioStream]s so that they play in a certain audio bus. An example of how you might use this is making a "water" area so that sounds played in the water are redirected through an audio bus to make them sound like they are being played underwater.
 		</member>

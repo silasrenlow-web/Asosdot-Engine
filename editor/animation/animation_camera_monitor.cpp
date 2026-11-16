@@ -25,6 +25,7 @@
 #include "scene/gui/scroll_container.h"
 #include "scene/gui/split_container.h"
 #include "scene/main/viewport.h"
+#include "scene/main/window.h"
 #include "scene/resources/3d/world_3d.h"
 #include "scene/resources/camera_attributes.h"
 #include "scene/resources/compositor.h"
@@ -849,12 +850,30 @@ void AsosdotCameraMonitor::shortcut_input(const Ref<InputEvent> &p_event) {
 	}
 }
 
+// The monitor sits in a workspace panel, which sits in the 3D editor's split beside the viewer.
+// While the panel floats in a window of its own there is no split to share.
+SplitContainer *AsosdotCameraMonitor::_get_split() const {
+	for (Node *node = get_parent(); node; node = node->get_parent()) {
+		if (Object::cast_to<Window>(node)) {
+			return nullptr;
+		}
+		if (SplitContainer *split = Object::cast_to<SplitContainer>(node)) {
+			return split;
+		}
+	}
+	return nullptr;
+}
+
+void AsosdotCameraMonitor::add_header_control(Control *p_control) {
+	header->add_child(p_control);
+}
+
 void AsosdotCameraMonitor::set_active(bool p_active) {
 	ERR_FAIL_NULL(workspace);
 	if (active == p_active) {
 		return;
 	}
-	SplitContainer *split = Object::cast_to<SplitContainer>(get_parent());
+	SplitContainer *split = _get_split();
 	if (!p_active && split) {
 		saved_split = split->get_split_offset();
 		saved_split_valid = true;
@@ -883,7 +902,7 @@ Dictionary AsosdotCameraMonitor::get_layout() const {
 	layout["aspect"] = aspect;
 	layout["half_resolution"] = half_resolution;
 	layout["multicam"] = multicam_button->is_pressed();
-	const SplitContainer *split = Object::cast_to<SplitContainer>(get_parent());
+	const SplitContainer *split = _get_split();
 	if (split && active) {
 		layout["split"] = split->get_split_offset();
 	} else if (saved_split_valid) {
@@ -904,7 +923,7 @@ void AsosdotCameraMonitor::set_layout(const Dictionary &p_layout) {
 	if (p_layout.has("split")) {
 		saved_split = p_layout["split"];
 		saved_split_valid = true;
-		SplitContainer *split = Object::cast_to<SplitContainer>(get_parent());
+		SplitContainer *split = _get_split();
 		if (split && active) {
 			split->set_split_offset(saved_split);
 		}
@@ -993,7 +1012,7 @@ AsosdotCameraMonitor::AsosdotCameraMonitor(AsosdotAnimationWorkspace *p_workspac
 		ED_SHORTCUT(vformat("animation_workspace/cut_to_camera_%d", i), vformat(TTR("Cut to Camera %d"), i), Key(int(Key::KEY_0) + i));
 	}
 
-	HBoxContainer *header = memnew(HBoxContainer);
+	header = memnew(HBoxContainer);
 	add_child(header);
 	source = memnew(OptionButton);
 	source->set_h_size_flags(SIZE_EXPAND_FILL);

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="AcousticMaterial" inherits="Resource" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		How a surface treats sound that reaches it, for the Asosdot Acoustic Engine.
+	</brief_description>
+	<description>
+		Give an [AcousticMaterial] to a collider's [member CollisionObject3D.acoustic_material] or [member CSGShape3D.acoustic_material], or to an [code]acoustic_material[/code] property of a script on a collider, and the [AcousticEngine] uses it for the sound that meets that collider. Colliders without one use [member ProjectSettings.audio/acoustics/default_material], and if that is empty, a material with the default values below.
+		Some rough values: a concrete or brick wall lets through [code]0.01[/code] and absorbs [code]0.02[/code]; a plasterboard wall lets through [code]0.1[/code] and absorbs [code]0.1[/code]; a wooden door lets through [code]0.2[/code]; glass lets through [code]0.15[/code] and absorbs [code]0.05[/code]; carpet absorbs [code]0.3[/code]; a heavy curtain lets through [code]0.5[/code] and absorbs [code]0.6[/code].
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="absorption" type="float" setter="set_absorption" getter="get_absorption" default="0.1">
+			How much of the sound that hits the surface is soaked up rather than reflected, from [code]0.0[/code] to [code]1.0[/code]. Rooms with absorbent surfaces have a shorter, duller reverb.
+		</member>
+		<member name="scattering" type="float" setter="set_scattering" getter="get_scattering" default="0.3">
+			How much of the sound the surface reflects is spread in every direction rather than bounced like a mirror, from [code]0.0[/code] to [code]1.0[/code]. Rough and cluttered surfaces scatter more, which spreads the reverb wider.
+		</member>
+		<member name="transmission" type="float" setter="set_transmission" getter="get_transmission" default="0.05">
+			How much of the sound goes through the surface to the other side, from [code]0.0[/code] for nothing to [code]1.0[/code] for all of it. A sound that goes through several surfaces keeps what each lets through, one after another, and loses its high end first.
+		</member>
+	</members>
+</class>

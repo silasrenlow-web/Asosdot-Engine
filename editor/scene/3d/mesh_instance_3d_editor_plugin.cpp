@@ -32,6 +32,8 @@
 
 #include "core/io/resource_loader.h"
 #include "core/object/callable_mp.h"
+#include "core/object/class_db.h"
+#include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
@@ -64,6 +66,96 @@ void MeshInstance3DEditor::_node_removed(Node *p_node) {
 
 void MeshInstance3DEditor::edit(MeshInstance3D *p_mesh) {
 	node = p_mesh;
+	_update_editable_items();
+}
+
+// Asosdot: a MeshInstance3D can be made editable with CSG shapes, and an editable one can
+// apply its shapes or go back to being a plain MeshInstance3D. The class lives in the CSG
+// module, so it is reached by name.
+static const char *EDITABLE_MESH_CLASS = "EditableMeshInstance3D";
+
+void MeshInstance3DEditor::_update_editable_items() {
+	PopupMenu *popup = options->get_popup();
+	for (int id : { MENU_OPTION_MAKE_EDITABLE, MENU_OPTION_APPLY_EDITS, MENU_OPTION_CONVERT_TO_MESH_INSTANCE }) {
+		const int index = popup->get_item_index(id);
+		if (index >= 0) {
+			popup->remove_item(index);
+		}
+	}
+	const int separator = popup->get_item_count() - 1;
+	if (separator >= 0 && popup->is_item_separator(separator)) {
+		popup->remove_item(separator);
+	}
+	if (!node || !ClassDB::class_exists(EDITABLE_MESH_CLASS)) {
+		return;
+	}
+	popup->add_separator();
+	if (node->is_class(EDITABLE_MESH_CLASS)) {
+		popup->add_item(TTR("Apply Edits"), MENU_OPTION_APPLY_EDITS);
+		popup->set_item_tooltip(popup->get_item_count() - 1, TTR("Bakes what the CSG shapes did into the source mesh and removes the shapes."));
+		popup->add_item(TTR("Convert to MeshInstance3D"), MENU_OPTION_CONVERT_TO_MESH_INSTANCE);
+		popup->set_item_tooltip(popup->get_item_count() - 1, TTR("Applies the edits, then turns this node back into a plain MeshInstance3D with the edited mesh."));
+	} else {
+		popup->add_item(TTR("Make Editable (CSG Shapes)"), MENU_OPTION_MAKE_EDITABLE);
+		popup->set_item_tooltip(popup->get_item_count() - 1, TTR("Turns this node into an EditableMeshInstance3D: CSG shapes added as children then cut into the mesh, add to it or intersect it, while it stays a MeshInstance3D with its materials and settings."));
+	}
+}
+
+void MeshInstance3DEditor::_make_editable() {
+	Node *editable = Object::cast_to<Node>((Object *)ClassDB::instantiate(EDITABLE_MESH_CLASS));
+	ERR_FAIL_NULL(editable);
+	editable->set_name(node->get_name());
+	editable->set("source_mesh", node->get_mesh());
+	SceneTreeDock::get_singleton()->replace_node(node, editable);
+	EditorNode::get_singleton()->get_editor_selection()->clear();
+	EditorNode::get_singleton()->get_editor_selection()->add_node(editable);
+}
+
+void MeshInstance3DEditor::_apply_edits() {
+	Vector<Node *> shapes;
+	for (int i = 0; i < node->get_child_count(); i++) {
+		Node *child = node->get_child(i);
+		if (child->is_class("CSGShape3D") && Object::cast_to<Node3D>(child)->is_visible()) {
+			shapes.push_back(child);
+		}
+	}
+	if (shapes.is_empty()) {
+		return;
+	}
+	node->call("rebuild"); // So the result is up to date with the shapes as they are now.
+	const Ref<Mesh> edited = node->get_mesh();
+	const Ref<Mesh> source = node->get("source_mesh");
+
+	EditorUndoRedoManager *ur = EditorUndoRedoManager::get_singleton();
+	ur->create_action(TTR("Apply Mesh Edits"), UndoRedo::MERGE_DISABLE, node);
+	ur->add_do_property(node, "source_mesh", edited);
+	ur->add_undo_property(node, "source_mesh", source);
+	for (Node *shape : shapes) {
+		ur->add_do_method(node, "remove_child", shape);
+		ur->add_undo_method(node, "add_child", shape, true);
+		ur->add_undo_method(node, "move_child", shape, shape->get_index());
+		// Owners go when a node leaves the scene; give them back to it and its children.
+		ur->add_undo_method(shape, "set_owner", shape->get_owner());
+		for (const Variant &descendant : shape->find_children("*", "", true, false)) {
+			Node *child = Object::cast_to<Node>(descendant);
+			ur->add_undo_method(child, "set_owner", child->get_owner());
+		}
+		ur->add_undo_reference(shape);
+	}
+	ur->add_do_method(node, "rebuild");
+	ur->add_undo_method(node, "rebuild");
+	ur->commit_action();
+}
+
+void MeshInstance3DEditor::_convert_to_mesh_instance() {
+	if (node->call("has_edits")) {
+		_apply_edits();
+	}
+	MeshInstance3D *plain = memnew(MeshInstance3D);
+	plain->set_name(node->get_name());
+	SceneTreeDock::get_singleton()->replace_node(node, plain);
+	EditorNode::get_singleton()->get_editor_selection()->clear();
+	EditorNode::get_singleton()->get_editor_selection()->add_node(plain);
 }
 
 Vector<Ref<Shape3D>> MeshInstance3DEditor::create_shape_from_mesh(Ref<Mesh> p_mesh, int p_option, bool p_verbose) {
@@ -426,6 +518,21 @@ void MeshInstance3DEditor::_create_collision_shape() {
 }
 
 void MeshInstance3DEditor::_menu_option(int p_option) {
+	switch (p_option) {
+		case MENU_OPTION_MAKE_EDITABLE: {
+			_make_editable();
+			return;
+		}
+		case MENU_OPTION_APPLY_EDITS: {
+			_apply_edits();
+			return;
+		}
+		case MENU_OPTION_CONVERT_TO_MESH_INSTANCE: {
+			_convert_to_mesh_instance();
+			return;
+		}
+	}
+
 	Ref<Mesh> mesh = node->get_mesh();
 	if (mesh.is_null()) {
 		err_dialog->set_text(TTR("Mesh is empty!"));

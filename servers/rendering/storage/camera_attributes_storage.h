@@ -47,6 +47,10 @@ private:
 		float auto_exposure_max_sensitivity = 800.0;
 		float auto_exposure_adjust_speed = 1.0;
 		float auto_exposure_scale = 1.0;
+		// Asosdot: eye-like adaptation. A multiplier on the speed while the scene gets darker, and how much
+		// more the middle of the screen counts than its edges.
+		float auto_exposure_dark_speed = 1.0;
+		float auto_exposure_center_weight = 0.0;
 		uint64_t auto_exposure_version = 0;
 
 		bool dof_blur_far_enabled = false;
@@ -132,6 +136,9 @@ public:
 	float camera_attributes_get_auto_exposure_max_sensitivity(RID p_camera_attributes);
 	float camera_attributes_get_auto_exposure_adjust_speed(RID p_camera_attributes);
 	float camera_attributes_get_auto_exposure_scale(RID p_camera_attributes);
+	void camera_attributes_set_auto_exposure_eye(RID p_camera_attributes, float p_dark_speed, float p_center_weight);
+	float camera_attributes_get_auto_exposure_dark_speed(RID p_camera_attributes);
+	float camera_attributes_get_auto_exposure_center_weight(RID p_camera_attributes);
 	uint64_t camera_attributes_get_auto_exposure_version(RID p_camera_attributes);
 
 	_FORCE_INLINE_ bool camera_attributes_uses_auto_exposure(RID p_camera_attributes) {

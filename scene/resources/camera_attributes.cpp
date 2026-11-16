@@ -94,6 +94,29 @@ float CameraAttributes::get_auto_exposure_scale() const {
 	return auto_exposure_scale;
 }
 
+void CameraAttributes::set_auto_exposure_dark_speed(float p_dark_speed) {
+	auto_exposure_dark_speed = MAX(p_dark_speed, 0.0f);
+	_update_auto_exposure_eye();
+}
+
+float CameraAttributes::get_auto_exposure_dark_speed() const {
+	return auto_exposure_dark_speed;
+}
+
+void CameraAttributes::set_auto_exposure_center_weight(float p_center_weight) {
+	auto_exposure_center_weight = MAX(p_center_weight, 0.0f);
+	_update_auto_exposure_eye();
+}
+
+float CameraAttributes::get_auto_exposure_center_weight() const {
+	return auto_exposure_center_weight;
+}
+
+void CameraAttributes::_update_auto_exposure_eye() {
+	RS::get_singleton()->camera_attributes_set_auto_exposure_eye(camera_attributes, auto_exposure_dark_speed, auto_exposure_center_weight);
+	emit_changed();
+}
+
 RID CameraAttributes::get_rid() const {
 	return camera_attributes;
 }
@@ -180,6 +203,10 @@ void CameraAttributes::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_auto_exposure_speed"), &CameraAttributes::get_auto_exposure_speed);
 	ClassDB::bind_method(D_METHOD("set_auto_exposure_scale", "exposure_grey"), &CameraAttributes::set_auto_exposure_scale);
 	ClassDB::bind_method(D_METHOD("get_auto_exposure_scale"), &CameraAttributes::get_auto_exposure_scale);
+	ClassDB::bind_method(D_METHOD("set_auto_exposure_dark_speed", "dark_speed"), &CameraAttributes::set_auto_exposure_dark_speed);
+	ClassDB::bind_method(D_METHOD("get_auto_exposure_dark_speed"), &CameraAttributes::get_auto_exposure_dark_speed);
+	ClassDB::bind_method(D_METHOD("set_auto_exposure_center_weight", "center_weight"), &CameraAttributes::set_auto_exposure_center_weight);
+	ClassDB::bind_method(D_METHOD("get_auto_exposure_center_weight"), &CameraAttributes::get_auto_exposure_center_weight);
 
 	ClassDB::bind_method(D_METHOD("set_motion_blur_enabled", "enabled"), &CameraAttributes::set_motion_blur_enabled);
 	ClassDB::bind_method(D_METHOD("is_motion_blur_enabled"), &CameraAttributes::is_motion_blur_enabled);
@@ -200,6 +227,8 @@ void CameraAttributes::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "auto_exposure_enabled", PROPERTY_HINT_GROUP_ENABLE), "set_auto_exposure_enabled", "is_auto_exposure_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "auto_exposure_scale", PROPERTY_HINT_RANGE, "0.01,64,0.01"), "set_auto_exposure_scale", "get_auto_exposure_scale");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "auto_exposure_speed", PROPERTY_HINT_RANGE, "0.01,64,0.01"), "set_auto_exposure_speed", "get_auto_exposure_speed");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "auto_exposure_dark_speed", PROPERTY_HINT_RANGE, "0.01,4,0.01,or_greater"), "set_auto_exposure_dark_speed", "get_auto_exposure_dark_speed");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "auto_exposure_center_weight", PROPERTY_HINT_RANGE, "0,8,0.01,or_greater"), "set_auto_exposure_center_weight", "get_auto_exposure_center_weight");
 
 	ADD_GROUP("Motion Blur", "motion_blur_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "motion_blur_enabled", PROPERTY_HINT_GROUP_ENABLE), "set_motion_blur_enabled", "is_motion_blur_enabled");

@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="Rope3D" inherits="GeometryInstance3D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+	</brief_description>
+	<description>
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_point_count" qualifiers="const">
+			<return type="int" />
+			<description>
+			</description>
+		</method>
+		<method name="get_point_position" qualifiers="const">
+			<return type="Vector3" />
+			<param index="0" name="index" type="int" />
+			<description>
+			</description>
+		</method>
+		<method name="reset_rope">
+			<return type="void" />
+			<description>
+			</description>
+		</method>
+		<method name="set_point_position">
+			<return type="void" />
+			<param index="0" name="index" type="int" />
+			<param index="1" name="position" type="Vector3" />
+			<description>
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="attach_end_enabled" type="bool" setter="set_attach_end_enabled" getter="is_attach_end_enabled" default="false">
+		</member>
+		<member name="attach_end_node" type="NodePath" setter="set_attach_end_node" getter="get_attach_end_node" default="NodePath(&quot;&quot;)">
+		</member>
+		<member name="attach_end_offset" type="Vector3" setter="set_attach_end_offset" getter="get_attach_end_offset" default="Vector3(0, 0, 0)">
+		</member>
+		<member name="attach_start_enabled" type="bool" setter="set_attach_start_enabled" getter="is_attach_start_enabled" default="true">
+		</member>
+		<member name="attach_start_node" type="NodePath" setter="set_attach_start_node" getter="get_attach_start_node" default="NodePath(&quot;&quot;)">
+		</member>
+		<member name="attach_start_offset" type="Vector3" setter="set_attach_start_offset" getter="get_attach_start_offset" default="Vector3(0, 0, 0)">
+		</member>
+		<member name="collision_enabled" type="bool" setter="set_collision_enabled" getter="is_collision_enabled" default="false">
+		</member>
+		<member name="collision_friction" type="float" setter="set_collision_friction" getter="get_collision_friction" default="0.5">
+		</member>
+		<member name="collision_mask" type="int" setter="set_collision_mask" getter="get_collision_mask" default="1">
+		</member>
+		<member name="collision_radius" type="float" setter="set_collision_radius" getter="get_collision_radius" default="0.05">
+		</member>
+		<member name="damping" type="float" setter="set_damping" getter="get_damping" default="0.02">
+		</member>
+		<member name="gravity" type="Vector3" setter="set_gravity" getter="get_gravity" default="Vector3(0, -9.8, 0)">
+		</member>
+		<member name="material" type="Material" setter="set_material" getter="get_material">
+		</member>
+		<member name="render_mode" type="int" setter="set_render_mode" getter="get_render_mode" enum="Rope3D.RenderMode" default="0">
+		</member>
+		<member name="rope_length" type="float" setter="set_rope_length" getter="get_rope_length" default="4.0">
+		</member>
+		<member name="segment_axis" type="int" setter="set_segment_axis" getter="get_segment_axis" enum="Rope3D.SegmentAxis" default="1">
+		</member>
+		<member name="segment_count" type="int" setter="set_segment_count" getter="get_segment_count" default="16">
+		</member>
+		<member name="segment_mesh" type="Mesh" setter="set_segment_mesh" getter="get_segment_mesh">
+		</member>
+		<member name="segment_scale" type="Vector3" setter="set_segment_scale" getter="get_segment_scale" default="Vector3(1, 1, 1)">
+		</member>
+		<member name="segment_stretch" type="bool" setter="set_segment_stretch" getter="get_segment_stretch" default="true">
+		</member>
+		<member name="simulate_in_editor" type="bool" setter="set_simulate_in_editor" getter="is_simulating_in_editor" default="false">
+		</member>
+		<member name="simulating" type="bool" setter="set_simulating" getter="is_simulating" default="true">
+		</member>
+		<member name="solver_iterations" type="int" setter="set_solver_iterations" getter="get_solver_iterations" default="8">
+		</member>
+		<member name="stretch" type="float" setter="set_stretch" getter="get_stretch" default="1.0">
+		</member>
+		<member name="thickness" type="float" setter="set_thickness" getter="get_thickness" default="0.05">
+		</member>
+		<member name="tube_sides" type="int" setter="set_tube_sides" getter="get_tube_sides" default="6">
+		</member>
+		<member name="wind" type="Vector3" setter="set_wind" getter="get_wind" default="Vector3(0, 0, 0)">
+		</member>
+	</members>
+	<constants>
+		<constant name="RENDER_MODE_TUBE" value="0" enum="RenderMode">
+		</constant>
+		<constant name="RENDER_MODE_SEGMENT_MESH" value="1" enum="RenderMode">
+		</constant>
+		<constant name="RENDER_MODE_NONE" value="2" enum="RenderMode">
+		</constant>
+		<constant name="SEGMENT_AXIS_X" value="0" enum="SegmentAxis">
+		</constant>
+		<constant name="SEGMENT_AXIS_Y" value="1" enum="SegmentAxis">
+		</constant>
+		<constant name="SEGMENT_AXIS_Z" value="2" enum="SegmentAxis">
+		</constant>
+	</constants>
+</class>

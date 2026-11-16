@@ -55,6 +55,7 @@ public:
 		TYPE_BEZIER, // Bezier curve.
 		TYPE_AUDIO,
 		TYPE_ANIMATION,
+		TYPE_TRANSMIT, // Asosdot: sends a Global Transmit transmission.
 	};
 
 	enum InterpolationType : uint8_t {
@@ -192,6 +193,19 @@ private:
 	struct MethodTrack : public Track {
 		LocalVector<MethodKey> methods;
 		MethodTrack() { type = TYPE_METHOD; }
+	};
+
+	/* TRANSMIT TRACK */
+
+	// Asosdot: a key sends a transmission on a Global Transmit channel, a name or a number.
+	struct TransmitKey : public Key {
+		Variant channel;
+		Array arguments;
+	};
+
+	struct TransmitTrack : public Track {
+		LocalVector<TransmitKey> transmissions;
+		TransmitTrack() { type = TYPE_TRANSMIT; }
 	};
 
 	/* BEZIER TRACK */
@@ -527,6 +541,10 @@ public:
 
 	Vector<Variant> method_track_get_params(int p_track, int p_key_idx) const;
 	StringName method_track_get_name(int p_track, int p_key_idx) const;
+
+	int transmit_track_insert_key(int p_track, double p_time, const Variant &p_channel, const Array &p_arguments = Array());
+	Variant transmit_track_get_channel(int p_track, int p_key_idx) const;
+	Array transmit_track_get_arguments(int p_track, int p_key_idx) const;
 
 	void copy_track(int p_track, Ref<Animation> p_to_animation);
 

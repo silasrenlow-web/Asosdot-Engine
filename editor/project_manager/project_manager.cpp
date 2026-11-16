@@ -48,7 +48,6 @@
 #include "editor/gui/editor_title_bar.h"
 #include "editor/gui/editor_version_button.h"
 #include "editor/inspector/editor_inspector.h"
-#include "editor/project_manager/engine_update_label.h"
 #include "editor/project_manager/project_dialog.h"
 #include "editor/project_manager/project_list.h"
 #include "editor/project_manager/project_tag.h"
@@ -66,8 +65,10 @@
 #include "scene/gui/panel_container.h"
 #include "scene/gui/rich_text_label.h"
 #include "scene/gui/separator.h"
+#include "scene/gui/texture_rect.h"
 #include "scene/main/scene_tree.h"
 #include "scene/main/window.h"
+#include "scene/resources/style_box_flat.h"
 #include "scene/theme/theme_db.h"
 #include "servers/display/display_server.h"
 #include "servers/navigation_3d/navigation_server_3d.h"
@@ -118,9 +119,9 @@ void ProjectManager::_notification(int p_what) {
 			// TRANSLATORS: This refers to the application where users manage their Godot projects.
 			SceneTree::get_singleton()->get_root()->set_title(GODOT_VERSION_NAME + String(" - ") + TTR("Project Manager", "Application"));
 
-			const String line1 = TTR("You don't have any projects yet.");
-			const String line2 = TTR("Get started by creating a new one,\nimporting one that exists, or by downloading a project template from the Asset Store!");
-			empty_list_message->set_text(vformat("[center][b]%s[/b] %s[/center]", line1, line2));
+			const String title = TTR("Welcome to Asosdot");
+			const String line = TTR("Make a new project, or open one you already have.");
+			empty_list_message->set_text(vformat("[center][font_size=%d][b]%s[/b][/font_size]\n\n%s[/center]", int(28 * EDSCALE), title, line));
 
 			_titlebar_resized();
 		} break;
@@ -207,6 +208,34 @@ void ProjectManager::_update_size_limits() {
 	}
 }
 
+void ProjectManager::_style_accent_button(Button *p_button) {
+	const Color accent = get_theme_color("accent_color", EditorStringName(Editor));
+	const Color text = accent.get_luminance() > 0.55 ? Color(0.07, 0.08, 0.1) : Color(1, 1, 1);
+
+	struct State {
+		const char *style;
+		Color color;
+	};
+	const State states[] = {
+		{ "normal", accent },
+		{ "hover", accent.lightened(0.14) },
+		{ "pressed", accent.darkened(0.14) },
+	};
+	for (const State &state : states) {
+		Ref<StyleBoxFlat> box = get_theme_stylebox(state.style, "Button");
+		if (box.is_null()) {
+			continue;
+		}
+		box = box->duplicate();
+		box->set_bg_color(state.color);
+		box->set_border_color(state.color);
+		p_button->add_theme_style_override(state.style, box);
+	}
+	for (const char *name : { "font_color", "font_hover_color", "font_pressed_color", "font_focus_color", "icon_normal_color", "icon_hover_color", "icon_pressed_color", "icon_focus_color" }) {
+		p_button->add_theme_color_override(name, text);
+	}
+}
+
 void ProjectManager::_update_theme(bool p_skip_creation) {
 	if (!p_skip_creation) {
 		theme = EditorThemeManager::generate_theme(theme);
@@ -246,7 +275,12 @@ void ProjectManager::_update_theme(bool p_skip_creation) {
 		background_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox("Background", EditorStringName(EditorStyles)));
 		main_view_container->add_theme_style_override(SceneStringName(panel), get_theme_stylebox("panel_container", "ProjectManager"));
 
-		title_bar_logo->set_button_icon(get_editor_theme_icon("TitleBarLogo"));
+		// The mark of the engine and its name, set in the engine's own font.
+		title_bar_logo->set_button_icon(get_editor_theme_icon("Logo"));
+		title_bar_logo->add_theme_constant_override("icon_max_width", int(22 * EDSCALE));
+		title_bar_logo->add_theme_constant_override("h_separation", int(9 * EDSCALE));
+		title_bar_logo->add_theme_font_override(SceneStringName(font), get_theme_font("bold", EditorStringName(EditorFonts)));
+		title_bar_logo->add_theme_font_size_override(SceneStringName(font_size), int(get_theme_font_size("font_size", EditorStringName(Editor)) * 1.15));
 
 		_set_main_view_icon(MAIN_VIEW_PROJECTS, get_editor_theme_icon("ProjectList"));
 		_set_main_view_icon(MAIN_VIEW_ASSETLIB, get_editor_theme_icon("AssetStore"));
@@ -256,12 +290,11 @@ void ProjectManager::_update_theme(bool p_skip_creation) {
 			loading_label->add_theme_font_override(SceneStringName(font), get_theme_font("bold", EditorStringName(EditorFonts)));
 			project_list_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox("project_list", "ProjectManager"));
 
+			empty_list_mark->set_texture(get_editor_theme_icon("Logo"));
 			empty_list_create_project->set_button_icon(get_editor_theme_icon("Add"));
 			empty_list_import_project->set_button_icon(get_editor_theme_icon("Load"));
-			empty_list_open_assetlib->set_button_icon(get_editor_theme_icon("AssetStore"));
-
-			empty_list_online_warning->add_theme_font_override(SceneStringName(font), get_theme_font("italic", EditorStringName(EditorFonts)));
-			empty_list_online_warning->add_theme_color_override(SceneStringName(font_color), get_theme_color("font_placeholder_color", EditorStringName(Editor)));
+			_style_accent_button(empty_list_create_project);
+			_style_accent_button(create_btn);
 
 			// Top bar.
 			search_box->set_right_icon(get_editor_theme_icon("Search"));
@@ -280,7 +313,6 @@ void ProjectManager::_update_theme(bool p_skip_creation) {
 			erase_btn->set_button_icon(get_editor_theme_icon("Remove"));
 			erase_missing_btn->set_button_icon(get_editor_theme_icon("Clear"));
 			create_tag_btn->set_button_icon(get_editor_theme_icon("Add"));
-			donate_btn->set_button_icon(get_editor_theme_icon("Heart"));
 
 			tag_error->add_theme_color_override(SceneStringName(font_color), get_theme_color("error_color", EditorStringName(Editor)));
 			tag_edit_error->add_theme_color_override(SceneStringName(font_color), get_theme_color("error_color", EditorStringName(Editor)));
@@ -489,19 +521,10 @@ void ProjectManager::_restart_confirmed() {
 void ProjectManager::_update_list_placeholder() {
 	if (project_list->get_project_count() > 0) {
 		empty_list_placeholder->hide();
+		project_list_sidebar->show();
 		return;
 	}
-
-	empty_list_open_assetlib->set_visible(asset_library);
-
-	const int network_mode = EDITOR_GET("network/connection/network_mode");
-	if (network_mode == EditorSettings::NETWORK_OFFLINE) {
-		empty_list_open_assetlib->set_text(TTRC("Go Online and Open Asset Store"));
-		empty_list_online_warning->set_visible(true);
-	} else {
-		empty_list_open_assetlib->set_text(TTRC("Open Asset Store"));
-		empty_list_online_warning->set_visible(false);
-	}
+	project_list_sidebar->hide();
 
 	empty_list_placeholder->show();
 }
@@ -1319,10 +1342,6 @@ void ProjectManager::_titlebar_resized() {
 	}
 }
 
-void ProjectManager::_open_donate_page() {
-	OS::get_singleton()->shell_open("https://fund.godotengine.org/?ref=project_manager");
-}
-
 // Object methods.
 
 ProjectManager::ProjectManager() {
@@ -1448,6 +1467,8 @@ ProjectManager::ProjectManager() {
 
 		title_bar_logo = memnew(Button);
 		title_bar_logo->set_flat(true);
+		// The name is a mark, not a sentence, so it is not translated.
+		title_bar_logo->set_text("ASOSDOT");
 		title_bar_logo->set_tooltip_text(TTR("About Asosdot Engine"));
 		left_hbox->add_child(title_bar_logo);
 		title_bar_logo->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_show_about));
@@ -1525,35 +1546,13 @@ ProjectManager::ProjectManager() {
 		local_projects_vb->set_name("LocalProjectsTab");
 		_add_main_view(MAIN_VIEW_PROJECTS, TTRC("Projects"), Ref<Texture2D>(), local_projects_vb);
 
-		// Project list's top bar.
+		// Project list's top bar: finding a project on the left, what to do about
+		// them on the right, with the one thing most people came for stood out.
 		{
 			HBoxContainer *hb = memnew(HBoxContainer);
 			hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			hb->add_theme_constant_override("separation", int(8 * EDSCALE));
 			local_projects_vb->add_child(hb);
-
-			create_btn = memnew(Button);
-			create_btn->set_text(TTRC("Create"));
-			create_btn->set_shortcut(ED_SHORTCUT("project_manager/new_project", TTRC("New Project"), KeyModifierMask::CMD_OR_CTRL | Key::N));
-			create_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_new_project));
-			hb->add_child(create_btn);
-
-			import_btn = memnew(Button);
-			import_btn->set_text(TTRC("Import"));
-			import_btn->set_shortcut(ED_SHORTCUT("project_manager/import_project", TTRC("Import Project"), KeyModifierMask::CMD_OR_CTRL | Key::I));
-			import_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_import_project));
-			hb->add_child(import_btn);
-
-			scan_btn = memnew(Button);
-			scan_btn->set_text(TTRC("Scan"));
-			scan_btn->set_shortcut(ED_SHORTCUT("project_manager/scan_projects", TTRC("Scan Projects"), KeyModifierMask::CMD_OR_CTRL | Key::S));
-			scan_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_scan_projects));
-			hb->add_child(scan_btn);
-
-			loading_label = memnew(Label(TTRC("Loading, please wait...")));
-			loading_label->set_accessibility_live(AccessibilityServerEnums::AccessibilityLiveMode::LIVE_ASSERTIVE);
-			loading_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-			loading_label->hide();
-			hb->add_child(loading_label);
 
 			search_box = memnew(LineEdit);
 			search_box->set_placeholder(TTRC("Filter Projects"));
@@ -1564,6 +1563,12 @@ ProjectManager::ProjectManager() {
 			search_box->connect(SceneStringName(text_submitted), callable_mp(this, &ProjectManager::_on_search_term_submitted));
 			search_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 			hb->add_child(search_box);
+
+			loading_label = memnew(Label(TTRC("Loading, please wait...")));
+			loading_label->set_accessibility_live(AccessibilityServerEnums::AccessibilityLiveMode::LIVE_ASSERTIVE);
+			loading_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			loading_label->hide();
+			hb->add_child(loading_label);
 
 			sort_label = memnew(Label);
 			sort_label->set_text(TTRC("Sort:"));
@@ -1582,6 +1587,26 @@ ProjectManager::ProjectManager() {
 			filter_option->add_item(TTRC("Name"));
 			filter_option->add_item(TTRC("Path"));
 			filter_option->add_item(TTRC("Tags"));
+
+			hb->add_child(memnew(VSeparator));
+
+			import_btn = memnew(Button);
+			import_btn->set_text(TTRC("Import"));
+			import_btn->set_shortcut(ED_SHORTCUT("project_manager/import_project", TTRC("Import Project"), KeyModifierMask::CMD_OR_CTRL | Key::I));
+			import_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_import_project));
+			hb->add_child(import_btn);
+
+			scan_btn = memnew(Button);
+			scan_btn->set_text(TTRC("Scan"));
+			scan_btn->set_shortcut(ED_SHORTCUT("project_manager/scan_projects", TTRC("Scan Projects"), KeyModifierMask::CMD_OR_CTRL | Key::S));
+			scan_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_scan_projects));
+			hb->add_child(scan_btn);
+
+			create_btn = memnew(Button);
+			create_btn->set_text(TTRC("New Project"));
+			create_btn->set_shortcut(ED_SHORTCUT("project_manager/new_project", TTRC("New Project"), KeyModifierMask::CMD_OR_CTRL | Key::N));
+			create_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_new_project));
+			hb->add_child(create_btn);
 		}
 
 		// Project list and its sidebar.
@@ -1603,13 +1628,19 @@ ProjectManager::ProjectManager() {
 			project_list->connect(ProjectList::SIGNAL_PROJECT_ASK_OPEN, callable_mp(this, &ProjectManager::_open_selected_projects_check_recovery_mode));
 			project_list->connect(ProjectList::SIGNAL_MENU_OPTION_SELECTED, callable_mp(this, &ProjectManager::_project_list_menu_option));
 
-			// Empty project list placeholder.
+			// Empty project list placeholder: who this is, and the two ways to begin.
 			{
 				empty_list_placeholder = memnew(VBoxContainer);
 				empty_list_placeholder->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
-				empty_list_placeholder->add_theme_constant_override("separation", 16 * EDSCALE);
+				empty_list_placeholder->add_theme_constant_override("separation", int(18 * EDSCALE));
 				empty_list_placeholder->hide();
 				project_list_panel->add_child(empty_list_placeholder);
+
+				empty_list_mark = memnew(TextureRect);
+				empty_list_mark->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+				empty_list_mark->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+				empty_list_mark->set_custom_minimum_size(Size2(76, 76) * EDSCALE);
+				empty_list_placeholder->add_child(empty_list_mark);
 
 				empty_list_message = memnew(RichTextLabel);
 				empty_list_message->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
@@ -1617,7 +1648,6 @@ ProjectManager::ProjectManager() {
 				empty_list_message->set_fit_content(true);
 				empty_list_message->set_h_size_flags(SIZE_EXPAND_FILL);
 				empty_list_message->add_theme_style_override(CoreStringName(normal), memnew(StyleBoxEmpty));
-
 				empty_list_placeholder->add_child(empty_list_message);
 
 				FlowContainer *empty_list_actions = memnew(FlowContainer);
@@ -1625,35 +1655,18 @@ ProjectManager::ProjectManager() {
 				empty_list_placeholder->add_child(empty_list_actions);
 
 				empty_list_create_project = memnew(Button);
-				empty_list_create_project->set_text(TTRC("Create New Project"));
-				empty_list_create_project->set_theme_type_variation("PanelBackgroundButton");
+				empty_list_create_project->set_text(TTRC("New Project"));
 				empty_list_actions->add_child(empty_list_create_project);
 				empty_list_create_project->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_new_project));
 
 				empty_list_import_project = memnew(Button);
-				empty_list_import_project->set_text(TTRC("Import Existing Project"));
-				empty_list_import_project->set_theme_type_variation("PanelBackgroundButton");
+				empty_list_import_project->set_text(TTRC("Import Project"));
 				empty_list_actions->add_child(empty_list_import_project);
 				empty_list_import_project->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_import_project));
-
-				empty_list_open_assetlib = memnew(Button);
-				empty_list_open_assetlib->set_text(TTRC("Open Asset Store"));
-				empty_list_open_assetlib->set_theme_type_variation("PanelBackgroundButton");
-				empty_list_actions->add_child(empty_list_open_assetlib);
-				empty_list_open_assetlib->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_open_asset_library_confirmed));
-
-				empty_list_online_warning = memnew(Label);
-				empty_list_online_warning->set_focus_mode(FOCUS_ACCESSIBILITY);
-				empty_list_online_warning->set_horizontal_alignment(HorizontalAlignment::HORIZONTAL_ALIGNMENT_CENTER);
-				empty_list_online_warning->set_custom_minimum_size(Size2(220, 0) * EDSCALE);
-				empty_list_online_warning->set_autowrap_mode(TextServer::AUTOWRAP_WORD);
-				empty_list_online_warning->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-				empty_list_online_warning->set_text(TTRC("Note: The Asset Store requires an online connection and involves sending data over the internet."));
-				empty_list_placeholder->add_child(empty_list_online_warning);
 			}
 
 			// The side bar with the edit, run, rename, etc. buttons.
-			VBoxContainer *project_list_sidebar = memnew(VBoxContainer);
+			project_list_sidebar = memnew(VBoxContainer);
 			project_list_sidebar->set_custom_minimum_size(Size2(120, 120));
 			project_list_hbox->add_child(project_list_sidebar);
 
@@ -1726,11 +1739,6 @@ ProjectManager::ProjectManager() {
 			erase_missing_btn->set_text(TTRC("Remove Missing"));
 			erase_missing_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_erase_missing_projects));
 			sidebar_buttons_containter->add_child(erase_missing_btn);
-
-			donate_btn = memnew(Button);
-			donate_btn->set_text(TTRC("Donate"));
-			donate_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_open_donate_page));
-			project_list_sidebar->add_child(donate_btn);
 		}
 	}
 
@@ -1755,12 +1763,8 @@ ProjectManager::ProjectManager() {
 		footer_bar->add_theme_constant_override("separation", 20 * EDSCALE);
 		main_vbox->add_child(footer_bar);
 
-#ifdef ENGINE_UPDATE_CHECK_ENABLED
-		EngineUpdateLabel *update_label = memnew(EngineUpdateLabel);
-		footer_bar->add_child(update_label);
-		update_label->connect("offline_clicked", callable_mp(this, &ProjectManager::_show_quick_settings));
-#endif
-
+		// No update check here: it asks godotengine.org about Godot's releases, which
+		// are not this engine's.
 		EditorVersionButton *version_btn = memnew(EditorVersionButton(EditorVersionButton::FORMAT_WITH_BUILD));
 		// Fade the version label to be less prominent, but still readable.
 		version_btn->set_self_modulate(Color(1, 1, 1, 0.6));

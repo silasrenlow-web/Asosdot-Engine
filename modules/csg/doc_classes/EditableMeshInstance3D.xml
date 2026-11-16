@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="EditableMeshInstance3D" inherits="MeshInstance3D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		A [MeshInstance3D] whose mesh can be shaped with CSG shapes.
+	</brief_description>
+	<description>
+		An [EditableMeshInstance3D] shapes its [member source_mesh] the way CSG shapes shape each other: [CSGShape3D] nodes added as its children cut into the mesh, add to it or intersect it, depending on their [member CSGShape3D.operation], and the mesh updates as they are moved, resized or reordered in the editor. Any mesh can be edited this way, including imported models, whole level meshes and meshes baked from CSG, as long as it is made of closed parts (see [method is_source_closed]). A mesh made of several closed blocks, such as wall pieces that touch along an edge at the corners, is cut block by block, and the tiny zero-area triangles exporters use to close T-junctions are understood. Parts of the mesh that aren't closed are shown unchanged and are not cut; the configuration warning says so.
+		Unlike a CSG shape, the node stays a [MeshInstance3D]: its materials, material overrides, shadow, global illumination and visibility settings all apply, and scripts that look for a [MeshInstance3D] find it. The faces of the source mesh that no shape replaces keep the source's own normals, UVs, UV2 and vertex colors, so the mesh shades exactly as before away from the edits. Faces that a shape brings take that shape's material, or the material of the source's largest surface when the shape has none; such faces join that surface rather than adding a new one, so the node's surface material overrides keep applying to the same surfaces.
+		The edited mesh is stored in [member MeshInstance3D.mesh] and saved with the scene, so nothing is computed when the game runs unless [member update_at_runtime] is enabled. In the editor, the [b]Mesh[/b] menu of the 3D toolbar has [b]Make Editable (CSG Shapes)[/b] for a [MeshInstance3D], and [b]Apply Edits[/b] and [b]Convert to MeshInstance3D[/b] for an [EditableMeshInstance3D]. Changing the type of a [MeshInstance3D] to [EditableMeshInstance3D] also works: the mesh it had becomes the source mesh.
+		[b]Note:[/b] Blend shapes and skinning of the source mesh are not kept by the edited mesh. Faces that shapes bring have no UV2; use [b]Unwrap UV2 for Lightmap/AO[/b] after editing a mesh used with [LightmapGI].
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="apply_edits">
+			<return type="void" />
+			<description>
+				Makes the edited mesh the new [member source_mesh] and frees the CSG shapes that produced it. In the editor, use [b]Apply Edits[/b] in the [b]Mesh[/b] menu instead, which can be undone.
+			</description>
+		</method>
+		<method name="has_edits" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] if the node has at least one visible [CSGShape3D] child, that is, if the mesh shown differs from [member source_mesh].
+			</description>
+		</method>
+		<method name="is_source_closed" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]false[/code] if the last rebuild found that [member source_mesh] can't be cut because no part of it is closed: CSG needs parts that enclose a volume, without holes or loose edges. The source mesh is then shown unchanged. A flat plane, or a model with a missing face, isn't closed. If only some parts are closed, those are cut, the others are shown unchanged, and this returns [code]true[/code].
+			</description>
+		</method>
+		<method name="rebuild">
+			<return type="void" />
+			<description>
+				Recomputes the edited mesh from [member source_mesh] and the CSG shapes at once. The editor does this by itself whenever a shape or the source changes; at runtime it happens only when [member update_at_runtime] is enabled, or when this method is called.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="source_mesh" type="Mesh" setter="set_source_mesh" getter="get_source_mesh">
+			The mesh being edited. [member MeshInstance3D.mesh] holds the result, which is the source mesh itself as long as there are no CSG shape children.
+		</member>
+		<member name="update_at_runtime" type="bool" setter="set_update_at_runtime" getter="is_updating_at_runtime" default="false">
+			If [code]true[/code], the mesh is recomputed while the game runs whenever a CSG shape child moves, changes or is added or removed, e.g. to cut a hole in a wall during gameplay. Each update costs as much as a CSG update. If [code]false[/code], the mesh saved with the scene is used as it is.
+		</member>
+	</members>
+</class>

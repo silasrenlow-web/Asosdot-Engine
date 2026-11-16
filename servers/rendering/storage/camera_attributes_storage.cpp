@@ -209,6 +209,25 @@ float RendererCameraAttributes::camera_attributes_get_auto_exposure_scale(RID p_
 	return cam_attributes->auto_exposure_scale;
 }
 
+void RendererCameraAttributes::camera_attributes_set_auto_exposure_eye(RID p_camera_attributes, float p_dark_speed, float p_center_weight) {
+	CameraAttributes *cam_attributes = camera_attributes_owner.get_or_null(p_camera_attributes);
+	ERR_FAIL_NULL(cam_attributes);
+	cam_attributes->auto_exposure_dark_speed = MAX(p_dark_speed, 0.0f);
+	cam_attributes->auto_exposure_center_weight = MAX(p_center_weight, 0.0f);
+}
+
+float RendererCameraAttributes::camera_attributes_get_auto_exposure_dark_speed(RID p_camera_attributes) {
+	CameraAttributes *cam_attributes = camera_attributes_owner.get_or_null(p_camera_attributes);
+	ERR_FAIL_NULL_V(cam_attributes, 1.0);
+	return cam_attributes->auto_exposure_dark_speed;
+}
+
+float RendererCameraAttributes::camera_attributes_get_auto_exposure_center_weight(RID p_camera_attributes) {
+	CameraAttributes *cam_attributes = camera_attributes_owner.get_or_null(p_camera_attributes);
+	ERR_FAIL_NULL_V(cam_attributes, 0.0);
+	return cam_attributes->auto_exposure_center_weight;
+}
+
 uint64_t RendererCameraAttributes::camera_attributes_get_auto_exposure_version(RID p_camera_attributes) {
 	CameraAttributes *cam_attributes = camera_attributes_owner.get_or_null(p_camera_attributes);
 	ERR_FAIL_NULL_V(cam_attributes, 0);

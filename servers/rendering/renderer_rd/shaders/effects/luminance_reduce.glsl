@@ -5,6 +5,7 @@
 #VERSION_DEFINES
 
 #define BLOCK_SIZE 8
+#define CENTER_WEIGHT_RADIUS 0.3 // Matches Luminance::CENTER_WEIGHT_RADIUS.
 
 layout(local_size_x = BLOCK_SIZE, local_size_y = BLOCK_SIZE, local_size_z = 1) in;
 
@@ -33,7 +34,9 @@ layout(push_constant, std430) uniform Params {
 	float max_luminance;
 	float min_luminance;
 	float exposure_adjust;
-	float pad[3];
+	float dark_speed;
+	float center_weight;
+	float center_norm;
 }
 params;
 
@@ -44,7 +47,11 @@ void main() {
 	if (any(lessThan(pos, params.source_size))) {
 #ifdef READ_TEXTURE
 		vec3 v = texelFetch(source_texture, pos, 0).rgb;
-		tmp_data[t] = max(v.r, max(v.g, v.b));
+		float value = max(v.r, max(v.g, v.b));
+		// Weight the middle of the screen more; the weights average to 1.
+		vec2 offset = (vec2(pos) + 0.5) / vec2(params.source_size) - 0.5;
+		float falloff = exp(-dot(offset, offset) / (CENTER_WEIGHT_RADIUS * CENTER_WEIGHT_RADIUS));
+		tmp_data[t] = value * (1.0 + params.center_weight * falloff) * params.center_norm;
 #else
 		tmp_data[t] = imageLoad(source_luminance, pos).r;
 #endif
@@ -75,7 +82,9 @@ void main() {
 		pos /= ivec2(BLOCK_SIZE);
 #ifdef WRITE_LUMINANCE
 		float prev_lum = texelFetch(prev_luminance, ivec2(0, 0), 0).r; //1 pixel previous exposure
-		avg = clamp(prev_lum + (avg - prev_lum) * params.exposure_adjust, params.min_luminance, params.max_luminance);
+		// The eye gets used to the dark more slowly than to the light.
+		float adjust = params.exposure_adjust * (avg < prev_lum ? params.dark_speed : 1.0);
+		avg = clamp(prev_lum + (avg - prev_lum) * min(adjust, 1.0), params.min_luminance, params.max_luminance);
 #endif
 		imageStore(dest_luminance, pos, vec4(avg));
 	}

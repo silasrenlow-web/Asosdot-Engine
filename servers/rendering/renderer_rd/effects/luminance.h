@@ -55,7 +55,9 @@ private:
 		float max_luminance;
 		float min_luminance;
 		float exposure_adjust;
-		float pad[3];
+		float dark_speed;
+		float center_weight;
+		float center_norm;
 	};
 
 	struct LuminanceReduce {
@@ -77,6 +79,9 @@ private:
 		float exposure_adjust;
 		float min_luminance;
 		float max_luminance;
+		float dark_speed;
+		float center_weight;
+		float center_norm;
 		uint32_t pad1;
 	};
 
@@ -85,6 +90,12 @@ private:
 		RID shader_version;
 		PipelineCacheRD pipelines[LUMINANCE_REDUCE_FRAGMENT_MAX];
 	} luminance_reduce_raster;
+
+	// Asosdot: how the middle of the screen is weighted in the exposure measurement. A pixel at
+	// distance r from the center counts (1 + weight * exp(-r^2 / radius^2)) / (1 + weight * mean),
+	// so the weights average to 1 over the screen and the measurement stays an average.
+	static constexpr float CENTER_WEIGHT_RADIUS = 0.3f;
+	static float get_center_weight_norm(float p_center_weight);
 
 public:
 	class LuminanceBuffers : public RenderBufferCustomDataRD {
@@ -105,7 +116,7 @@ public:
 
 	Ref<LuminanceBuffers> get_luminance_buffers(Ref<RenderSceneBuffersRD> p_render_buffers);
 	RID get_current_luminance_buffer(Ref<RenderSceneBuffersRD> p_render_buffers);
-	void luminance_reduction(RID p_source_texture, const Size2i p_source_size, Ref<LuminanceBuffers> p_luminance_buffers, float p_min_luminance, float p_max_luminance, float p_adjust, bool p_set = false);
+	void luminance_reduction(RID p_source_texture, const Size2i p_source_size, Ref<LuminanceBuffers> p_luminance_buffers, float p_min_luminance, float p_max_luminance, float p_adjust, bool p_set = false, float p_dark_speed = 1.0, float p_center_weight = 0.0);
 
 	Luminance(bool p_prefer_raster_effects);
 	~Luminance();

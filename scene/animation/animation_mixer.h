@@ -32,10 +32,10 @@
 
 #include "core/templates/a_hash_map.h"
 #include "scene/animation/tween.h"
+#include "scene/audio/audio_stream_scrub.h"
 #include "scene/main/node.h"
 #include "scene/resources/animation.h"
 #include "scene/resources/animation_library.h"
-#include "scene/audio/audio_stream_scrub.h"
 #include "scene/resources/audio_stream_polyphonic.h"
 
 class AnimatedValuesBackup;
@@ -270,6 +270,11 @@ protected:
 		}
 	};
 
+	// Asosdot: a Transmit track's cache; it only marks the track as playable.
+	struct TrackCacheTransmit : public TrackCache {
+		TrackCacheTransmit() { type = Animation::TYPE_TRANSMIT; }
+	};
+
 	struct TrackCacheMethod : public TrackCache {
 		TrackCacheMethod() { type = Animation::TYPE_METHOD; }
 	};
@@ -411,6 +416,7 @@ protected:
 	void _blend_apply();
 	virtual void _blend_post_process();
 	void _call_object(ObjectID p_object_id, const StringName &p_method, const Vector<Variant> &p_params, bool p_deferred);
+	void _transmit(const Variant &p_channel, const Array &p_arguments, bool p_deferred);
 
 	/* ---- Capture feature ---- */
 	struct CaptureCache {

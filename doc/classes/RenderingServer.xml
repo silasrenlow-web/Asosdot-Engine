@@ -63,6 +63,15 @@
 				Sets the parameters to use with the auto-exposure effect. These parameters take on the same meaning as their counterparts in [CameraAttributes] and [CameraAttributesPractical].
 			</description>
 		</method>
+		<method name="camera_attributes_set_auto_exposure_eye">
+			<return type="void" />
+			<param index="0" name="camera_attributes" type="RID" />
+			<param index="1" name="dark_speed" type="float" />
+			<param index="2" name="center_weight" type="float" />
+			<description>
+				Sets the eye-like parts of the auto-exposure effect. These parameters take on the same meaning as [member CameraAttributes.auto_exposure_dark_speed] and [member CameraAttributes.auto_exposure_center_weight]. Has no effect unless auto-exposure is enabled with [method camera_attributes_set_auto_exposure].
+			</description>
+		</method>
 		<method name="camera_attributes_set_dof_blur">
 			<return type="void" />
 			<param index="0" name="camera_attributes" type="RID" />
@@ -2721,6 +2730,20 @@
 			<param index="1" name="surface" type="int" />
 			<description>
 				Returns a mesh's surface's buffer arrays.
+			</description>
+		</method>
+		<method name="mesh_surface_get_blas">
+			<return type="RID" />
+			<param index="0" name="mesh" type="RID" />
+			<param index="1" name="surface" type="int" />
+			<description>
+			</description>
+		</method>
+		<method name="mesh_surface_get_blas_transform">
+			<return type="Transform3D" />
+			<param index="0" name="mesh" type="RID" />
+			<param index="1" name="surface" type="int" />
+			<description>
 			</description>
 		</method>
 		<method name="mesh_surface_get_blend_shape_arrays" qualifiers="const">

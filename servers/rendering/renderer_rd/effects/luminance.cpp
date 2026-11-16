@@ -30,6 +30,7 @@
 
 #include "luminance.h"
 
+#include "core/math/math_funcs.h"
 #include "servers/rendering/renderer_rd/framebuffer_cache_rd.h"
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
 #include "servers/rendering/renderer_rd/uniform_set_cache_rd.h"
@@ -156,7 +157,24 @@ RID Luminance::get_current_luminance_buffer(Ref<RenderSceneBuffersRD> p_render_b
 	return RID();
 }
 
-void Luminance::luminance_reduction(RID p_source_texture, const Size2i p_source_size, Ref<LuminanceBuffers> p_luminance_buffers, float p_min_luminance, float p_max_luminance, float p_adjust, bool p_set) {
+float Luminance::get_center_weight_norm(float p_center_weight) {
+	// Mean of exp(-r^2 / radius^2) over the screen, found once on a grid.
+	static const float mean_falloff = []() {
+		const int steps = 64;
+		double sum = 0.0;
+		for (int y = 0; y < steps; y++) {
+			for (int x = 0; x < steps; x++) {
+				const double dx = (x + 0.5) / steps - 0.5;
+				const double dy = (y + 0.5) / steps - 0.5;
+				sum += Math::exp(-(dx * dx + dy * dy) / (double(CENTER_WEIGHT_RADIUS) * CENTER_WEIGHT_RADIUS));
+			}
+		}
+		return float(sum / (steps * steps));
+	}();
+	return 1.0f / (1.0f + p_center_weight * mean_falloff);
+}
+
+void Luminance::luminance_reduction(RID p_source_texture, const Size2i p_source_size, Ref<LuminanceBuffers> p_luminance_buffers, float p_min_luminance, float p_max_luminance, float p_adjust, bool p_set, float p_dark_speed, float p_center_weight) {
 	UniformSetCacheRD *uniform_set_cache = UniformSetCacheRD::get_singleton();
 	ERR_FAIL_NULL(uniform_set_cache);
 	MaterialStorage *material_storage = MaterialStorage::get_singleton();
@@ -172,6 +190,9 @@ void Luminance::luminance_reduction(RID p_source_texture, const Size2i p_source_
 		push_constant.max_luminance = p_max_luminance;
 		push_constant.min_luminance = p_min_luminance;
 		push_constant.exposure_adjust = p_adjust;
+		push_constant.dark_speed = p_dark_speed;
+		push_constant.center_weight = p_center_weight;
+		push_constant.center_norm = get_center_weight_norm(p_center_weight);
 
 		for (int i = 0; i < p_luminance_buffers->reduce.size(); i++) {
 			push_constant.source_size[0] = i == 0 ? p_source_size.x : push_constant.dest_size[0];
@@ -209,6 +230,9 @@ void Luminance::luminance_reduction(RID p_source_texture, const Size2i p_source_
 		push_constant.max_luminance = p_max_luminance;
 		push_constant.min_luminance = p_min_luminance;
 		push_constant.exposure_adjust = p_adjust;
+		push_constant.dark_speed = p_dark_speed;
+		push_constant.center_weight = p_center_weight;
+		push_constant.center_norm = get_center_weight_norm(p_center_weight);
 
 		RD::ComputeListID compute_list = RD::get_singleton()->compute_list_begin();
 

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="SaveState" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+<class name="SaveState" inherits="Node" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
 		Marks a node as part of the saved game.
 	</brief_description>
@@ -60,7 +60,7 @@
 			<description>
 				Emitted when the node is about to be saved. Anything put into [param extra] is saved with it and handed back in [signal loaded].
 				[codeblock]
-				func _on_save_state_saving(extra: Dictionary) -> void:
+				func _on_save_state_saving(extra: Dictionary) -&gt; void:
 				    extra["door_log"] = door_log
 				[/codeblock]
 			</description>

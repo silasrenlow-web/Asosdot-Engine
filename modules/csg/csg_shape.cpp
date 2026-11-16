@@ -30,6 +30,8 @@
 
 #include "csg_shape.h"
 
+#include "editable_mesh_instance_3d.h"
+
 #include "core/config/engine.h"
 #include "core/math/geometry_2d.h"
 #include "core/object/callable_mp.h"
@@ -206,6 +208,14 @@ real_t CSGShape3D::get_collision_priority() const {
 	return collision_priority;
 }
 
+void CSGShape3D::set_acoustic_material(const Ref<AcousticMaterial> &p_material) {
+	acoustic_material = p_material;
+}
+
+Ref<AcousticMaterial> CSGShape3D::get_acoustic_material() const {
+	return acoustic_material;
+}
+
 void CSGShape3D::set_autosmooth(bool p_smooth) {
 	autosmooth = p_smooth;
 	_make_dirty();
@@ -228,7 +238,15 @@ float CSGShape3D::get_smoothing_angle() const {
 #endif // PHYSICS_3D_DISABLED
 
 bool CSGShape3D::is_root_shape() const {
-	return !parent_shape;
+	return !parent_shape && !parent_editable;
+}
+
+void CSGShape3D::_notify_parent_dirty() {
+	if (parent_shape) {
+		parent_shape->_make_dirty();
+	} else if (parent_editable) {
+		parent_editable->_operand_changed();
+	}
 }
 
 #ifndef DISABLE_DEPRECATED
@@ -254,7 +272,7 @@ void CSGShape3D::_make_dirty(bool p_parent_removing) {
 #endif // PHYSICS_3D_DISABLED
 
 	if (!is_root_shape()) {
-		parent_shape->_make_dirty();
+		_notify_parent_dirty();
 	}
 #ifndef PHYSICS_3D_DISABLED
 	else if (!dirty) {
@@ -1016,12 +1034,13 @@ void CSGShape3D::_notification(int p_what) {
 			Node *parentn = get_parent();
 			if (parentn) {
 				parent_shape = Object::cast_to<CSGShape3D>(parentn);
-				if (parent_shape) {
+				parent_editable = Object::cast_to<EditableMeshInstance3D>(parentn);
+				if (parent_shape || parent_editable) {
 					set_base(RID());
 					root_mesh.unref();
 				}
 			}
-			if (!brush || parent_shape) {
+			if (!brush || parent_shape || parent_editable) {
 				// Update this node if uninitialized, or both this node and its new parent if it gets added to another CSG shape
 				_make_dirty();
 			}
@@ -1034,6 +1053,7 @@ void CSGShape3D::_notification(int p_what) {
 				_make_dirty(true); // Must be forced since is_root_shape() uses the previous parent
 			}
 			parent_shape = nullptr;
+			parent_editable = nullptr;
 		} break;
 
 		case NOTIFICATION_CHILD_ORDER_CHANGED: {
@@ -1043,7 +1063,7 @@ void CSGShape3D::_notification(int p_what) {
 		case NOTIFICATION_VISIBILITY_CHANGED: {
 			if (!is_root_shape() && last_visible != is_visible()) {
 				// Update this node's parent only if its own visibility has changed, not the visibility of parent nodes
-				parent_shape->_make_dirty();
+				_notify_parent_dirty();
 			}
 			last_visible = is_visible();
 		} break;
@@ -1051,7 +1071,7 @@ void CSGShape3D::_notification(int p_what) {
 		case NOTIFICATION_LOCAL_TRANSFORM_CHANGED: {
 			if (!is_root_shape()) {
 				// Update this node's parent only if its own transformation has changed, not the transformation of parent nodes
-				parent_shape->_make_dirty();
+				_notify_parent_dirty();
 			}
 		} break;
 
@@ -1202,6 +1222,9 @@ void CSGShape3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_collision_priority", "priority"), &CSGShape3D::set_collision_priority);
 	ClassDB::bind_method(D_METHOD("get_collision_priority"), &CSGShape3D::get_collision_priority);
 
+	ClassDB::bind_method(D_METHOD("set_acoustic_material", "material"), &CSGShape3D::set_acoustic_material);
+	ClassDB::bind_method(D_METHOD("get_acoustic_material"), &CSGShape3D::get_acoustic_material);
+
 	ClassDB::bind_method(D_METHOD("bake_collision_shape"), &CSGShape3D::bake_collision_shape);
 #endif // PHYSICS_3D_DISABLED
 
@@ -1233,6 +1256,8 @@ void CSGShape3D::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "collision_layer", PROPERTY_HINT_LAYERS_3D_PHYSICS), "set_collision_layer", "get_collision_layer");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "collision_mask", PROPERTY_HINT_LAYERS_3D_PHYSICS), "set_collision_mask", "get_collision_mask");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "collision_priority"), "set_collision_priority", "get_collision_priority");
+	ADD_GROUP("Acoustics", "acoustic_");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "acoustic_material", PROPERTY_HINT_RESOURCE_TYPE, "AcousticMaterial"), "set_acoustic_material", "get_acoustic_material");
 #endif // PHYSICS_3D_DISABLED
 
 	BIND_ENUM_CONSTANT(OPERATION_UNION);

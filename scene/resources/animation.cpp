@@ -104,6 +104,8 @@ bool Animation::_set(const StringName &p_name, const Variant &p_value) {
 				add_track(TYPE_VALUE);
 			} else if (type == "method") {
 				add_track(TYPE_METHOD);
+			} else if (type == "transmit") {
+				add_track(TYPE_TRANSMIT);
 			} else if (type == "bezier") {
 				add_track(TYPE_BEZIER);
 			} else if (type == "audio") {
@@ -301,7 +303,7 @@ bool Animation::_set(const StringName &p_name, const Variant &p_value) {
 
 				return true;
 
-			} else if (track_get_type(track) == TYPE_METHOD) {
+			} else if (track_get_type(track) == TYPE_METHOD || track_get_type(track) == TYPE_TRANSMIT) {
 				while (track_get_key_count(track)) {
 					track_remove_key(track, 0); //well shouldn't be set anyway
 				}
@@ -546,6 +548,9 @@ bool Animation::_get(const StringName &p_name, Variant &r_ret) const {
 				case TYPE_ANIMATION:
 					r_ret = "animation";
 					break;
+				case TYPE_TRANSMIT:
+					r_ret = "transmit";
+					break;
 			}
 
 			return true;
@@ -716,7 +721,7 @@ bool Animation::_get(const StringName &p_name, Variant &r_ret) const {
 
 				return true;
 
-			} else if (track_get_type(track) == TYPE_METHOD) {
+			} else if (track_get_type(track) == TYPE_METHOD || track_get_type(track) == TYPE_TRANSMIT) {
 				Dictionary d;
 
 				Vector<real_t> key_times;
@@ -936,6 +941,10 @@ int Animation::add_track(TrackType p_type, int p_at_pos) {
 			tracks.insert(p_at_pos, memnew(MethodTrack));
 
 		} break;
+		case TYPE_TRANSMIT: {
+			tracks.insert(p_at_pos, memnew(TransmitTrack));
+
+		} break;
 		case TYPE_BEZIER: {
 			tracks.insert(p_at_pos, memnew(BezierTrack));
 
@@ -993,6 +1002,11 @@ void Animation::remove_track(int p_track) {
 		case TYPE_METHOD: {
 			MethodTrack *mt = static_cast<MethodTrack *>(t);
 			mt->methods.clear();
+
+		} break;
+		case TYPE_TRANSMIT: {
+			TransmitTrack *tt = static_cast<TransmitTrack *>(t);
+			tt->transmissions.clear();
 
 		} break;
 		case TYPE_BEZIER: {
@@ -1528,6 +1542,12 @@ void Animation::track_remove_key(int p_track, int p_idx) {
 			mt->methods.remove_at(p_idx);
 
 		} break;
+		case TYPE_TRANSMIT: {
+			TransmitTrack *tt = static_cast<TransmitTrack *>(t);
+			ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_idx, tt->transmissions.size());
+			tt->transmissions.remove_at(p_idx);
+
+		} break;
 		case TYPE_BEZIER: {
 			BezierTrack *bz = static_cast<BezierTrack *>(t);
 			ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_idx, bz->values.size());
@@ -1688,6 +1708,18 @@ int Animation::track_find_key(int p_track, double p_time, FindMode p_find_mode, 
 			return k;
 
 		} break;
+		case TYPE_TRANSMIT: {
+			TransmitTrack *tt = static_cast<TransmitTrack *>(t);
+			int k = _find(tt->transmissions, p_time, p_backward, p_limit);
+			if ((uint32_t)k >= tt->transmissions.size()) {
+				return -1;
+			}
+			if ((p_find_mode == FIND_MODE_APPROX && !Math::is_equal_approx(tt->transmissions[k].time, p_time)) || (p_find_mode == FIND_MODE_EXACT && tt->transmissions[k].time != p_time)) {
+				return -1;
+			}
+			return k;
+
+		} break;
 		case TYPE_BEZIER: {
 			BezierTrack *bt = static_cast<BezierTrack *>(t);
 			int k = _find(bt->values, p_time, p_backward, p_limit);
@@ -1787,6 +1819,28 @@ int Animation::track_insert_key(int p_track, double p_time, const Variant &p_key
 			k.params = d["args"];
 
 			ret = _insert(p_time, mt->methods, k);
+
+		} break;
+		case TYPE_TRANSMIT: {
+			TransmitTrack *tt = static_cast<TransmitTrack *>(t);
+
+			ERR_FAIL_COND_V(p_key.get_type() != Variant::DICTIONARY, -1);
+
+			Dictionary d = p_key;
+			ERR_FAIL_COND_V(!d.has("channel"), -1);
+			const Variant channel = d["channel"];
+			ERR_FAIL_COND_V_MSG(!channel.is_string() && channel.get_type() != Variant::INT, -1, "A transmission's channel must be a name or a number.");
+
+			TransmitKey k;
+			k.time = p_time;
+			k.transition = p_transition;
+			k.channel = channel.is_string() ? Variant(StringName(channel)) : channel;
+			if (d.has("arguments")) {
+				ERR_FAIL_COND_V(!d["arguments"].is_array(), -1);
+				k.arguments = Array(d["arguments"]).duplicate();
+			}
+
+			ret = _insert(p_time, tt->transmissions, k);
 
 		} break;
 		case TYPE_BEZIER: {
@@ -1889,6 +1943,10 @@ int Animation::track_get_key_count(int p_track) const {
 			MethodTrack *mt = static_cast<MethodTrack *>(t);
 			return mt->methods.size();
 		} break;
+		case TYPE_TRANSMIT: {
+			TransmitTrack *tt = static_cast<TransmitTrack *>(t);
+			return tt->transmissions.size();
+		} break;
 		case TYPE_BEZIER: {
 			BezierTrack *bt = static_cast<BezierTrack *>(t);
 			return bt->values.size();
@@ -1943,6 +2001,15 @@ Variant Animation::track_get_key_value(int p_track, int p_key_idx) const {
 			Dictionary d;
 			d["method"] = mt->methods[p_key_idx].method;
 			d["args"] = mt->methods[p_key_idx].params;
+			return d;
+
+		} break;
+		case TYPE_TRANSMIT: {
+			TransmitTrack *tt = static_cast<TransmitTrack *>(t);
+			ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_key_idx, tt->transmissions.size(), Variant());
+			Dictionary d;
+			d["channel"] = tt->transmissions[p_key_idx].channel;
+			d["arguments"] = tt->transmissions[p_key_idx].arguments.duplicate();
 			return d;
 
 		} break;
@@ -2050,6 +2117,12 @@ double Animation::track_get_key_time(int p_track, int p_key_idx) const {
 			return mt->methods[p_key_idx].time;
 
 		} break;
+		case TYPE_TRANSMIT: {
+			TransmitTrack *tt = static_cast<TransmitTrack *>(t);
+			ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_key_idx, tt->transmissions.size(), -1);
+			return tt->transmissions[p_key_idx].time;
+
+		} break;
 		case TYPE_BEZIER: {
 			BezierTrack *bt = static_cast<BezierTrack *>(t);
 			ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_key_idx, bt->values.size(), -1);
@@ -2136,6 +2209,15 @@ void Animation::track_set_key_time(int p_track, int p_key_idx, double p_time) {
 			_insert(p_time, mt->methods, key);
 			return;
 		}
+		case TYPE_TRANSMIT: {
+			TransmitTrack *tt = static_cast<TransmitTrack *>(t);
+			ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_key_idx, tt->transmissions.size());
+			TransmitKey key = tt->transmissions[p_key_idx];
+			key.time = p_time;
+			tt->transmissions.remove_at(p_key_idx);
+			_insert(p_time, tt->transmissions, key);
+			return;
+		}
 		case TYPE_BEZIER: {
 			BezierTrack *bt = static_cast<BezierTrack *>(t);
 			ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_key_idx, bt->values.size());
@@ -2215,6 +2297,12 @@ real_t Animation::track_get_key_transition(int p_track, int p_key_idx) const {
 			MethodTrack *mt = static_cast<MethodTrack *>(t);
 			ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_key_idx, mt->methods.size(), -1);
 			return mt->methods[p_key_idx].transition;
+
+		} break;
+		case TYPE_TRANSMIT: {
+			TransmitTrack *tt = static_cast<TransmitTrack *>(t);
+			ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_key_idx, tt->transmissions.size(), -1);
+			return tt->transmissions[p_key_idx].transition;
 
 		} break;
 		case TYPE_BEZIER: {
@@ -2320,6 +2408,22 @@ void Animation::track_set_key_value(int p_track, int p_key_idx, const Variant &p
 			}
 
 		} break;
+		case TYPE_TRANSMIT: {
+			TransmitTrack *tt = static_cast<TransmitTrack *>(t);
+			ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_key_idx, tt->transmissions.size());
+
+			Dictionary d = p_value;
+
+			if (d.has("channel")) {
+				const Variant channel = d["channel"];
+				ERR_FAIL_COND_MSG(!channel.is_string() && channel.get_type() != Variant::INT, "A transmission's channel must be a name or a number.");
+				tt->transmissions[p_key_idx].channel = channel.is_string() ? Variant(StringName(channel)) : channel;
+			}
+			if (d.has("arguments")) {
+				tt->transmissions[p_key_idx].arguments = Array(d["arguments"]).duplicate();
+			}
+
+		} break;
 		case TYPE_BEZIER: {
 			BezierTrack *bt = static_cast<BezierTrack *>(t);
 			ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_key_idx, bt->values.size());
@@ -2400,6 +2504,12 @@ void Animation::track_set_key_transition(int p_track, int p_key_idx, real_t p_tr
 			MethodTrack *mt = static_cast<MethodTrack *>(t);
 			ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_key_idx, mt->methods.size());
 			mt->methods[p_key_idx].transition = p_transition;
+
+		} break;
+		case TYPE_TRANSMIT: {
+			TransmitTrack *tt = static_cast<TransmitTrack *>(t);
+			ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_key_idx, tt->transmissions.size());
+			tt->transmissions[p_key_idx].transition = p_transition;
 
 		} break;
 		case TYPE_BEZIER:
@@ -2966,6 +3076,16 @@ void Animation::track_get_key_indices_in_range(int p_track, double p_time, doubl
 							_track_get_key_indices_in_range(mt->methods, from_time, anim_end, r_indices, is_backward);
 						}
 					} break;
+					case TYPE_TRANSMIT: {
+						const TransmitTrack *tt = static_cast<const TransmitTrack *>(t);
+						if (!is_backward) {
+							_track_get_key_indices_in_range(tt->transmissions, from_time, anim_end, r_indices, is_backward);
+							_track_get_key_indices_in_range(tt->transmissions, anim_start, to_time, r_indices, is_backward);
+						} else {
+							_track_get_key_indices_in_range(tt->transmissions, anim_start, to_time, r_indices, is_backward);
+							_track_get_key_indices_in_range(tt->transmissions, from_time, anim_end, r_indices, is_backward);
+						}
+					} break;
 					case TYPE_BEZIER: {
 						const BezierTrack *bz = static_cast<const BezierTrack *>(t);
 						if (!is_backward) {
@@ -3076,6 +3196,11 @@ void Animation::track_get_key_indices_in_range(int p_track, double p_time, doubl
 						_track_get_key_indices_in_range(mt->methods, start, from_time, r_indices, true);
 						_track_get_key_indices_in_range(mt->methods, start, to_time, r_indices, false);
 					} break;
+					case TYPE_TRANSMIT: {
+						const TransmitTrack *tt = static_cast<const TransmitTrack *>(t);
+						_track_get_key_indices_in_range(tt->transmissions, start, from_time, r_indices, true);
+						_track_get_key_indices_in_range(tt->transmissions, start, to_time, r_indices, false);
+					} break;
 					case TYPE_BEZIER: {
 						const BezierTrack *bz = static_cast<const BezierTrack *>(t);
 						_track_get_key_indices_in_range(bz->values, start, from_time, r_indices, true);
@@ -3147,6 +3272,11 @@ void Animation::track_get_key_indices_in_range(int p_track, double p_time, doubl
 						_track_get_key_indices_in_range(mt->methods, from_time, end, r_indices, false);
 						_track_get_key_indices_in_range(mt->methods, to_time, end, r_indices, true);
 					} break;
+					case TYPE_TRANSMIT: {
+						const TransmitTrack *tt = static_cast<const TransmitTrack *>(t);
+						_track_get_key_indices_in_range(tt->transmissions, from_time, end, r_indices, false);
+						_track_get_key_indices_in_range(tt->transmissions, to_time, end, r_indices, true);
+					} break;
 					case TYPE_BEZIER: {
 						const BezierTrack *bz = static_cast<const BezierTrack *>(t);
 						_track_get_key_indices_in_range(bz->values, from_time, end, r_indices, false);
@@ -3214,6 +3344,10 @@ void Animation::track_get_key_indices_in_range(int p_track, double p_time, doubl
 		case TYPE_METHOD: {
 			const MethodTrack *mt = static_cast<const MethodTrack *>(t);
 			_track_get_key_indices_in_range(mt->methods, from_time, to_time, r_indices, is_backward);
+		} break;
+		case TYPE_TRANSMIT: {
+			const TransmitTrack *tt = static_cast<const TransmitTrack *>(t);
+			_track_get_key_indices_in_range(tt->transmissions, from_time, to_time, r_indices, is_backward);
 		} break;
 		case TYPE_BEZIER: {
 			const BezierTrack *bz = static_cast<const BezierTrack *>(t);
@@ -3327,6 +3461,33 @@ Vector<Variant> Animation::method_track_get_params(int p_track, int p_key_idx) c
 	const MethodKey &mk = pm->methods[p_key_idx];
 
 	return mk.params;
+}
+
+int Animation::transmit_track_insert_key(int p_track, double p_time, const Variant &p_channel, const Array &p_arguments) {
+	ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_track, tracks.size(), -1);
+	ERR_FAIL_COND_V(tracks[p_track]->type != TYPE_TRANSMIT, -1);
+	Dictionary key;
+	key["channel"] = p_channel;
+	key["arguments"] = p_arguments;
+	return track_insert_key(p_track, p_time, key);
+}
+
+Variant Animation::transmit_track_get_channel(int p_track, int p_key_idx) const {
+	ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_track, tracks.size(), Variant());
+	const Track *t = tracks[p_track];
+	ERR_FAIL_COND_V(t->type != TYPE_TRANSMIT, Variant());
+	const TransmitTrack *tt = static_cast<const TransmitTrack *>(t);
+	ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_key_idx, tt->transmissions.size(), Variant());
+	return tt->transmissions[p_key_idx].channel;
+}
+
+Array Animation::transmit_track_get_arguments(int p_track, int p_key_idx) const {
+	ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_track, tracks.size(), Array());
+	const Track *t = tracks[p_track];
+	ERR_FAIL_COND_V(t->type != TYPE_TRANSMIT, Array());
+	const TransmitTrack *tt = static_cast<const TransmitTrack *>(t);
+	ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_key_idx, tt->transmissions.size(), Array());
+	return tt->transmissions[p_key_idx].arguments.duplicate();
 }
 
 StringName Animation::method_track_get_name(int p_track, int p_key_idx) const {
@@ -4086,6 +4247,10 @@ void Animation::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("method_track_get_name", "track_idx", "key_idx"), &Animation::method_track_get_name);
 	ClassDB::bind_method(D_METHOD("method_track_get_params", "track_idx", "key_idx"), &Animation::method_track_get_params);
 
+	ClassDB::bind_method(D_METHOD("transmit_track_insert_key", "track_idx", "time", "channel", "arguments"), &Animation::transmit_track_insert_key, DEFVAL(Array()));
+	ClassDB::bind_method(D_METHOD("transmit_track_get_channel", "track_idx", "key_idx"), &Animation::transmit_track_get_channel);
+	ClassDB::bind_method(D_METHOD("transmit_track_get_arguments", "track_idx", "key_idx"), &Animation::transmit_track_get_arguments);
+
 	ClassDB::bind_method(D_METHOD("bezier_track_insert_key", "track_idx", "time", "value", "in_handle", "out_handle"), &Animation::bezier_track_insert_key, DEFVAL(Vector2()), DEFVAL(Vector2()));
 
 	ClassDB::bind_method(D_METHOD("bezier_track_set_key_value", "track_idx", "key_idx", "value"), &Animation::bezier_track_set_key_value);
@@ -4158,6 +4323,7 @@ void Animation::_bind_methods() {
 	BIND_ENUM_CONSTANT(TYPE_BEZIER);
 	BIND_ENUM_CONSTANT(TYPE_AUDIO);
 	BIND_ENUM_CONSTANT(TYPE_ANIMATION);
+	BIND_ENUM_CONSTANT(TYPE_TRANSMIT);
 
 	BIND_ENUM_CONSTANT(INTERPOLATION_NEAREST);
 	BIND_ENUM_CONSTANT(INTERPOLATION_LINEAR);

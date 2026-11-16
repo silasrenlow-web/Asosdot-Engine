@@ -10,10 +10,10 @@
 #include "animation_workspace.h"
 
 #include "core/io/resource_loader.h"
-#include "editor/animation/animation_camera_monitor.h"
 #include "core/io/resource_saver.h"
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
+#include "editor/animation/animation_camera_monitor.h"
 #include "editor/animation/animation_player_editor_plugin.h"
 #include "editor/animation/animation_track_editor.h"
 #include "editor/animation/animation_track_editor_plugins.h"
@@ -27,9 +27,11 @@
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/file_system/editor_file_system.h"
 #include "editor/gui/editor_file_dialog.h"
+#include "editor/gui/window_wrapper.h"
 #include "editor/inspector/editor_inspector.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
 #include "editor/scene/3d/skeleton_3d_editor_plugin.h"
+#include "editor/scene/scene_tree_editor.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/3d/camera_3d.h"
@@ -40,17 +42,23 @@
 #include "scene/gui/item_list.h"
 #include "scene/gui/label.h"
 #include "scene/gui/line_edit.h"
+#include "scene/gui/menu_button.h"
+#include "scene/gui/popup_menu.h"
+#include "scene/gui/scroll_container.h"
 #include "scene/gui/separator.h"
 #include "scene/gui/slider.h"
 #include "scene/gui/split_container.h"
+#include "scene/gui/tab_bar.h"
 #include "scene/gui/tab_container.h"
+#include "scene/gui/texture_rect.h"
 #include "scene/gui/tree.h"
 #include "scene/resources/animation_library.h"
 #include "servers/audio/audio_stream.h"
+#include "servers/display/display_server.h"
 
 // How much of the editor's height the timeline gets while the workspace is open, and while it
 // shows the Graph Editor, whose curves want the room.
-static constexpr float TIMELINE_SHARE = 0.42f;
+static constexpr float TIMELINE_SHARE = 0.5f;
 static constexpr float GRAPH_TIMELINE_SHARE = 0.62f;
 
 String AsosdotAnimationWorkspace::format_time(double p_time) {
@@ -101,6 +109,212 @@ void AsosdotAnimationWorkspace::_set_playhead(double p_time) {
 	}
 }
 
+/// Panels.
+
+bool AsosdotWorkspacePanel::can_float() const {
+	return wrapper->is_window_available();
+}
+
+bool AsosdotWorkspacePanel::is_window_open() const {
+	return wrapper->get_window_enabled();
+}
+
+void AsosdotWorkspacePanel::_store_window() {
+	if (!wrapper->get_window_enabled()) {
+		return;
+	}
+	window_rect = wrapper->get_window_rect();
+	window_screen = wrapper->get_window_screen();
+	window_screen_rect = DisplayServer::get_singleton()->screen_get_usable_rect(window_screen);
+}
+
+void AsosdotWorkspacePanel::_apply() {
+	const bool window_wanted = shown && floating && !suspended && can_float() && is_inside_tree();
+	if (wrapper->get_window_enabled() != window_wanted) {
+		changing = true;
+		if (window_wanted) {
+			const int current_screen = get_window()->get_current_screen();
+			if (window_screen < 0 || window_screen >= DisplayServer::get_singleton()->get_screen_count()) {
+				// The screen it was on is gone: it opens where the editor is.
+				window_screen = current_screen;
+				window_rect = Rect2i();
+				window_screen_rect = Rect2i();
+			}
+			if (window_rect.has_area()) {
+				wrapper->restore_window_from_saved_position(window_rect, window_screen, window_screen_rect);
+			} else {
+				// In place, over where it was docked.
+				set_visible(true);
+				wrapper->enable_window_on_screen(window_screen, true);
+			}
+		} else {
+			_store_window();
+			wrapper->set_window_enabled(false);
+		}
+		changing = false;
+	}
+	// Floating, it leaves its room to the parts that stay.
+	set_visible(shown && !(floating && can_float()));
+	for (ScreenSelect *button : float_buttons) {
+		button->set_visible(can_float());
+	}
+}
+
+void AsosdotWorkspacePanel::_float_requested(int p_screen) {
+	// The same button, in the floating window, docks the part back.
+	if (floating && wrapper->get_window_enabled() && p_screen == wrapper->get_window_screen()) {
+		set_floating(false);
+	} else {
+		set_floating(true, p_screen);
+	}
+}
+
+void AsosdotWorkspacePanel::_window_visibility_changed(bool p_visible) {
+	if (changing) {
+		return;
+	}
+	if (!p_visible && floating) {
+		// Its window was closed: it docks back where it was.
+		floating = false;
+		_apply();
+		emit_signal(SNAME("state_changed"));
+	}
+}
+
+void AsosdotWorkspacePanel::set_shown(bool p_shown) {
+	if (shown == p_shown) {
+		return;
+	}
+	shown = p_shown;
+	_apply();
+	emit_signal(SNAME("state_changed"));
+}
+
+void AsosdotWorkspacePanel::set_floating(bool p_floating, int p_screen) {
+	if (p_floating && !can_float()) {
+		return;
+	}
+	const bool other_screen = p_floating && p_screen >= 0 && p_screen != (wrapper->get_window_enabled() ? wrapper->get_window_screen() : window_screen);
+	if (other_screen) {
+		window_screen = p_screen;
+		window_rect = Rect2i();
+	}
+	if (floating == p_floating) {
+		if (floating && wrapper->get_window_enabled()) {
+			if (other_screen) {
+				// Asked onto another screen: it moves there.
+				changing = true;
+				wrapper->set_window_enabled(false);
+				changing = false;
+				_apply();
+			}
+			wrapper->grab_window_focus();
+		}
+		return;
+	}
+	floating = p_floating;
+	_apply();
+	emit_signal(SNAME("state_changed"));
+}
+
+void AsosdotWorkspacePanel::set_suspended(bool p_suspended) {
+	if (suspended == p_suspended) {
+		return;
+	}
+	suspended = p_suspended;
+	_apply();
+}
+
+Dictionary AsosdotWorkspacePanel::get_layout() {
+	_store_window();
+	Dictionary layout;
+	layout["shown"] = shown;
+	layout["floating"] = floating;
+	if (window_rect.has_area()) {
+		layout["window_rect"] = window_rect;
+		layout["window_screen"] = window_screen;
+		layout["window_screen_rect"] = window_screen_rect;
+	}
+	return layout;
+}
+
+void AsosdotWorkspacePanel::set_layout(const Dictionary &p_layout) {
+	shown = p_layout.get("shown", true);
+	window_rect = p_layout.get("window_rect", Rect2i());
+	window_screen = p_layout.get("window_screen", -1);
+	window_screen_rect = p_layout.get("window_screen_rect", Rect2i());
+	floating = bool(p_layout.get("floating", false)) && can_float() && bool(EDITOR_GET("interface/multi_window/restore_windows_on_load"));
+	_apply();
+	emit_signal(SNAME("state_changed"));
+}
+
+Control *AsosdotWorkspacePanel::make_float_button() {
+	ScreenSelect *button = memnew(ScreenSelect);
+	button->set_tooltip_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
+	if (can_float()) {
+		button->set_tooltip_text(vformat(TTR("Float %s in a window of its own, to put on another screen.\nPress it again there, or close the window, to dock it back. Right-click to pick the screen."), title));
+	}
+	button->connect("request_open_in_screen", callable_mp(this, &AsosdotWorkspacePanel::_float_requested));
+	float_buttons.push_back(button);
+	return button;
+}
+
+void AsosdotWorkspacePanel::_notification(int p_what) {
+	switch (p_what) {
+		case NOTIFICATION_THEME_CHANGED: {
+			if (icon) {
+				icon->set_texture(get_editor_theme_icon(icon_name));
+			}
+		} break;
+
+		case NOTIFICATION_TRANSLATION_CHANGED: {
+			wrapper->set_window_title(vformat(TTR("%s - Animation"), title));
+		} break;
+	}
+}
+
+void AsosdotWorkspacePanel::_bind_methods() {
+	ADD_SIGNAL(MethodInfo("state_changed"));
+}
+
+AsosdotWorkspacePanel::AsosdotWorkspacePanel(const String &p_title, const StringName &p_icon, Control *p_content, bool p_with_header) {
+	title = p_title;
+	icon_name = p_icon;
+	set_name(p_title);
+	add_theme_constant_override("separation", 2 * EDSCALE);
+
+	wrapper = memnew(WindowWrapper);
+	wrapper->set_margins_enabled(true);
+	wrapper->set_window_title(vformat(TTR("%s - Animation"), title));
+
+	// The header goes into the window with the part, where its float button docks it back.
+	Control *body = p_content;
+	if (p_with_header) {
+		VBoxContainer *box = memnew(VBoxContainer);
+		box->add_theme_constant_override("separation", 2 * EDSCALE);
+		header = memnew(HBoxContainer);
+		box->add_child(header);
+		icon = memnew(TextureRect);
+		icon->set_stretch_mode(TextureRect::STRETCH_KEEP_CENTERED);
+		header->add_child(icon);
+		title_label = memnew(Label(p_title));
+		title_label->set_theme_type_variation("HeaderSmall");
+		title_label->set_h_size_flags(SIZE_EXPAND_FILL);
+		title_label->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+		header->add_child(title_label);
+		header->add_child(make_float_button());
+		p_content->set_v_size_flags(SIZE_EXPAND_FILL);
+		box->add_child(p_content);
+		body = box;
+	}
+
+	wrapper->set_v_size_flags(SIZE_EXPAND_FILL);
+	wrapper->set_wrapped_control(body);
+	wrapper->connect("window_visibility_changed", callable_mp(this, &AsosdotWorkspacePanel::_window_visibility_changed));
+	wrapper->connect("window_size_changed", callable_mp(this, &AsosdotWorkspacePanel::_store_window));
+	add_child(wrapper);
+}
+
 /// Toolbar.
 
 void AsosdotAnimationWorkspace::_update_timecode() {
@@ -126,8 +340,11 @@ void AsosdotAnimationWorkspace::_shot_toggled(bool p_pressed) {
 	Node3DEditor::get_singleton()->get_editor_viewport(0)->set_cinematic_preview(p_pressed);
 }
 
-void AsosdotAnimationWorkspace::_monitor_toggled(bool p_pressed) {
-	monitor->set_active(active && p_pressed);
+void AsosdotAnimationWorkspace::_apply_monitor() {
+	// Its panel first: the monitor restores its share of the width once it is back in the split.
+	monitor_panel->set_shown(active && monitor_enabled);
+	monitor_panel->set_suspended(!active);
+	monitor->set_active(active && monitor_enabled);
 }
 
 void AsosdotAnimationWorkspace::_graph_toggled(bool p_pressed) {
@@ -146,13 +363,175 @@ void AsosdotAnimationWorkspace::_graph_editor_toggled(bool p_shown) {
 	}
 }
 
-void AsosdotAnimationWorkspace::_docks_toggled(bool p_pressed) {
-	_apply_docks();
+void AsosdotAnimationWorkspace::_apply_docks() {
+	// The Inspector stays, for nodes and keys; the other side docks make way for the workspace's own.
+	EditorDockManager::get_singleton()->set_side_docks_hidden(active && !docks_enabled, InspectorDock::get_singleton());
 }
 
-void AsosdotAnimationWorkspace::_apply_docks() {
-	// The Inspector stays, for nodes and keys; the other side docks make way for the library.
-	EditorDockManager::get_singleton()->set_side_docks_hidden(active && !docks_button->is_pressed(), InspectorDock::get_singleton());
+void AsosdotAnimationWorkspace::_panels_menu_about_to_popup() {
+	PopupMenu *popup = panels_menu->get_popup();
+	popup->set_item_checked(popup->get_item_index(PANELS_SCENE), scene_panel->is_shown());
+	popup->set_item_checked(popup->get_item_index(PANELS_LIBRARY), library_panel->is_shown());
+	popup->set_item_checked(popup->get_item_index(PANELS_MONITOR), monitor_enabled);
+	popup->set_item_checked(popup->get_item_index(PANELS_DOCKS), docks_enabled);
+
+	const bool can_float = scene_panel->can_float();
+	popup->set_item_checked(popup->get_item_index(PANELS_FLOAT_SCENE), scene_panel->is_floating());
+	popup->set_item_disabled(popup->get_item_index(PANELS_FLOAT_SCENE), !can_float || !scene_panel->is_shown());
+	popup->set_item_checked(popup->get_item_index(PANELS_FLOAT_LIBRARY), library_panel->is_floating());
+	popup->set_item_disabled(popup->get_item_index(PANELS_FLOAT_LIBRARY), !can_float || !library_panel->is_shown());
+	popup->set_item_checked(popup->get_item_index(PANELS_FLOAT_MONITOR), monitor_panel->is_floating());
+	popup->set_item_disabled(popup->get_item_index(PANELS_FLOAT_MONITOR), !can_float || !monitor_enabled);
+
+	// The timeline and the Inspector are editor docks, which float and remember it by themselves.
+	const bool timeline_floats = AnimationPlayerEditor::get_singleton()->get_current_layout() == EditorDock::DOCK_LAYOUT_FLOATING;
+	popup->set_item_checked(popup->get_item_index(PANELS_FLOAT_TIMELINE), timeline_floats);
+	popup->set_item_disabled(popup->get_item_index(PANELS_FLOAT_TIMELINE), !can_float || timeline_floats);
+	const bool inspector_floats = InspectorDock::get_singleton()->get_current_layout() == EditorDock::DOCK_LAYOUT_FLOATING;
+	popup->set_item_checked(popup->get_item_index(PANELS_FLOAT_INSPECTOR), inspector_floats);
+	popup->set_item_disabled(popup->get_item_index(PANELS_FLOAT_INSPECTOR), !can_float || inspector_floats);
+
+	popup->set_item_disabled(popup->get_item_index(PANELS_DOCK_ALL), !scene_panel->is_floating() && !library_panel->is_floating() && !monitor_panel->is_floating());
+}
+
+void AsosdotAnimationWorkspace::_panels_menu_pressed(int p_id) {
+	switch (p_id) {
+		case PANELS_SCENE: {
+			scene_panel->set_shown(!scene_panel->is_shown());
+		} break;
+		case PANELS_LIBRARY: {
+			library_panel->set_shown(!library_panel->is_shown());
+		} break;
+		case PANELS_MONITOR: {
+			monitor_enabled = !monitor_enabled;
+			_apply_monitor();
+		} break;
+		case PANELS_DOCKS: {
+			docks_enabled = !docks_enabled;
+			_apply_docks();
+		} break;
+		case PANELS_FLOAT_SCENE: {
+			scene_panel->set_floating(!scene_panel->is_floating());
+		} break;
+		case PANELS_FLOAT_LIBRARY: {
+			library_panel->set_floating(!library_panel->is_floating());
+		} break;
+		case PANELS_FLOAT_MONITOR: {
+			monitor_panel->set_floating(!monitor_panel->is_floating());
+		} break;
+		case PANELS_FLOAT_TIMELINE: {
+			EditorDockManager::get_singleton()->make_dock_floating(AnimationPlayerEditor::get_singleton());
+		} break;
+		case PANELS_FLOAT_INSPECTOR: {
+			EditorDockManager::get_singleton()->make_dock_floating(InspectorDock::get_singleton());
+		} break;
+		case PANELS_DOCK_ALL: {
+			scene_panel->set_floating(false);
+			library_panel->set_floating(false);
+			monitor_panel->set_floating(false);
+		} break;
+	}
+	EditorNode::get_singleton()->save_editor_layout_delayed();
+}
+
+void AsosdotAnimationWorkspace::_panel_state_changed() {
+	_update_left_column();
+	if (active) {
+		EditorNode::get_singleton()->save_editor_layout_delayed();
+	}
+}
+
+void AsosdotAnimationWorkspace::_update_left_column() {
+	// With both parts hidden or floating, the viewer gets the whole width.
+	set_visible(active && (scene_panel->is_visible() || library_panel->is_visible()));
+}
+
+/// Hierarchy.
+
+void AsosdotAnimationWorkspace::_hierarchy_filter_changed(const String &p_filter) {
+	hierarchy->set_filter(p_filter);
+}
+
+void AsosdotAnimationWorkspace::_hierarchy_fold_all(bool p_collapsed) {
+	TreeItem *root = hierarchy->get_scene_tree()->get_root();
+	if (!root) {
+		return;
+	}
+	if (p_collapsed) {
+		// The scene's root stays open, with every branch under it closed.
+		for (TreeItem *child = root->get_first_child(); child; child = child->get_next()) {
+			child->set_collapsed_recursive(true);
+		}
+	} else {
+		root->set_collapsed_recursive(false);
+	}
+}
+
+void AsosdotAnimationWorkspace::_select_animated_nodes() {
+	const Ref<Animation> animation = _get_animation();
+	Node *root = _get_animation_root();
+	if (animation.is_null() || !root) {
+		return;
+	}
+	EditorSelection *selection = EditorNode::get_singleton()->get_editor_selection();
+	selection->clear();
+	for (int i = 0; i < animation->get_track_count(); i++) {
+		Node *node = root->get_node_or_null(NodePath(String(animation->track_get_path(i).get_concatenated_names())));
+		if (node && !selection->is_selected(node)) {
+			selection->add_node(node);
+		}
+	}
+}
+
+void AsosdotAnimationWorkspace::_library_tab_selected(int p_tab) {
+	if (tabs->get_current_tab() != p_tab) {
+		tabs->set_current_tab(p_tab);
+	}
+	if (library_tab_bar->get_current_tab() != p_tab) {
+		library_tab_bar->set_current_tab(p_tab);
+	}
+}
+
+void AsosdotAnimationWorkspace::_update_hierarchy_marks(bool p_force) {
+	if (!hierarchy->is_visible_in_tree()) {
+		marked_hash = 0; // Marked again once it shows: a tree that isn't shown isn't kept up to date.
+		return;
+	}
+	const Ref<Animation> animation = _get_animation();
+	Node *root = _get_animation_root();
+	Node *scene = EditorNode::get_singleton()->get_edited_scene();
+	uint32_t hash = hash_murmur3_one_64(animation.is_valid() ? uint64_t(animation->get_instance_id()) : 0);
+	hash = hash_murmur3_one_64(root ? uint64_t(root->get_instance_id()) : 0, hash);
+	hash = hash_murmur3_one_64(scene ? uint64_t(scene->get_instance_id()) : 1, hash);
+	if (animation.is_valid()) {
+		for (int i = 0; i < animation->get_track_count(); i++) {
+			hash = hash_murmur3_one_32(animation->track_get_path(i).hash(), hash);
+		}
+	}
+	if (!p_force && hash == marked_hash) {
+		return;
+	}
+	marked_hash = hash;
+
+	HashSet<Node *> marked;
+	if (animation.is_valid() && root) {
+		for (int i = 0; i < animation->get_track_count(); i++) {
+			Node *node = root->get_node_or_null(NodePath(String(animation->track_get_path(i).get_concatenated_names())));
+			if (node) {
+				marked.insert(node);
+			}
+		}
+	}
+	// The tree forgets its marks when it first lists a scene, so it lists the scene before it is given them.
+	hierarchy->update_tree();
+	hierarchy->set_marked(marked, true, true);
+	hierarchy_status->set_text(itos(marked.size()));
+	hierarchy_status->set_disabled(marked.is_empty());
+	if (animation.is_null()) {
+		hierarchy_status->set_tooltip_text(TTR("No animation is open."));
+	} else {
+		hierarchy_status->set_tooltip_text(vformat(TTRN("%d node has tracks in the animation being edited. It is marked with a key.", "%d nodes have tracks in the animation being edited. They are marked with a key.", marked.size()), marked.size()) + "\n" + TTR("Press to select them."));
+	}
 }
 
 void AsosdotAnimationWorkspace::_watch_player() {
@@ -586,8 +965,8 @@ void AsosdotAnimationWorkspace::_update_sounds() {
 		item->set_suffix(0, path.get_base_dir().trim_prefix("res://"));
 		item->set_icon(0, get_editor_theme_icon(SNAME("AudioStreamPlayer")));
 		item->set_metadata(0, path);
-		item->set_tooltip_text(0, path + "\n" + TTR("Double-click to listen, drag onto an audio track, or press + to add it at the playhead to the selected audio player."));
-		item->add_button(0, add_icon, 0, false, TTR("Add at the playhead, on the selected AudioStreamPlayer's audio track."));
+		item->set_tooltip_text(0, path + "\n" + TTR("Double-click to listen, drag onto an audio player's header or lanes in the timeline, or press + to add it at the playhead."));
+		item->add_button(0, add_icon, 0, false, TTR("Add at the playhead, on the audio player's first lane with room. Sounds that overlap get a lane each and play together."));
 	}
 	if (paths.is_empty()) {
 		TreeItem *hint = sound_tree->create_item(root);
@@ -632,52 +1011,79 @@ Variant AsosdotAnimationWorkspace::_sound_drag_data(const Point2 &p_point) {
 	return EditorNode::get_singleton()->drag_files_and_dirs(paths, sound_tree);
 }
 
+// The audio player a sound from the list goes to: the selected one, or failing that the first one
+// the animation already has sounds on.
+Node *AsosdotAnimationWorkspace::_get_sound_player(bool p_selected_only) const {
+	for (Node *node : EditorNode::get_singleton()->get_editor_selection()->get_top_selected_node_list()) {
+		if (node->has_method(SNAME("play_layered"))) {
+			return node;
+		}
+	}
+	if (p_selected_only) {
+		return nullptr;
+	}
+	const Ref<Animation> animation = _get_animation();
+	Node *root = _get_animation_root();
+	if (animation.is_valid() && root) {
+		for (int i = 0; i < animation->get_track_count(); i++) {
+			if (animation->track_get_type(i) != Animation::TYPE_AUDIO) {
+				continue;
+			}
+			Node *node = root->get_node_or_null(animation->track_get_path(i));
+			if (node && node->has_method(SNAME("play_layered"))) {
+				return node;
+			}
+		}
+	}
+	return nullptr;
+}
+
+void AsosdotAnimationWorkspace::_update_sound_target() {
+	Node *player = _get_sound_player(false);
+	if (player) {
+		sound_target->set_text(vformat(TTR("+ adds to: %s"), player->get_name()));
+		sound_target->set_tooltip_text(vformat(TTR("The + buttons add a sound at the playhead to \"%s\" (%s), on its first lane with room.\nSelect another audio player to add to that one."), player->get_name(), player->get_class()));
+	} else {
+		sound_target->set_text(TTR("+ adds to: a new \"Sounds\" player"));
+		sound_target->set_tooltip_text(TTR("No audio player is selected and the animation has none yet, so the first + makes an AudioStreamPlayer named \"Sounds\".\nFor 3D sound, select your AudioStreamPlayer3D first."));
+	}
+}
+
 void AsosdotAnimationWorkspace::_add_sound_at_playhead(const String &p_path) {
 	const Ref<Animation> animation = _get_animation();
 	Node *root = _get_animation_root();
-	if (animation.is_null() || !root) {
+	AnimationTrackEditor *track_editor = _get_track_editor();
+	if (animation.is_null() || !root || !track_editor) {
 		EditorNode::get_singleton()->show_warning(TTR("Pick an animation to add the sound to first."));
-		return;
-	}
-	Node *player = nullptr;
-	for (Node *node : EditorNode::get_singleton()->get_editor_selection()->get_top_selected_node_list()) {
-		if (node->has_method(SNAME("play_layered"))) {
-			player = node;
-			break;
-		}
-	}
-	if (!player) {
-		EditorNode::get_singleton()->show_warning(TTR("Select the AudioStreamPlayer, AudioStreamPlayer2D or AudioStreamPlayer3D to play the sound."));
 		return;
 	}
 	Ref<AudioStream> stream = ResourceLoader::load(p_path);
 	ERR_FAIL_COND(stream.is_null());
 
-	const NodePath path = root->get_path_to(player);
-	int track = -1;
-	for (int i = 0; i < animation->get_track_count(); i++) {
-		if (animation->track_get_type(i) == Animation::TYPE_AUDIO && animation->track_get_path(i) == path) {
-			track = i;
-			break;
+	Node *player = _get_sound_player(false);
+	if (!player) {
+		// One player is enough for any number of sounds, so the first sound makes it.
+		Node *scene = EditorNode::get_singleton()->get_edited_scene();
+		if (!scene || (root != scene && !scene->is_ancestor_of(root))) {
+			EditorNode::get_singleton()->show_warning(TTR("Select the AudioStreamPlayer, AudioStreamPlayer2D or AudioStreamPlayer3D to play the sound."));
+			return;
 		}
+		AudioStreamPlayer *made = memnew(AudioStreamPlayer);
+		made->set_name("Sounds");
+		EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+		undo_redo->create_action(TTR("Add Sounds Player"), UndoRedo::MERGE_DISABLE, root);
+		undo_redo->add_do_method(root, "add_child", made, true);
+		undo_redo->add_do_method(made, "set_owner", scene);
+		undo_redo->add_do_reference(made);
+		undo_redo->add_undo_method(root, "remove_child", made);
+		undo_redo->commit_action();
+		player = made;
 	}
-	double time = _get_playhead();
-	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
-	undo_redo->create_action(TTR("Add Audio Clip"), UndoRedo::MERGE_DISABLE, animation.ptr());
-	if (track < 0) {
-		track = animation->get_track_count();
-		undo_redo->add_do_method(animation.ptr(), "add_track", Animation::TYPE_AUDIO, -1);
-		undo_redo->add_do_method(animation.ptr(), "track_set_path", track, path);
-		undo_redo->add_undo_method(animation.ptr(), "remove_track", track);
-	} else {
-		// A key already there would be replaced, so the clip goes in just after it.
-		while (animation->track_find_key(track, time, Animation::FIND_MODE_APPROX) >= 0) {
-			time += 0.0001;
-		}
-		undo_redo->add_undo_method(animation.ptr(), "track_remove_key_at_time", track, time);
-	}
-	undo_redo->add_do_method(animation.ptr(), "audio_track_insert_key", track, time, stream);
-	undo_redo->commit_action();
+
+	Vector<Ref<AudioStream>> streams;
+	streams.push_back(stream);
+	track_editor->add_audio_clips(root->get_path_to(player), streams, _get_playhead());
+	_update_sound_target();
 }
 
 /// Poses.
@@ -1050,8 +1456,10 @@ void AsosdotAnimationWorkspace::set_active(bool p_active) {
 	}
 	active = p_active;
 	toolbar->set_visible(active);
-	set_visible(active);
 	set_process(active);
+	scene_panel->set_suspended(!active);
+	library_panel->set_suspended(!active);
+	_update_left_column();
 
 	if (active) {
 		// The timeline is the Animation dock in the bottom panel, made tall.
@@ -1070,7 +1478,9 @@ void AsosdotAnimationWorkspace::set_active(bool p_active) {
 			_shot_toggled(true);
 		}
 		_update_scene_cameras();
-		monitor->set_active(monitor_button->is_pressed());
+		_apply_monitor();
+		_update_hierarchy_marks(true);
+		_update_sound_target();
 		_update_animations(true);
 		_update_shots(true);
 		_update_sounds();
@@ -1087,7 +1497,7 @@ void AsosdotAnimationWorkspace::set_active(bool p_active) {
 		if (shot_button->is_pressed() && Node3DEditor::get_singleton()) {
 			Node3DEditor::get_singleton()->get_editor_viewport(0)->set_cinematic_preview(false);
 		}
-		monitor->set_active(false);
+		_apply_monitor();
 		sound_preview->stop();
 	}
 }
@@ -1096,6 +1506,9 @@ void AsosdotAnimationWorkspace::_enlarge_timeline(float p_share) {
 	DockSplitContainer *center = EditorNode::get_center_split();
 	if (!active || center->get_child_count() < 2) {
 		return;
+	}
+	if (AnimationPlayerEditor::get_singleton()->get_current_layout() == EditorDock::DOCK_LAYOUT_FLOATING) {
+		return; // The timeline has a window of its own; the bottom panel holds something else.
 	}
 	Control *bottom = Object::cast_to<Control>(center->get_child(center->get_child_count() - 1));
 	if (!bottom || !bottom->is_visible()) {
@@ -1111,24 +1524,37 @@ Dictionary AsosdotAnimationWorkspace::get_layout() const {
 	Dictionary layout;
 	layout["tab"] = tabs->get_current_tab();
 	layout["shot"] = shot_button->is_pressed();
-	layout["monitor"] = monitor_button->is_pressed();
+	layout["monitor"] = monitor_enabled;
 	layout["camera_monitor"] = monitor->get_layout();
-	layout["docks"] = docks_button->is_pressed();
+	layout["docks"] = docks_enabled;
 	layout["pose_mix"] = pose_mix->get_value();
+	// Which parts show, which float and where their windows are.
+	Dictionary panels;
+	panels["scene"] = scene_panel->get_layout();
+	panels["library"] = library_panel->get_layout();
+	panels["monitor"] = monitor_panel->get_layout();
+	layout["panels"] = panels;
+	layout["left_split"] = left_split->get_split_offset();
 	return layout;
 }
 
 void AsosdotAnimationWorkspace::set_layout(const Dictionary &p_layout) {
 	tabs->set_current_tab(CLAMP(int(p_layout.get("tab", 0)), 0, tabs->get_tab_count() - 1));
 	shot_button->set_pressed_no_signal(p_layout.get("shot", false));
-	monitor_button->set_pressed_no_signal(p_layout.get("monitor", true));
+	monitor_enabled = p_layout.get("monitor", true);
 	monitor->set_layout(p_layout.get("camera_monitor", Dictionary()));
-	docks_button->set_pressed_no_signal(p_layout.get("docks", false));
+	docks_enabled = p_layout.get("docks", false);
 	pose_mix->set_value(p_layout.get("pose_mix", 100.0));
+	const Dictionary panels = p_layout.get("panels", Dictionary());
+	scene_panel->set_layout(panels.get("scene", Dictionary()));
+	library_panel->set_layout(panels.get("library", Dictionary()));
+	monitor_panel->set_layout(panels.get("monitor", Dictionary()));
+	left_split->set_split_offset(p_layout.get("left_split", 0));
+	_apply_monitor();
+	_update_left_column();
 	if (active) {
 		_apply_docks();
 		_shot_toggled(shot_button->is_pressed());
-		monitor->set_active(monitor_button->is_pressed());
 	}
 }
 
@@ -1140,6 +1566,8 @@ void AsosdotAnimationWorkspace::_notification(int p_what) {
 			EditorUndoRedoManager::get_singleton()->connect(SNAME("version_changed"), callable_mp(this, &AsosdotAnimationWorkspace::_record_version_changed));
 			EditorNode::get_singleton()->get_editor_selection()->connect(SNAME("selection_changed"), callable_mp(this, &AsosdotAnimationWorkspace::_record_snapshot));
 			EditorNode::get_singleton()->get_editor_selection()->connect(SNAME("selection_changed"), callable_mp(this, &AsosdotAnimationWorkspace::_update_poses));
+			EditorNode::get_singleton()->get_editor_selection()->connect(SNAME("selection_changed"), callable_mp(this, &AsosdotAnimationWorkspace::_update_sound_target));
+			hierarchy->set_editor_selection(EditorNode::get_singleton()->get_editor_selection());
 			InspectorDock::get_inspector_singleton()->connect(SNAME("property_edited"), callable_mp(this, &AsosdotAnimationWorkspace::_record_property_edited));
 			EditorFileSystem::get_singleton()->connect(SNAME("filesystem_changed"), callable_mp(this, &AsosdotAnimationWorkspace::_update_sounds));
 
@@ -1153,8 +1581,16 @@ void AsosdotAnimationWorkspace::_notification(int p_what) {
 		case NOTIFICATION_THEME_CHANGED: {
 			record_button->set_button_icon(get_editor_theme_icon(SNAME("AutoKey")));
 			shot_button->set_button_icon(get_editor_theme_icon(SNAME("Camera3D")));
-			monitor_button->set_button_icon(get_editor_theme_icon(SNAME("Panels2Alt")));
 			graph_button->set_button_icon(get_editor_theme_icon(SNAME("Curve")));
+			panels_menu->set_button_icon(get_editor_theme_icon(SNAME("Panels2Alt")));
+			hierarchy_filter->set_right_icon(get_editor_theme_icon(SNAME("Search")));
+			hierarchy_status->set_button_icon(get_editor_theme_icon(SNAME("KeyValue")));
+			const StringName animation_tool_icons[] = { SNAME("New"), SNAME("Duplicate"), SNAME("Rename"), SNAME("Remove") };
+			for (uint32_t i = 0; i < animation_tool_buttons.size(); i++) {
+				animation_tool_buttons[i]->set_button_icon(get_editor_theme_icon(animation_tool_icons[i]));
+			}
+			hierarchy_expand->set_button_icon(get_editor_theme_icon(SNAME("ExpandTree")));
+			hierarchy_collapse->set_button_icon(get_editor_theme_icon(SNAME("CollapseTree")));
 			cut_button->set_button_icon(get_editor_theme_icon(SNAME("Key")));
 			animation_search->set_right_icon(get_editor_theme_icon(SNAME("Search")));
 			sound_search->set_right_icon(get_editor_theme_icon(SNAME("Search")));
@@ -1167,6 +1603,7 @@ void AsosdotAnimationWorkspace::_notification(int p_what) {
 			_update_scene_cameras();
 			_update_animations();
 			_update_shots();
+			_update_hierarchy_marks();
 		} break;
 	}
 }
@@ -1186,33 +1623,53 @@ AsosdotAnimationWorkspace::AsosdotAnimationWorkspace() {
 	set_name(TTRC("Animation Library"));
 	set_custom_minimum_size(Size2(260 * EDSCALE, 0));
 
-	// The toolbar, shown in the 3D editor's menu bar.
+	// The toolbar, shown in the 3D editor's menu bar: recording, the shot, the timeline's view, and
+	// one menu for what the workspace shows and floats.
 	toolbar = memnew(HBoxContainer);
 	toolbar->add_child(memnew(VSeparator));
 	record_button = _make_tool_button(TTR("Record"), TTR("While on, moving, rotating and scaling things in the viewer, posing bones and editing properties in the Inspector puts keys at the playhead."));
 	record_button->set_toggle_mode(true);
 	record_button->connect(SceneStringName(toggled), callable_mp(this, &AsosdotAnimationWorkspace::_record_toggled));
 	toolbar->add_child(record_button);
+	toolbar->add_child(memnew(VSeparator));
 	shot_button = _make_tool_button(TTR("Shot"), TTR("Look through the camera that's live at the playhead, as the camera cuts switch between them."));
 	shot_button->set_toggle_mode(true);
 	shot_button->connect(SceneStringName(toggled), callable_mp(this, &AsosdotAnimationWorkspace::_shot_toggled));
 	toolbar->add_child(shot_button);
-	monitor_button = _make_tool_button(TTR("Monitor"), TTR("Show the camera monitor beside the viewer: the live shot or any camera, with frame guides, and every camera in a strip to cut between."));
-	monitor_button->set_toggle_mode(true);
-	monitor_button->set_pressed(true);
-	monitor_button->connect(SceneStringName(toggled), callable_mp(this, &AsosdotAnimationWorkspace::_monitor_toggled));
-	toolbar->add_child(monitor_button);
+	cut_button = _make_tool_button(TTR("Cut"), TTR("Cut to the selected camera at the playhead."));
+	cut_button->connect(SceneStringName(pressed), callable_mp(this, &AsosdotAnimationWorkspace::_cut_to_selected_camera));
+	toolbar->add_child(cut_button);
+	toolbar->add_child(memnew(VSeparator));
 	graph_button = _make_tool_button(TTR("Graph"), TTR("Show the Graph Editor in the timeline: every animated number as a curve, edited as in Blender (Ctrl+Tab)."));
 	graph_button->set_toggle_mode(true);
 	graph_button->connect(SceneStringName(toggled), callable_mp(this, &AsosdotAnimationWorkspace::_graph_toggled));
 	toolbar->add_child(graph_button);
-	cut_button = _make_tool_button(TTR("Cut"), TTR("Cut to the selected camera at the playhead."));
-	cut_button->connect(SceneStringName(pressed), callable_mp(this, &AsosdotAnimationWorkspace::_cut_to_selected_camera));
-	toolbar->add_child(cut_button);
-	docks_button = _make_tool_button(TTR("Docks"), TTR("Show the editor's other side docks in this workspace too."));
-	docks_button->set_toggle_mode(true);
-	docks_button->connect(SceneStringName(toggled), callable_mp(this, &AsosdotAnimationWorkspace::_docks_toggled));
-	toolbar->add_child(docks_button);
+	panels_menu = memnew(MenuButton);
+	panels_menu->set_text(TTR("Panels"));
+	panels_menu->set_flat(false);
+	panels_menu->set_theme_type_variation("FlatMenuButton");
+	panels_menu->set_tooltip_text(TTR("What the workspace shows, and which parts float in a window of their own."));
+	{
+		PopupMenu *popup = panels_menu->get_popup();
+		popup->set_hide_on_checkable_item_selection(false);
+		popup->add_separator(TTR("Show"));
+		popup->add_check_item(TTR("Scene Tree"), PANELS_SCENE);
+		popup->add_check_item(TTR("Library"), PANELS_LIBRARY);
+		popup->add_check_item(TTR("Camera Monitor"), PANELS_MONITOR);
+		popup->add_check_item(TTR("Other Editor Docks"), PANELS_DOCKS);
+		popup->add_separator(TTR("Float in a Window"));
+		popup->add_check_item(TTR("Scene Tree"), PANELS_FLOAT_SCENE);
+		popup->add_check_item(TTR("Library"), PANELS_FLOAT_LIBRARY);
+		popup->add_check_item(TTR("Camera Monitor"), PANELS_FLOAT_MONITOR);
+		popup->add_check_item(TTR("Timeline"), PANELS_FLOAT_TIMELINE);
+		popup->add_check_item(TTR("Inspector"), PANELS_FLOAT_INSPECTOR);
+		popup->add_separator();
+		popup->add_item(TTR("Dock All Back"), PANELS_DOCK_ALL);
+		popup->connect("about_to_popup", callable_mp(this, &AsosdotAnimationWorkspace::_panels_menu_about_to_popup));
+		popup->connect(SceneStringName(id_pressed), callable_mp(this, &AsosdotAnimationWorkspace::_panels_menu_pressed));
+		popup->connect(SceneStringName(id_pressed), callable_mp(this, &AsosdotAnimationWorkspace::_panels_menu_about_to_popup).unbind(1), CONNECT_DEFERRED);
+	}
+	toolbar->add_child(panels_menu);
 	toolbar->add_child(memnew(VSeparator));
 	timecode = memnew(Label);
 	timecode->set_custom_minimum_size(Size2(130 * EDSCALE, 0));
@@ -1221,9 +1678,71 @@ AsosdotAnimationWorkspace::AsosdotAnimationWorkspace() {
 	toolbar->add_child(timecode);
 	toolbar->hide();
 
+	// Beside the viewer: the scene's nodes above, the library below, each under its own header.
+	left_split = memnew(VSplitContainer);
+	left_split->set_v_size_flags(SIZE_EXPAND_FILL);
+	add_child(left_split);
+
+	VBoxContainer *scene_box = memnew(VBoxContainer);
+	HBoxContainer *hierarchy_bar = memnew(HBoxContainer);
+	scene_box->add_child(hierarchy_bar);
+	hierarchy_filter = memnew(LineEdit);
+	hierarchy_filter->set_placeholder(TTR("Filter Nodes"));
+	hierarchy_filter->set_clear_button_enabled(true);
+	hierarchy_filter->set_h_size_flags(SIZE_EXPAND_FILL);
+	hierarchy_filter->set_tooltip_text(TTR("Filter nodes by name. As in the Scene dock, \"type:Camera3D\" filters by type and \"group:enemies\" by group."));
+	hierarchy_filter->connect(SceneStringName(text_changed), callable_mp(this, &AsosdotAnimationWorkspace::_hierarchy_filter_changed));
+	hierarchy_bar->add_child(hierarchy_filter);
+	hierarchy_expand = memnew(Button);
+	hierarchy_expand->set_theme_type_variation("FlatButton");
+	hierarchy_expand->set_tooltip_text(TTR("Open every branch."));
+	hierarchy_expand->connect(SceneStringName(pressed), callable_mp(this, &AsosdotAnimationWorkspace::_hierarchy_fold_all).bind(false));
+	hierarchy_bar->add_child(hierarchy_expand);
+	hierarchy_collapse = memnew(Button);
+	hierarchy_collapse->set_theme_type_variation("FlatButton");
+	hierarchy_collapse->set_tooltip_text(TTR("Close every branch under the scene's root."));
+	hierarchy_collapse->connect(SceneStringName(pressed), callable_mp(this, &AsosdotAnimationWorkspace::_hierarchy_fold_all).bind(true));
+	hierarchy_bar->add_child(hierarchy_collapse);
+	hierarchy = memnew(SceneTreeEditor(false, false, false));
+	hierarchy->set_v_size_flags(SIZE_EXPAND_FILL);
+	hierarchy->set_custom_minimum_size(Size2(220, 44) * EDSCALE);
+	hierarchy->set_update_when_invisible(false);
+	hierarchy->set_marked_icon(SNAME("KeyValue"), TTR("This node has tracks in the animation being edited."));
+	scene_box->add_child(hierarchy);
+	scene_panel = memnew(AsosdotWorkspacePanel(TTR("Scene Tree"), SNAME("PackedScene"), scene_box));
+	// How many nodes the animation has tracks for, in the header before the float button.
+	hierarchy_status = memnew(Button);
+	hierarchy_status->set_theme_type_variation("FlatButton");
+	hierarchy_status->set_text("0");
+	hierarchy_status->connect(SceneStringName(pressed), callable_mp(this, &AsosdotAnimationWorkspace::_select_animated_nodes));
+	scene_panel->get_header()->add_child(hierarchy_status);
+	scene_panel->get_header()->move_child(hierarchy_status, scene_panel->get_header()->get_child_count() - 2);
+	scene_panel->set_v_size_flags(SIZE_EXPAND_FILL);
+	scene_panel->connect("state_changed", callable_mp(this, &AsosdotAnimationWorkspace::_panel_state_changed));
+	left_split->add_child(scene_panel);
+
+	// The library's tabs are its header: one row, with the float button at its end.
+	VBoxContainer *library_box = memnew(VBoxContainer);
+	library_box->add_theme_constant_override("separation", 0);
+	HBoxContainer *library_header = memnew(HBoxContainer);
+	library_box->add_child(library_header);
+	library_tab_bar = memnew(TabBar);
+	library_tab_bar->set_h_size_flags(SIZE_EXPAND_FILL);
+	library_tab_bar->set_clip_tabs(true);
+	library_tab_bar->set_tab_alignment(TabBar::ALIGNMENT_LEFT);
+	library_tab_bar->connect("tab_changed", callable_mp(this, &AsosdotAnimationWorkspace::_library_tab_selected));
+	library_header->add_child(library_tab_bar);
 	tabs = memnew(TabContainer);
+	tabs->set_tabs_visible(false);
 	tabs->set_v_size_flags(SIZE_EXPAND_FILL);
-	add_child(tabs);
+	tabs->set_custom_minimum_size(Size2(220, 0) * EDSCALE);
+	tabs->connect("tab_changed", callable_mp(this, &AsosdotAnimationWorkspace::_library_tab_selected));
+	library_box->add_child(tabs);
+	library_panel = memnew(AsosdotWorkspacePanel(TTR("Library"), SNAME("AnimationLibrary"), library_box, false));
+	library_header->add_child(library_panel->make_float_button());
+	library_panel->set_v_size_flags(SIZE_EXPAND_FILL);
+	library_panel->connect("state_changed", callable_mp(this, &AsosdotAnimationWorkspace::_panel_state_changed));
+	left_split->add_child(library_panel);
 
 	// Animations.
 	VBoxContainer *animations = memnew(VBoxContainer);
@@ -1241,23 +1760,27 @@ AsosdotAnimationWorkspace::AsosdotAnimationWorkspace() {
 	animation_tree->connect(SceneStringName(item_selected), callable_mp(this, &AsosdotAnimationWorkspace::_animation_selected));
 	animation_tree->connect("item_activated", callable_mp(this, &AsosdotAnimationWorkspace::_animation_activated));
 	animations->add_child(animation_tree);
-	HFlowContainer *animation_buttons = memnew(HFlowContainer);
+	// One row of icon buttons, for what the Animation panel's menu does.
+	HBoxContainer *animation_buttons = memnew(HBoxContainer);
 	animations->add_child(animation_buttons);
 	struct AnimationButton {
 		const char *text;
 		int tool;
 	};
 	const AnimationButton animation_tools[] = {
-		{ TTRC("New"), AnimationPlayerEditor::TOOL_NEW_ANIM },
+		{ TTRC("New Animation"), AnimationPlayerEditor::TOOL_NEW_ANIM },
 		{ TTRC("Duplicate"), AnimationPlayerEditor::TOOL_DUPLICATE_ANIM },
 		{ TTRC("Rename"), AnimationPlayerEditor::TOOL_RENAME_ANIM },
 		{ TTRC("Delete"), AnimationPlayerEditor::TOOL_REMOVE_ANIM },
 	};
 	for (const AnimationButton &tool : animation_tools) {
 		Button *button = memnew(Button);
-		button->set_text(TTRGET(tool.text));
+		button->set_theme_type_variation("FlatButton");
+		button->set_tooltip_text(TTRGET(tool.text));
+		button->set_accessibility_name(TTRGET(tool.text));
 		button->connect(SceneStringName(pressed), callable_mp(this, &AsosdotAnimationWorkspace::_animation_tool).bind(tool.tool));
 		animation_buttons->add_child(button);
+		animation_tool_buttons.push_back(button);
 	}
 
 	// Shots.
@@ -1300,6 +1823,11 @@ AsosdotAnimationWorkspace::AsosdotAnimationWorkspace() {
 	sound_search->set_clear_button_enabled(true);
 	sound_search->connect(SceneStringName(text_changed), callable_mp(this, &AsosdotAnimationWorkspace::_update_sounds).unbind(1));
 	sounds->add_child(sound_search);
+	sound_target = memnew(Label);
+	sound_target->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+	sound_target->set_custom_minimum_size(Size2(1, 0));
+	sound_target->set_mouse_filter(MOUSE_FILTER_PASS);
+	sound_target->add_theme_color_override(SceneStringName(font_color), Color(0.6, 0.6, 0.6));
 	sound_tree = memnew(Tree);
 	sound_tree->set_v_size_flags(SIZE_EXPAND_FILL);
 	sound_tree->set_hide_root(true);
@@ -1307,13 +1835,19 @@ AsosdotAnimationWorkspace::AsosdotAnimationWorkspace() {
 	sound_tree->connect("button_clicked", callable_mp(this, &AsosdotAnimationWorkspace::_sound_button));
 	sound_tree->set_drag_forwarding(callable_mp(this, &AsosdotAnimationWorkspace::_sound_drag_data), Callable(), Callable());
 	sounds->add_child(sound_tree);
+	sounds->add_child(sound_target);
 	sound_preview = memnew(AudioStreamPlayer);
 	add_child(sound_preview);
 
 	// Poses.
+	ScrollContainer *poses_scroll = memnew(ScrollContainer);
+	poses_scroll->set_name(TTRC("Poses"));
+	poses_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	tabs->add_child(poses_scroll);
 	VBoxContainer *poses = memnew(VBoxContainer);
-	poses->set_name(TTRC("Poses"));
-	tabs->add_child(poses);
+	poses->set_h_size_flags(SIZE_EXPAND_FILL);
+	poses->set_v_size_flags(SIZE_EXPAND_FILL);
+	poses_scroll->add_child(poses);
 	HBoxContainer *library_row = memnew(HBoxContainer);
 	poses->add_child(library_row);
 	Button *open_library = memnew(Button);
@@ -1386,7 +1920,17 @@ AsosdotAnimationWorkspace::AsosdotAnimationWorkspace() {
 	pose_name_dialog->connect(SceneStringName(confirmed), callable_mp(this, &AsosdotAnimationWorkspace::_save_pose_confirmed));
 	add_child(pose_name_dialog);
 
+	for (int i = 0; i < tabs->get_tab_count(); i++) {
+		library_tab_bar->add_tab(tabs->get_tab_title(i));
+	}
+
+	// The monitor has a header of its own, which gets the float button.
 	monitor = memnew(AsosdotCameraMonitor(this));
+	monitor_panel = memnew(AsosdotWorkspacePanel(TTR("Camera Monitor"), SNAME("Camera3D"), monitor, false));
+	monitor_panel->set_h_size_flags(SIZE_EXPAND_FILL);
+	monitor->add_header_control(monitor_panel->make_float_button());
+	monitor_panel->connect("state_changed", callable_mp(this, &AsosdotAnimationWorkspace::_panel_state_changed));
+	monitor_panel->hide();
 
 	hide();
 }
@@ -1403,7 +1947,15 @@ EditorPlugin *AsosdotAnimationWorkspacePlugin::_get_node_3d_plugin() {
 }
 
 bool AsosdotAnimationWorkspacePlugin::hosts_main_screen_of(const EditorPlugin *p_plugin) const {
-	return workspace->is_active() && p_plugin && p_plugin == node_3d_plugin;
+	if (!workspace->is_active() || !p_plugin) {
+		return false;
+	}
+	if (!canvas_plugin) {
+		canvas_plugin = EditorNode::get_singleton()->get_editor_main_screen()->get_plugin_by_name("2D");
+	}
+	// The viewer is the 3D editor. Picking a 2D node or a Control in the scene tree to animate it
+	// doesn't leave the workspace either: its tracks and the Inspector are what is needed here.
+	return p_plugin == node_3d_plugin || p_plugin == canvas_plugin;
 }
 
 void AsosdotAnimationWorkspacePlugin::make_visible(bool p_visible) {
@@ -1448,7 +2000,7 @@ AsosdotAnimationWorkspacePlugin::AsosdotAnimationWorkspacePlugin() {
 	workspace = memnew(AsosdotAnimationWorkspace);
 	add_control_to_container(CONTAINER_SPATIAL_EDITOR_SIDE_LEFT, workspace);
 	// The monitor sits right of the viewer, sharing the width with it, side by side.
-	add_control_to_container(CONTAINER_SPATIAL_EDITOR_SIDE_RIGHT, workspace->get_monitor());
+	add_control_to_container(CONTAINER_SPATIAL_EDITOR_SIDE_RIGHT, workspace->get_monitor_panel());
 	add_control_to_container(CONTAINER_SPATIAL_EDITOR_MENU, workspace->toolbar);
 }
 

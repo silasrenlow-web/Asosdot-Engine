@@ -33,6 +33,7 @@
 #include "core/templates/rb_map.h"
 #include "scene/3d/camera_3d.h"
 #include "scene/3d/node_3d.h"
+#include "scene/resources/3d/acoustic_material.h"
 #include "scene/resources/3d/shape_3d.h"
 
 class CollisionObject3D : public Node3D {
@@ -51,6 +52,9 @@ private:
 	uint32_t collision_layer = 1;
 	uint32_t collision_mask = 1;
 	real_t collision_priority = 1.0;
+
+	// How sound treats this body, for the Asosdot Acoustic Engine.
+	Ref<AcousticMaterial> acoustic_material;
 
 	bool area = false;
 
@@ -142,6 +146,9 @@ public:
 
 	void set_collision_priority(real_t p_priority);
 	real_t get_collision_priority() const;
+
+	void set_acoustic_material(const Ref<AcousticMaterial> &p_material);
+	Ref<AcousticMaterial> get_acoustic_material() const;
 
 	void set_disable_mode(DisableMode p_mode);
 	DisableMode get_disable_mode() const;

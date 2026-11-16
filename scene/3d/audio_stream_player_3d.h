@@ -129,6 +129,27 @@ private:
 	/// This hash map is stored as member for efficiency reasons.
 	HashMap<StringName, Vector<AudioFrame>> bus_volumes;
 
+public:
+	// Asosdot Acoustic Engine: the way this sound gets to the listener, as
+	// AcousticEngine found it, for _update_panning to apply.
+	struct AcousticState {
+		bool valid = false;
+		// From the listener to where the sound seems to come from, as far as it
+		// travelled to get there.
+		Vector3 offset;
+		float gain = 1.0;
+		// How much of its high end is lost on the way, 0 to 1.
+		float muffle = 0.0;
+		float reverb_send = 0.0;
+	};
+
+private:
+	friend class AcousticEngine;
+	bool acoustics = false;
+	AcousticState acoustic_state;
+	AcousticState acoustic_target;
+	ObjectID acoustic_listener;
+
 protected:
 	void _validate_property(PropertyInfo &p_property) const;
 	void _notification(int p_what);
@@ -191,6 +212,10 @@ public:
 
 	void set_emission_angle_filter_attenuation_db(float p_angle_attenuation_db);
 	float get_emission_angle_filter_attenuation_db() const;
+
+	void set_acoustics(bool p_enabled);
+	bool is_using_acoustics() const;
+	Dictionary get_acoustic_state() const;
 
 	void set_attenuation_filter_cutoff_hz(float p_hz);
 	float get_attenuation_filter_cutoff_hz() const;

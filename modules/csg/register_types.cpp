@@ -31,6 +31,7 @@
 #include "register_types.h"
 
 #include "csg_shape.h"
+#include "editable_mesh_instance_3d.h"
 
 #include "core/object/class_db.h"
 
@@ -49,6 +50,7 @@ void initialize_csg_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(CSGTorus3D);
 		GDREGISTER_CLASS(CSGPolygon3D);
 		GDREGISTER_CLASS(CSGCombiner3D);
+		GDREGISTER_CLASS(EditableMeshInstance3D);
 #ifndef NAVIGATION_3D_DISABLED
 		CSGShape3D::navmesh_parse_init();
 #endif // NAVIGATION_3D_DISABLED

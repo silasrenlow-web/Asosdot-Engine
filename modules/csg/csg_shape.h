@@ -36,11 +36,13 @@
 #include "scene/3d/visual_instance_3d.h"
 
 #ifndef PHYSICS_3D_DISABLED
+#include "scene/resources/3d/acoustic_material.h"
 #include "scene/resources/3d/concave_polygon_shape_3d.h"
 #endif // PHYSICS_3D_DISABLED
 
 #include <thirdparty/misc/mikktspace.h>
 
+class EditableMeshInstance3D;
 class Mesh;
 class NavigationMesh;
 class NavigationMeshSourceGeometryData3D;
@@ -59,6 +61,9 @@ public:
 private:
 	Operation operation = OPERATION_UNION;
 	CSGShape3D *parent_shape = nullptr;
+	// Asosdot: a shape under an EditableMeshInstance3D is one of its operands, not a root.
+	EditableMeshInstance3D *parent_editable = nullptr;
+	void _notify_parent_dirty();
 
 	CSGBrush *brush = nullptr;
 
@@ -76,6 +81,8 @@ private:
 	uint32_t collision_layer = 1;
 	uint32_t collision_mask = 1;
 	real_t collision_priority = 1.0;
+	// How sound treats this shape, for the Asosdot Acoustic Engine.
+	Ref<AcousticMaterial> acoustic_material;
 	Ref<ConcavePolygonShape3D> root_collision_shape;
 	RID root_collision_instance;
 	RID root_collision_debug_instance;
@@ -130,6 +137,7 @@ protected:
 	static void _bind_methods();
 
 	friend class CSGCombiner3D;
+	friend class EditableMeshInstance3D;
 	CSGBrush *_get_brush();
 
 	void _validate_property(PropertyInfo &p_property) const;
@@ -164,6 +172,11 @@ public:
 
 	void set_collision_priority(real_t p_priority);
 	real_t get_collision_priority() const;
+
+#ifndef PHYSICS_3D_DISABLED
+	void set_acoustic_material(const Ref<AcousticMaterial> &p_material);
+	Ref<AcousticMaterial> get_acoustic_material() const;
+#endif // PHYSICS_3D_DISABLED
 
 	void set_autosmooth(bool p_smooth);
 	bool is_autosmooth() const;

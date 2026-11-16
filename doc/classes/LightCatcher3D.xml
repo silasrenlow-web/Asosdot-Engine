@@ -10,7 +10,7 @@
 		# On an enemy: see the player only where they're lit.
 		@export var player_light: LightCatcher3D
 
-		func can_see_player() -> bool:
+		func can_see_player() -&gt; bool:
 		    return has_line_of_sight() and player_light.is_lit()
 		[/codeblock]
 		Brightness is in the units diffuse shading uses: a white surface facing a light of energy [code]1.0[/code] at full strength reads [code]1.0[/code], and its colour on screen is its albedo times this, before exposure and tonemapping. The environment's ambient light and global illumination aren't counted, only lights.

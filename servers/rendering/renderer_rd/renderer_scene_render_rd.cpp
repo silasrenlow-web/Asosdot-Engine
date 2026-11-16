@@ -829,7 +829,9 @@ void RendererSceneRenderRD::_render_buffers_post_process_and_tonemap(const Rende
 		double step = RSG::camera_attributes->camera_attributes_get_auto_exposure_adjust_speed(p_render_data->camera_attributes) * time_step;
 		float auto_exposure_min_sensitivity = RSG::camera_attributes->camera_attributes_get_auto_exposure_min_sensitivity(p_render_data->camera_attributes);
 		float auto_exposure_max_sensitivity = RSG::camera_attributes->camera_attributes_get_auto_exposure_max_sensitivity(p_render_data->camera_attributes);
-		luminance->luminance_reduction(rb->get_internal_texture(), rb->get_internal_size(), luminance_buffers, auto_exposure_min_sensitivity, auto_exposure_max_sensitivity, step, set_immediate);
+		float auto_exposure_dark_speed = RSG::camera_attributes->camera_attributes_get_auto_exposure_dark_speed(p_render_data->camera_attributes);
+		float auto_exposure_center_weight = RSG::camera_attributes->camera_attributes_get_auto_exposure_center_weight(p_render_data->camera_attributes);
+		luminance->luminance_reduction(rb->get_internal_texture(), rb->get_internal_size(), luminance_buffers, auto_exposure_min_sensitivity, auto_exposure_max_sensitivity, step, set_immediate, auto_exposure_dark_speed, auto_exposure_center_weight);
 
 		// Swap final reduce with prev luminance.
 

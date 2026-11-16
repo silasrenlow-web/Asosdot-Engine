@@ -51,6 +51,10 @@ class MeshInstance3DEditor : public Control {
 		MENU_OPTION_CREATE_UV2,
 		MENU_OPTION_DEBUG_UV1,
 		MENU_OPTION_DEBUG_UV2,
+		// Asosdot: shape a mesh with CSG shapes (EditableMeshInstance3D, in the CSG module).
+		MENU_OPTION_MAKE_EDITABLE,
+		MENU_OPTION_APPLY_EDITS,
+		MENU_OPTION_CONVERT_TO_MESH_INSTANCE,
 	};
 
 	enum ShapePlacement {
@@ -115,6 +119,10 @@ class MeshInstance3DEditor : public Control {
 
 protected:
 	void _node_removed(Node *p_node);
+	void _update_editable_items();
+	void _make_editable();
+	void _apply_edits();
+	void _convert_to_mesh_instance();
 
 	void _notification(int p_what);
 

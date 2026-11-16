@@ -447,15 +447,17 @@ void Skeleton3DEditor::reset_pose(const bool p_all_bones) {
 		}
 		ur->add_do_method(skeleton, "reset_bone_poses");
 	} else {
-		// Todo: Do method with multiple bone selection.
-		if (selected_bone == -1) {
+		const Vector<int> bones = _get_affected_bones(false);
+		if (bones.is_empty()) {
 			ur->commit_action();
 			return;
 		}
-		ur->add_undo_method(skeleton, "set_bone_pose_position", selected_bone, skeleton->get_bone_pose_position(selected_bone));
-		ur->add_undo_method(skeleton, "set_bone_pose_rotation", selected_bone, skeleton->get_bone_pose_rotation(selected_bone));
-		ur->add_undo_method(skeleton, "set_bone_pose_scale", selected_bone, skeleton->get_bone_pose_scale(selected_bone));
-		ur->add_do_method(skeleton, "reset_bone_pose", selected_bone);
+		for (int bone : bones) {
+			ur->add_undo_method(skeleton, "set_bone_pose_position", bone, skeleton->get_bone_pose_position(bone));
+			ur->add_undo_method(skeleton, "set_bone_pose_rotation", bone, skeleton->get_bone_pose_rotation(bone));
+			ur->add_undo_method(skeleton, "set_bone_pose_scale", bone, skeleton->get_bone_pose_scale(bone));
+			ur->add_do_method(skeleton, "reset_bone_pose", bone);
+		}
 	}
 
 	ur->add_undo_method(this, "update_joint_tree");
@@ -501,12 +503,18 @@ void Skeleton3DEditor::_insert_keys(const bool p_all_bones) {
 	Node *root = EditorNode::get_singleton()->get_tree()->get_root();
 	String path = String(root->get_path_to(skeleton));
 
+	// Asosdot: with bones selected, only those bones are keyed.
+	HashSet<int> only_bones;
+	for (int bone : get_selected_bones(skeleton)) {
+		only_bones.insert(bone);
+	}
+
 	AnimationTrackEditor *te = AnimationPlayerEditor::get_singleton()->get_track_editor();
 	te->make_insert_queue();
 	for (int i = 0; i < bone_len; i++) {
 		const String name = skeleton->get_bone_name(i);
 
-		if (name.is_empty()) {
+		if (name.is_empty() || (!only_bones.is_empty() && !only_bones.has(i))) {
 			continue;
 		}
 
@@ -539,13 +547,15 @@ void Skeleton3DEditor::pose_to_rest(const bool p_all_bones) {
 			ur->add_undo_method(skeleton, "set_bone_rest", i, skeleton->get_bone_rest(i));
 		}
 	} else {
-		// Todo: Do method with multiple bone selection.
-		if (selected_bone == -1) {
+		const Vector<int> bones = _get_affected_bones(false);
+		if (bones.is_empty()) {
 			ur->commit_action();
 			return;
 		}
-		ur->add_do_method(skeleton, "set_bone_rest", selected_bone, skeleton->get_bone_pose(selected_bone));
-		ur->add_undo_method(skeleton, "set_bone_rest", selected_bone, skeleton->get_bone_rest(selected_bone));
+		for (int bone : bones) {
+			ur->add_do_method(skeleton, "set_bone_rest", bone, skeleton->get_bone_pose(bone));
+			ur->add_undo_method(skeleton, "set_bone_rest", bone, skeleton->get_bone_rest(bone));
+		}
 	}
 
 	ur->add_undo_method(this, "update_joint_tree");
@@ -841,29 +851,221 @@ void Skeleton3DEditor::move_skeleton_bone(NodePath p_skeleton_path, int32_t p_se
 	ur->commit_action();
 }
 
+// The inspector, the bone options and the gizmo follow the active bone.
 void Skeleton3DEditor::_joint_tree_selection_changed() {
-	TreeItem *selected = joint_tree->get_selected();
-	if (selected) {
-		const String path = selected->get_metadata(0);
-		if (!path.begins_with("bones/")) {
-			return;
-		}
-		const int b_idx = path.get_slicec('/', 1).to_int();
-		selected_bone = b_idx;
-		if (pose_editor) {
-			const String bone_path = "bones/" + itos(b_idx) + "/";
-			pose_editor->set_target(bone_path);
-			pose_editor->set_keyable(keyable);
-		}
+	const bool has_bone = skeleton && selected_bone >= 0 && selected_bone < skeleton->get_bone_count();
+	if (has_bone && pose_editor) {
+		pose_editor->set_target("bones/" + itos(selected_bone) + "/");
+		pose_editor->set_keyable(keyable);
 	}
 
 	if (pose_editor && pose_editor->is_inside_tree()) {
-		pose_editor->set_visible(selected);
+		pose_editor->set_visible(has_bone);
 	}
-	set_bone_options_enabled(selected);
+	set_bone_options_enabled(!get_selected_bones(skeleton).is_empty());
 
 	_update_properties();
 	_update_gizmo_visible();
+}
+
+HashMap<ObjectID, Skeleton3DEditor::BoneSelection> Skeleton3DEditor::bone_selections;
+
+Vector<int> Skeleton3DEditor::get_selected_bones(const Skeleton3D *p_skeleton) {
+	Vector<int> bones;
+	if (!p_skeleton) {
+		return bones;
+	}
+	const BoneSelection *selection = bone_selections.getptr(p_skeleton->get_instance_id());
+	if (selection) {
+		const int bone_count = p_skeleton->get_bone_count();
+		for (int bone : selection->bones) {
+			if (bone < bone_count) { // Bones can be removed after they were selected.
+				bones.push_back(bone);
+			}
+		}
+	}
+	return bones;
+}
+
+bool Skeleton3DEditor::is_bone_selected(const Skeleton3D *p_skeleton, int p_bone) {
+	if (!p_skeleton || p_bone < 0 || p_bone >= p_skeleton->get_bone_count()) {
+		return false;
+	}
+	const BoneSelection *selection = bone_selections.getptr(p_skeleton->get_instance_id());
+	return selection && selection->bones.has(p_bone);
+}
+
+int Skeleton3DEditor::get_active_bone(const Skeleton3D *p_skeleton) {
+	if (!p_skeleton) {
+		return -1;
+	}
+	const BoneSelection *selection = bone_selections.getptr(p_skeleton->get_instance_id());
+	return selection && selection->active < p_skeleton->get_bone_count() ? selection->active : -1;
+}
+
+void Skeleton3DEditor::set_selected_bones(Skeleton3D *p_skeleton, const Vector<int> &p_bones, int p_active) {
+	ERR_FAIL_NULL(p_skeleton);
+
+	BoneSelection selection;
+	const int bone_count = p_skeleton->get_bone_count();
+	for (int bone : p_bones) {
+		if (bone >= 0 && bone < bone_count && !selection.bones.has(bone)) {
+			selection.bones.push_back(bone);
+		}
+	}
+	if (selection.bones.has(p_active)) {
+		selection.active = p_active;
+	} else if (!selection.bones.is_empty()) {
+		selection.active = selection.bones[selection.bones.size() - 1];
+	}
+
+	const ObjectID id = p_skeleton->get_instance_id();
+	if (selection.bones.is_empty()) {
+		bone_selections.erase(id);
+	} else {
+		bone_selections[id] = selection;
+	}
+
+	if (singleton && singleton->skeleton == p_skeleton) {
+		singleton->_apply_bone_selection();
+	}
+	p_skeleton->update_gizmos();
+
+	AnimationPlayerEditor *player_editor = AnimationPlayerEditor::get_singleton();
+	if (player_editor && player_editor->get_track_editor()) {
+		player_editor->get_track_editor()->bone_selection_changed();
+	}
+}
+
+// Shows the stored selection in the bone tree, the inspector and the viewport.
+void Skeleton3DEditor::_apply_bone_selection() {
+	if (!skeleton) {
+		return;
+	}
+	selected_bone = get_active_bone(skeleton);
+
+	updating_tree_selection = true;
+	joint_tree->deselect_all();
+	TreeItem *active_item = nullptr;
+	for (int bone : get_selected_bones(skeleton)) {
+		TreeItem *ti = _find(joint_tree->get_root(), "bones/" + itos(bone));
+		if (!ti) {
+			continue;
+		}
+		// Make visible when it's collapsed.
+		for (TreeItem *node = ti->get_parent(); node && node != joint_tree->get_root(); node = node->get_parent()) {
+			node->set_collapsed(false);
+		}
+		if (bone == selected_bone) {
+			active_item = ti;
+		} else {
+			ti->select(0, false);
+		}
+	}
+	if (active_item) {
+		active_item->select(0, true); // The active bone is the tree's cursor.
+		joint_tree->scroll_to_item(active_item);
+	}
+	updating_tree_selection = false;
+
+	update_bone_original();
+	_joint_tree_selection_changed();
+}
+
+void Skeleton3DEditor::_joint_tree_multi_selected(Object *p_item, int p_column, bool p_selected) {
+	if (updating_tree_selection || tree_selection_pending) {
+		return;
+	}
+	// One click sends a signal for every row it selects or deselects; read the result once.
+	tree_selection_pending = true;
+	callable_mp(this, &Skeleton3DEditor::_apply_tree_selection).call_deferred();
+}
+
+void Skeleton3DEditor::_apply_tree_selection() {
+	tree_selection_pending = false;
+	if (!skeleton) {
+		return;
+	}
+	Vector<int> bones;
+	for (TreeItem *item = joint_tree->get_next_selected(joint_tree->get_root()); item; item = joint_tree->get_next_selected(item)) {
+		const String path = item->get_metadata(0);
+		if (path.begins_with("bones/")) {
+			bones.push_back(path.get_slicec('/', 1).to_int());
+		}
+	}
+	int active = -1;
+	TreeItem *cursor = joint_tree->get_selected();
+	if (cursor && cursor->is_selected(0)) {
+		const String path = cursor->get_metadata(0);
+		if (path.begins_with("bones/")) {
+			active = path.get_slicec('/', 1).to_int();
+		}
+	}
+	set_selected_bones(skeleton, bones, active);
+}
+
+Vector<int> Skeleton3DEditor::_get_affected_bones(bool p_all_bones) const {
+	if (!p_all_bones) {
+		return get_selected_bones(skeleton);
+	}
+	Vector<int> bones;
+	for (int i = 0; skeleton && i < skeleton->get_bone_count(); i++) {
+		bones.push_back(i);
+	}
+	return bones;
+}
+
+// The viewport keeps its own list of selected subgizmos, so it is told every selected bone.
+void Skeleton3DEditor::_sync_viewport_selection() {
+	if (!skeleton || !edit_mode) {
+		return;
+	}
+	Node3DEditorSelectedItem *se = EditorNode::get_singleton()->get_editor_selection()->get_node_editor_data<Node3DEditorSelectedItem>(skeleton);
+	if (!se) {
+		return;
+	}
+	Ref<EditorNode3DGizmo> skeleton_gizmo;
+	for (const Ref<Node3DGizmo> &gizmo : skeleton->get_gizmos()) {
+		Ref<EditorNode3DGizmo> editor_gizmo = gizmo;
+		if (editor_gizmo.is_valid() && Object::cast_to<Skeleton3DGizmoPlugin>(editor_gizmo->get_plugin().ptr())) {
+			skeleton_gizmo = editor_gizmo;
+			break;
+		}
+	}
+
+	se->subgizmos.clear();
+	const Vector<int> bones = get_selected_bones(skeleton);
+	// The active bone goes first, so a single-bone gizmo sits on it.
+	if (selected_bone >= 0) {
+		se->subgizmos.insert(selected_bone, skeleton->get_bone_global_pose(selected_bone));
+	}
+	for (int bone : bones) {
+		if (!se->subgizmos.has(bone)) {
+			se->subgizmos.insert(bone, skeleton->get_bone_global_pose(bone));
+		}
+	}
+	se->gizmo = se->subgizmos.is_empty() || skeleton_gizmo.is_null() ? Ref<EditorNode3DGizmo>() : skeleton_gizmo;
+	if (se->gizmo.is_null()) {
+		se->subgizmos.clear();
+	}
+	skeleton->update_gizmos();
+	Node3DEditor::get_singleton()->update_transform_gizmo();
+}
+
+bool Skeleton3DEditor::get_bone_original(int p_bone, Vector3 &r_position, Quaternion &r_rotation, Vector3 &r_scale) const {
+	const BonePose *pose = bone_originals.getptr(p_bone);
+	if (pose) {
+		r_position = pose->position;
+		r_rotation = pose->rotation;
+		r_scale = pose->scale;
+		return true;
+	}
+	if (skeleton && p_bone >= 0 && p_bone < skeleton->get_bone_count()) {
+		r_position = skeleton->get_bone_pose_position(p_bone);
+		r_rotation = skeleton->get_bone_pose_rotation(p_bone);
+		r_scale = skeleton->get_bone_pose_scale(p_bone);
+	}
+	return false;
 }
 
 // May be not used with single select mode.
@@ -1047,8 +1249,10 @@ void Skeleton3DEditor::update_joint_tree() {
 			bones_to_process.push_back(current_bone_child_bones[i]);
 		}
 
-		if (current_bone_idx == selected_bone) {
-			joint_item->select(0);
+		if (is_bone_selected(skeleton, current_bone_idx)) {
+			updating_tree_selection = true;
+			joint_item->select(0, current_bone_idx == selected_bone);
+			updating_tree_selection = false;
 		}
 	}
 }
@@ -1155,7 +1359,7 @@ void Skeleton3DEditor::create_editors() {
 	key_insert_button->set_theme_type_variation(SceneStringName(FlatButton));
 	key_insert_button->set_focus_mode(FOCUS_ACCESSIBILITY);
 	key_insert_button->connect(SceneStringName(pressed), callable_mp(this, &Skeleton3DEditor::insert_keys).bind(false, false));
-	key_insert_button->set_tooltip_text(TTRC("Insert key (based on mask) for bones with an existing track."));
+	key_insert_button->set_tooltip_text(TTRC("Insert key (based on mask) for bones with an existing track.\nWhen bones are selected, only the selected bones are keyed."));
 	key_insert_button->set_shortcut(ED_SHORTCUT("skeleton_3d_editor/insert_key_to_existing_tracks", TTRC("Insert Key (Existing Tracks)"), Key::INSERT));
 	animation_hb->add_child(key_insert_button);
 
@@ -1163,7 +1367,7 @@ void Skeleton3DEditor::create_editors() {
 	key_insert_new_button->set_theme_type_variation(SceneStringName(FlatButton));
 	key_insert_new_button->set_focus_mode(FOCUS_ACCESSIBILITY);
 	key_insert_new_button->connect(SceneStringName(pressed), callable_mp(this, &Skeleton3DEditor::insert_keys).bind(true, false));
-	key_insert_new_button->set_tooltip_text(TTRC("Insert key (based on mask) for all bones."));
+	key_insert_new_button->set_tooltip_text(TTRC("Insert key (based on mask) for all bones.\nWhen bones are selected, only the selected bones are keyed."));
 	key_insert_new_button->set_shortcut(ED_SHORTCUT("skeleton_3d_editor/insert_key_of_all_bones", TTRC("Insert Key (All Bones)"), KeyModifierMask::CMD_OR_CTRL + Key::INSERT));
 	animation_hb->add_child(key_insert_new_button);
 
@@ -1197,7 +1401,7 @@ void Skeleton3DEditor::create_editors() {
 	joint_tree = memnew(Tree);
 	joint_tree->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
 	joint_tree->set_columns(1);
-	joint_tree->set_select_mode(Tree::SELECT_SINGLE);
+	joint_tree->set_select_mode(Tree::SELECT_MULTI); // Asosdot: Ctrl/Shift+click selects several bones.
 	joint_tree->set_hide_root(true);
 	joint_tree->set_v_size_flags(SIZE_EXPAND_FILL);
 	joint_tree->set_h_size_flags(SIZE_EXPAND_FILL);
@@ -1238,7 +1442,11 @@ void Skeleton3DEditor::_notification(int p_what) {
 		case NOTIFICATION_ENTER_TREE: {
 			update_joint_tree();
 
-			joint_tree->connect(SceneStringName(item_selected), callable_mp(this, &Skeleton3DEditor::_joint_tree_selection_changed));
+			joint_tree->connect("multi_selected", callable_mp(this, &Skeleton3DEditor::_joint_tree_multi_selected));
+			if (!get_selected_bones(skeleton).is_empty()) {
+				// The inspector rebuilt this editor; bring back the skeleton's bone selection.
+				callable_mp(this, &Skeleton3DEditor::_apply_bone_selection).call_deferred();
+			}
 			joint_tree->connect("item_mouse_selected", callable_mp(this, &Skeleton3DEditor::_joint_tree_rmb_select));
 			joint_tree->connect("button_clicked", callable_mp(this, &Skeleton3DEditor::_joint_tree_button_clicked));
 
@@ -1270,7 +1478,8 @@ void Skeleton3DEditor::_notification(int p_what) {
 		case NOTIFICATION_PREDELETE: {
 			_disconnect_from_tree();
 			if (skeleton) {
-				select_bone(-1); // Requires that the joint_tree has not been deleted.
+				// The bone selection is kept for the next editor of this skeleton; only this editor lets go of it.
+				selected_bone = -1;
 				_disconnect_from_skeleton();
 				skeleton->set_transform_gizmo_visible(true);
 
@@ -1398,6 +1607,14 @@ void Skeleton3DEditor::update_bone_original() {
 	if (!skeleton) {
 		return;
 	}
+	bone_originals.clear();
+	for (int bone : get_selected_bones(skeleton)) {
+		BonePose pose;
+		pose.position = skeleton->get_bone_pose_position(bone);
+		pose.rotation = skeleton->get_bone_pose_rotation(bone);
+		pose.scale = skeleton->get_bone_pose_scale(bone);
+		bone_originals.insert(bone, pose);
+	}
 	if (skeleton->get_bone_count() == 0 || selected_bone == -1) {
 		return;
 	}
@@ -1442,6 +1659,8 @@ void Skeleton3DEditor::_draw_handles() {
 			Color c;
 			if (i == selected_bone) {
 				c = Color(1, 1, 0);
+			} else if (is_bone_selected(skeleton, i)) {
+				c = Color(1, 0.55, 0.1); // Selected, but not the active bone.
 			} else {
 				c = Color(0.1, 0.25, 0.8);
 			}
@@ -1489,49 +1708,20 @@ void Skeleton3DEditor::_subgizmo_selection_change() {
 		return;
 	}
 
-	int selected = -1;
-	Skeleton3DEditor *se = Skeleton3DEditor::get_singleton();
-	if (se) {
-		selected = se->get_selected_bone();
-	}
-
-	if (selected >= 0) {
-		Vector<Ref<Node3DGizmo>> gizmos = skeleton->get_gizmos();
-		for (int i = 0; i < gizmos.size(); i++) {
-			Ref<EditorNode3DGizmo> gizmo = gizmos[i];
-			if (gizmo.is_null()) {
-				continue;
-			}
-			Ref<Skeleton3DGizmoPlugin> plugin = gizmo->get_plugin();
-			if (plugin.is_null()) {
-				continue;
-			}
-			skeleton->set_subgizmo_selection(gizmo, selected, skeleton->get_bone_global_pose(selected));
-			break;
-		}
-	} else {
-		skeleton->clear_subgizmo_selection();
-	}
+	// Deferred, after the viewport has finished handling the click that changed the selection,
+	// as it would otherwise put back the one bone it picked.
+	callable_mp(this, &Skeleton3DEditor::_sync_viewport_selection).call_deferred();
 }
 
 void Skeleton3DEditor::select_bone(int p_idx) {
-	if (p_idx >= 0) {
-		TreeItem *ti = _find(joint_tree->get_root(), "bones/" + itos(p_idx));
-		if (ti) {
-			// Make visible when it's collapsed.
-			TreeItem *node = ti->get_parent();
-			while (node && node != joint_tree->get_root()) {
-				node->set_collapsed(false);
-				node = node->get_parent();
-			}
-			ti->select(0);
-			joint_tree->scroll_to_item(ti);
-		}
-	} else {
-		selected_bone = -1;
-		joint_tree->deselect_all();
-		_joint_tree_selection_changed();
+	if (!skeleton) {
+		return;
 	}
+	Vector<int> bones;
+	if (p_idx >= 0) {
+		bones.push_back(p_idx);
+	}
+	set_selected_bones(skeleton, bones, p_idx);
 }
 
 Skeleton3DEditor::~Skeleton3DEditor() {
@@ -1571,6 +1761,7 @@ EditorPlugin::AfterGUIInput Skeleton3DEditorPlugin::forward_3d_gui_input(Camera3
 	if (se && se->is_edit_mode()) {
 		const Ref<InputEventMouseButton> mb = p_event;
 		if (mb.is_valid() && mb->get_button_index() == MouseButton::LEFT && mb->is_pressed()) {
+			se->click_appends = mb->is_shift_pressed(); // Read by the bone picking and box select of this click.
 			se->update_bone_original();
 		}
 		return EditorPlugin::AFTER_GUI_INPUT_CUSTOM;
@@ -1675,15 +1866,77 @@ int Skeleton3DGizmoPlugin::subgizmos_intersect_ray(const EditorNode3DGizmo *p_gi
 	}
 
 	int closest_idx = skeleton_intersect_ray(skeleton, p_camera, p_point);
+	const bool append = se->get_click_appends();
 
 	if (closest_idx >= 0) {
-		se->select_bone(closest_idx);
+		// Shift+click adds the bone, or takes it out if it was selected.
+		Vector<int> bones;
+		int active = closest_idx;
+		if (append) {
+			bones = Skeleton3DEditor::get_selected_bones(skeleton);
+			if (bones.has(closest_idx)) {
+				bones.erase(closest_idx);
+				active = Skeleton3DEditor::get_active_bone(skeleton);
+			} else {
+				bones.push_back(closest_idx);
+			}
+		} else {
+			bones.push_back(closest_idx);
+		}
+		Skeleton3DEditor::set_selected_bones(skeleton, bones, active);
 		se->update_bone_original();
 		return closest_idx;
 	}
 
-	se->select_bone(-1);
+	// A miss keeps a Shift selection; the box select that may follow adds to it.
+	if (!append) {
+		Skeleton3DEditor::set_selected_bones(skeleton, Vector<int>(), -1);
+	}
 	return -1;
+}
+
+Vector<int> Skeleton3DGizmoPlugin::subgizmos_intersect_frustum(const EditorNode3DGizmo *p_gizmo, const Camera3D *p_camera, const Vector<Plane> &p_frustum) const {
+	Vector<int> hits;
+	Skeleton3D *skeleton = Object::cast_to<Skeleton3D>(p_gizmo->get_node_3d());
+	ERR_FAIL_NULL_V(skeleton, hits);
+	Skeleton3DEditor *se = Skeleton3DEditor::get_singleton();
+	if (!se || !se->is_edit_mode() || se->get_skeleton() != skeleton) {
+		return hits;
+	}
+
+	const Transform3D gt = skeleton->get_global_transform();
+	for (int i = 0; i < skeleton->get_bone_count(); i++) {
+		const Vector3 joint = gt.xform(skeleton->get_bone_global_pose(i).origin);
+		bool inside = true;
+		for (const Plane &plane : p_frustum) {
+			if (plane.is_point_over(joint)) {
+				inside = false;
+				break;
+			}
+		}
+		if (inside) {
+			hits.push_back(i);
+		}
+	}
+
+	Vector<int> bones = se->get_click_appends() ? Skeleton3DEditor::get_selected_bones(skeleton) : Vector<int>();
+	for (int bone : hits) {
+		if (!bones.has(bone)) {
+			bones.push_back(bone);
+		}
+	}
+	int active = Skeleton3DEditor::get_active_bone(skeleton);
+	if (!bones.has(active)) {
+		active = bones.is_empty() ? -1 : bones[0];
+	}
+	Skeleton3DEditor::set_selected_bones(skeleton, bones, active);
+	se->update_bone_original();
+	return hits;
+}
+
+bool Skeleton3DGizmoPlugin::wants_subgizmo_region_select(const EditorNode3DGizmo *p_gizmo) const {
+	Skeleton3DEditor *se = Skeleton3DEditor::get_singleton();
+	return se && se->is_edit_mode() && se->get_skeleton() == p_gizmo->get_node_3d();
 }
 
 int Skeleton3DGizmoPlugin::skeleton_intersect_ray(const Skeleton3D *p_skeleton, Camera3D *p_camera, const Vector2 &p_point) {
@@ -1717,6 +1970,30 @@ void Skeleton3DGizmoPlugin::set_subgizmo_transform(const EditorNode3DGizmo *p_gi
 	Skeleton3D *skeleton = Object::cast_to<Skeleton3D>(p_gizmo->get_node_3d());
 	ERR_FAIL_NULL(skeleton);
 
+	// Asosdot: with several bones selected, a bone below another selected bone follows it and is
+	// not moved twice. Rotating or scaling several separate bones turns each one where it is,
+	// rather than swinging them round the middle of the selection.
+	bool keep_position = false;
+	const Vector<int> selected = Skeleton3DEditor::get_selected_bones(skeleton);
+	if (selected.size() > 1) {
+		auto has_selected_ancestor = [&](int p_bone) {
+			for (int parent = skeleton->get_bone_parent(p_bone); parent >= 0; parent = skeleton->get_bone_parent(parent)) {
+				if (selected.has(parent)) {
+					return true;
+				}
+			}
+			return false;
+		};
+		if (has_selected_ancestor(p_id)) {
+			return;
+		}
+		int top_bones = 0;
+		for (int bone : selected) {
+			top_bones += has_selected_ancestor(bone) ? 0 : 1;
+		}
+		keep_position = top_bones > 1 && !p_transform.basis.is_equal_approx(skeleton->get_bone_global_pose(p_id).basis);
+	}
+
 	// Prepare for global to local.
 	Transform3D original_to_local;
 	int parent_idx = skeleton->get_bone_parent(p_id);
@@ -1734,7 +2011,7 @@ void Skeleton3DGizmoPlugin::set_subgizmo_transform(const EditorNode3DGizmo *p_gi
 	// Origin.
 	Vector3 orig = skeleton->get_bone_pose(p_id).origin;
 	Vector3 sub = p_transform.origin - skeleton->get_bone_global_pose(p_id).origin;
-	t.origin = orig + to_local.xform(sub);
+	t.origin = keep_position ? orig : orig + to_local.xform(sub);
 
 	// Apply transform.
 	skeleton->set_bone_pose_position(p_id, t.origin);
@@ -1752,11 +2029,24 @@ void Skeleton3DGizmoPlugin::commit_subgizmos(const EditorNode3DGizmo *p_gizmo, c
 	EditorUndoRedoManager *ur = EditorUndoRedoManager::get_singleton();
 	ur->create_action(TTR("Set Bone Transform"));
 
+	// Asosdot: each selected bone goes back to its own pose from when the transform began.
+	struct Original {
+		Vector3 position;
+		Quaternion rotation;
+		Vector3 scale;
+	};
+	HashMap<int, Original> originals;
+	for (int id : p_ids) {
+		Original original;
+		se->get_bone_original(id, original.position, original.rotation, original.scale);
+		originals.insert(id, original);
+	}
+
 	if (p_cancel) {
 		for (int id : p_ids) {
-			ur->add_do_method(skeleton, "set_bone_pose_position", id, se->get_bone_original_position());
-			ur->add_do_method(skeleton, "set_bone_pose_rotation", id, se->get_bone_original_rotation());
-			ur->add_do_method(skeleton, "set_bone_pose_scale", id, se->get_bone_original_scale());
+			ur->add_do_method(skeleton, "set_bone_pose_position", id, originals[id].position);
+			ur->add_do_method(skeleton, "set_bone_pose_rotation", id, originals[id].rotation);
+			ur->add_do_method(skeleton, "set_bone_pose_scale", id, originals[id].scale);
 			ur->add_undo_method(skeleton, "set_bone_pose_position", id, skeleton->get_bone_pose_position(id));
 			ur->add_undo_method(skeleton, "set_bone_pose_rotation", id, skeleton->get_bone_pose_rotation(id));
 			ur->add_undo_method(skeleton, "set_bone_pose_scale", id, skeleton->get_bone_pose_scale(id));
@@ -1766,19 +2056,19 @@ void Skeleton3DGizmoPlugin::commit_subgizmos(const EditorNode3DGizmo *p_gizmo, c
 		if (tool_mode == Node3DEditor::TOOL_MODE_MOVE || tool_mode == Node3DEditor::TOOL_MODE_TRANSFORM) {
 			for (int id : p_ids) {
 				ur->add_do_method(skeleton, "set_bone_pose_position", id, skeleton->get_bone_pose_position(id));
-				ur->add_undo_method(skeleton, "set_bone_pose_position", id, se->get_bone_original_position());
+				ur->add_undo_method(skeleton, "set_bone_pose_position", id, originals[id].position);
 			}
 		}
 		if (tool_mode == Node3DEditor::TOOL_MODE_ROTATE || tool_mode == Node3DEditor::TOOL_MODE_TRANSFORM) {
 			for (int id : p_ids) {
 				ur->add_do_method(skeleton, "set_bone_pose_rotation", id, skeleton->get_bone_pose_rotation(id));
-				ur->add_undo_method(skeleton, "set_bone_pose_rotation", id, se->get_bone_original_rotation());
+				ur->add_undo_method(skeleton, "set_bone_pose_rotation", id, originals[id].rotation);
 			}
 		}
 		if (tool_mode == Node3DEditor::TOOL_MODE_SCALE || tool_mode == Node3DEditor::TOOL_MODE_TRANSFORM) {
 			for (int id : p_ids) {
 				ur->add_do_method(skeleton, "set_bone_pose_scale", id, skeleton->get_bone_pose_scale(id));
-				ur->add_undo_method(skeleton, "set_bone_pose_scale", id, se->get_bone_original_scale());
+				ur->add_undo_method(skeleton, "set_bone_pose_scale", id, originals[id].scale);
 			}
 		}
 	}
@@ -1845,7 +2135,9 @@ Ref<ArrayMesh> Skeleton3DGizmoPlugin::get_bones_mesh(Skeleton3D *p_skeleton, int
 		int current_bone_idx = bones_to_process[current_bone_index];
 		current_bone_index++;
 
-		Color current_bone_color = (current_bone_idx == p_selected) ? selected_bone_color : bone_color;
+		// Asosdot: every selected bone is drawn selected, not only the active one.
+		const bool bone_selected = current_bone_idx == p_selected || (p_selected >= 0 && Skeleton3DEditor::is_bone_selected(p_skeleton, current_bone_idx));
+		Color current_bone_color = bone_selected ? selected_bone_color : bone_color;
 
 		Vector<int> child_bones_vector;
 		child_bones_vector = p_skeleton->get_bone_children(current_bone_idx);

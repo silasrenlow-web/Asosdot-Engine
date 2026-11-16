@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="AcousticEngine" inherits="Object" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		The Asosdot Acoustic Engine (AAE): how sound gets from one place to another in the level.
+	</brief_description>
+	<description>
+		The Asosdot Acoustic Engine works out the way a sound takes from where it is made to where it is heard, and the same answer drives what the player hears and what enemies hear.
+		A sound goes straight through what is in the way, losing what each surface's [AcousticMaterial] does not let through: give colliders an [member CollisionObject3D.acoustic_material] or [member CSGShape3D.acoustic_material], and those without one use [member ProjectSettings.audio/acoustics/default_material]. When the way round is louder than what gets through, the sound comes round instead, through the doorways and corridors a character could walk through, following the level's navigation mesh. It then seems to come from the last opening it came through, from as far away as the way round is long, and it loses some of itself for every corner it bends round. A level without a navigation mesh only has the straight way, through the walls.
+		[b]Enemies:[/b] call [method emit_sound] with an [AcousticEvent] for a sound that gameplay makes, such as footsteps, and every [AcousticHearing3D] that it reaches emits [signal AcousticHearing3D.sound_heard], with how loud it was and where it seemed to come from.
+		[codeblock]
+		var event = AcousticEvent.new()
+		event.source = player
+		event.position = player.global_position
+		event.sound_type = &amp;"footsteps"
+		event.intensity = 0.8
+		AcousticEngine.emit_sound(event)
+		[/codeblock]
+		[b]What the player hears:[/b] turn on [member AudioStreamPlayer3D.acoustics] on a 3D audio player and its sound is heard the way it gets to the listener: from the doorway it comes through, quieter and muffled through a wall. The room around the listener is measured too, from what its surfaces are made of and how far away they are, and drives a reverb on its own bus (see [member ProjectSettings.audio/acoustics/reverb]) that the players with acoustics send to.
+		[b]Note:[/b] This is AAE 0.1. Sound is followed through walls and round corners, but not yet reflected off surfaces one by one.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="emit_sound">
+			<return type="int" />
+			<param index="0" name="event" type="AcousticEvent" />
+			<description>
+				Makes a sound, which every [AcousticHearing3D] it reaches hears, through walls and round corners: each emits [signal AcousticHearing3D.sound_heard]. Returns how many heard it.
+				How far a sound carries is [member AcousticEvent.intensity] times [member ProjectSettings.audio/acoustics/hearing_range], and an ear's [member AcousticHearing3D.sensitivity] multiplies it again. The [member AcousticEvent.source]'s own body, and the body each ear is on, are not counted as being in the way.
+			</description>
+		</method>
+		<method name="get_room" qualifiers="const">
+			<return type="Dictionary" />
+			<description>
+				Returns what has been measured of the room around the listener, which drives the reverb: [code]enclosure[/code] (how much of what is around is closed in, from [code]0.0[/code] in the open to [code]1.0[/code] in a closed room), [code]size[/code] (the average distance to the surfaces around, in meters), [code]absorption[/code] and [code]scattering[/code] (the average of the surfaces around), [code]reverb_time[/code] (how long a sound rings on, in seconds) and [code]wet[/code] (how much reverb a sound gets).
+				The room is only measured while an [AudioStreamPlayer3D] has [member AudioStreamPlayer3D.acoustics] on.
+			</description>
+		</method>
+		<method name="trace_sound" qualifiers="const">
+			<return type="Dictionary" />
+			<param index="0" name="from" type="Vector3" />
+			<param index="1" name="to" type="Vector3" />
+			<param index="2" name="intensity" type="float" default="1.0" />
+			<description>
+				Works out how a sound made at [param from] with the given [param intensity] gets to [param to], in the current scene, the same way [method emit_sound] does, and returns:
+				- [code]loudness[/code]: how loud it is when it gets there, from [code]1.0[/code] next to the source to [code]0.0[/code] at the edge of its range.
+				- [code]distance[/code]: how far it travelled.
+				- [code]transmission[/code]: what gets through whatever is in the straight line between the two points.
+				- [code]around[/code]: [code]true[/code] if it came the long way round, through openings, because that was louder.
+				- [code]bend[/code] and [code]corners[/code]: how far it bent on the way round, in degrees, and at how many corners it turned more than a little.
+				- [code]apparent_position[/code]: where it seems to come from at [param to]; the last opening it came through when it came round.
+				- [code]path[/code]: the way round, as points on the navigation mesh, when it came round.
+			</description>
+		</method>
+	</methods>
+	<signals>
+		<signal name="sound_emitted">
+			<param index="0" name="event" type="AcousticEvent" />
+			<description>
+				Emitted when [method emit_sound] is called, before anyone hears the sound.
+			</description>
+		</signal>
+	</signals>
+</class>

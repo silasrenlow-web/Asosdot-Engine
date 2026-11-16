@@ -58,6 +58,7 @@ class SceneTreeEditor : public Control {
 		BUTTON_PIN = 8,
 		BUTTON_UNIQUE = 9,
 		BUTTON_EXPOSED = 10,
+		BUTTON_MARKED = 11,
 	};
 
 	struct CachedNode {
@@ -187,6 +188,10 @@ class SceneTreeEditor : public Control {
 	HashSet<Node *> marked;
 	bool marked_selectable = false;
 	bool marked_children_selectable = false;
+	// Asosdot: when set, marked nodes keep their own look and get this icon beside them instead of
+	// the accent color, as the Animation workspace does for nodes that have tracks.
+	StringName marked_icon;
+	String marked_tooltip;
 	bool display_foreign = false;
 	bool tree_dirty = true;
 	bool pending_test_update = false;
@@ -248,6 +253,7 @@ public:
 
 	void set_marked(const HashSet<Node *> &p_marked, bool p_selectable = true, bool p_children_selectable = true);
 	void set_marked(Node *p_marked, bool p_selectable = true, bool p_children_selectable = true);
+	void set_marked_icon(const StringName &p_icon, const String &p_tooltip);
 	void set_selected(Node *p_node, bool p_emit_selected = true);
 	Node *get_selected();
 	void set_can_rename(bool p_can_rename) { can_rename = p_can_rename; }

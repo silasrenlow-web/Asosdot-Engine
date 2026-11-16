@@ -66,8 +66,8 @@
 #include "editor/scene/3d/gizmos/label_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/lens_flare_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/light_3d_gizmo_plugin.h"
+#include "editor/scene/3d/gizmos/light_catcher_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/lightmap_gi_gizmo_plugin.h"
-#include "editor/scene/3d/gizmos/realtime_gi_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/lightmap_probe_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/marker_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/mesh_instance_3d_gizmo_plugin.h"
@@ -83,8 +83,8 @@
 #include "editor/scene/3d/gizmos/physics/soft_body_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/physics/spring_arm_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/physics/vehicle_body_3d_gizmo_plugin.h"
+#include "editor/scene/3d/gizmos/realtime_gi_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/reflection_probe_gizmo_plugin.h"
-#include "editor/scene/3d/gizmos/light_catcher_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/rope_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/spring_bone_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/sprite_base_3d_gizmo_plugin.h"
@@ -1296,10 +1296,46 @@ Vector<Plane> Node3DEditorViewport::_build_screen_frustum(const Point2 &p_min, c
 	return frustum;
 }
 
+// Asosdot: clears the selected subgizmos but keeps the node selected, unlike _clear_selected().
+void Node3DEditorViewport::_clear_subgizmos() {
+	Node3D *selected = spatial_editor->get_single_selected_node();
+	Node3DEditorSelectedItem *se = selected ? editor_selection->get_node_editor_data<Node3DEditorSelectedItem>(selected) : nullptr;
+	if (se && se->gizmo.is_valid()) {
+		se->subgizmos.clear();
+		se->gizmo->redraw();
+		se->gizmo.unref();
+		spatial_editor->update_transform_gizmo();
+	}
+}
+
+bool Node3DEditorViewport::_wants_subgizmo_region_select() const {
+	Node3D *single_selected = spatial_editor->get_single_selected_node();
+	if (!single_selected) {
+		return false;
+	}
+	const int gizmos_index = view_display_menu->get_popup()->get_item_index(VIEW_GIZMOS);
+	if (!view_display_menu->get_popup()->is_item_checked(gizmos_index)) {
+		return false;
+	}
+	for (const Ref<Node3DGizmo> &gizmo : single_selected->get_gizmos()) {
+		Ref<EditorNode3DGizmo> editor_gizmo = gizmo;
+		if (editor_gizmo.is_valid() && editor_gizmo->get_plugin().is_valid() && editor_gizmo->get_plugin()->wants_subgizmo_region_select(editor_gizmo.ptr())) {
+			return true;
+		}
+	}
+	return false;
+}
+
 void Node3DEditorViewport::_select_region() {
 	View3DController::Cursor cursor = view_3d_controller->cursor;
 
 	if (cursor.region_begin == cursor.region_end) {
+		if (subgizmo_region_select) {
+			if (!clicked_wants_append) {
+				_clear_subgizmos();
+			}
+			return;
+		}
 		if (!clicked_wants_append) {
 			_clear_selected();
 		}
@@ -1364,6 +1400,14 @@ void Node3DEditorViewport::_select_region() {
 				return;
 			}
 		}
+	}
+
+	if (subgizmo_region_select) {
+		// Only subgizmos can be picked here, so an empty box clears them and leaves the nodes alone.
+		if (!clicked_wants_append) {
+			_clear_subgizmos();
+		}
+		return;
 	}
 
 	if (!clicked_wants_append) {
@@ -2554,6 +2598,13 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 							}
 							break;
 						}
+					} else if (!previewing && _wants_subgizmo_region_select()) {
+						// Asosdot: a custom tool such as bone edit mode keeps clicks, but a drag still box selects its subgizmos.
+						subgizmo_region_select = true;
+						view_3d_controller->cursor.region_select = true;
+						view_3d_controller->cursor.region_begin = b->get_position();
+						view_3d_controller->cursor.region_end = b->get_position();
+						break;
 					}
 
 					if (clicked.is_valid() && !clicked_wants_append) {
@@ -2635,7 +2686,15 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 
 						movement_threshold_passed = false;
 						view_3d_controller->cursor.region_select = false;
+					} else if (subgizmo_region_select) {
+						if (view_3d_controller->cursor.region_select) {
+							_select_region();
+							surface->queue_redraw();
+						}
+						movement_threshold_passed = false;
+						view_3d_controller->cursor.region_select = false;
 					}
+					subgizmo_region_select = false;
 
 					if (!_edit.instant && _edit.mode != TRANSFORM_NONE) {
 						Node3D *selected = spatial_editor->get_single_selected_node();
@@ -9663,7 +9722,7 @@ void Node3DEditor::_generate_flare_pressed() {
 
 void Node3DEditor::_update_generate_flare_button() {
 	// Only lights, because the generator reads the light's type to decide how
-	// the flare should behave. Hidden rather than greyed out: this is the one
+	// the flare should behave. Hidden rather than grayed out: this is the one
 	// button in the toolbar carrying a word of text, so leaving it there for
 	// the selections it cannot act on costs more room than it is worth.
 	// Left out when the project has its own class of a lens flare name, as with a lens flare add-on.

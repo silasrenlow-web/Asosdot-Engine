@@ -52,6 +52,9 @@ protected:
 	float auto_exposure_max = 64.0;
 	float auto_exposure_speed = 0.5;
 	float auto_exposure_scale = 0.4;
+	float auto_exposure_dark_speed = 1.0;
+	float auto_exposure_center_weight = 0.0;
+	void _update_auto_exposure_eye();
 	virtual void _update_auto_exposure() {}
 
 	bool motion_blur_enabled = false;
@@ -82,6 +85,10 @@ public:
 	float get_auto_exposure_speed() const;
 	void set_auto_exposure_scale(float p_auto_exposure_scale);
 	float get_auto_exposure_scale() const;
+	void set_auto_exposure_dark_speed(float p_dark_speed);
+	float get_auto_exposure_dark_speed() const;
+	void set_auto_exposure_center_weight(float p_center_weight);
+	float get_auto_exposure_center_weight() const;
 
 	void set_motion_blur_enabled(bool p_enabled);
 	bool is_motion_blur_enabled() const;

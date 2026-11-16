@@ -335,6 +335,9 @@ private:
 	Vector<Node3D *> selection_results;
 	Vector<Node3D *> selection_results_menu;
 	bool clicked_wants_append = false;
+	bool subgizmo_region_select = false; // Asosdot: a box select over subgizmos only, started under a custom plugin.
+	bool _wants_subgizmo_region_select() const;
+	void _clear_subgizmos();
 	bool selection_in_progress = false;
 	bool movement_threshold_passed = false;
 

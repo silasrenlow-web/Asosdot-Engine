@@ -74,6 +74,9 @@
 		</method>
 	</methods>
 	<members>
+		<member name="acoustic_material" type="AcousticMaterial" setter="set_acoustic_material" getter="get_acoustic_material">
+			How sound treats this shape, for the [AcousticEngine], when [member use_collision] is on. If [code]null[/code], [member ProjectSettings.audio/acoustics/default_material] is used.
+		</member>
 		<member name="autosmooth" type="bool" setter="set_autosmooth" getter="is_autosmooth" default="false">
 			Enables automatic smoothing. This overrides any smoothing on the CSG node and instead uses [member smoothing_angle] to calculate normals based on the angle between faces.
 			Children of a [CSGCombiner3D] node will be treated as a single mesh.

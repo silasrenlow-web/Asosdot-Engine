@@ -300,7 +300,7 @@
 		<member name="animation/warnings/check_invalid_track_paths" type="bool" setter="" getter="" default="true">
 			If [code]true[/code], [AnimationMixer] prints the warning of no matching object of the track path in the scene.
 		</member>
-		<member name="application/boot_splash/bg_color" type="Color" setter="" getter="" default="Color(0.14, 0.14, 0.14, 1)">
+		<member name="application/boot_splash/bg_color" type="Color" setter="" getter="" default="Color(0.078, 0.086, 0.11, 1)">
 			Background color for the boot splash.
 		</member>
 		<member name="application/boot_splash/image" type="String" setter="" getter="" default="&quot;&quot;">
@@ -432,6 +432,21 @@
 		</member>
 		<member name="application/run/print_header" type="bool" setter="" getter="" default="true">
 			If [code]true[/code], the engine header is printed in the console on startup. This header describes the current version of the engine, as well as the renderer being used. This behavior can also be disabled on the command line with the [code]--no-header[/code] option.
+		</member>
+		<member name="audio/acoustics/collision_mask" type="int" setter="" getter="" default="4294967295">
+			The physics layers whose colliders the [AcousticEngine] counts as walls that sound goes through and reflects off.
+		</member>
+		<member name="audio/acoustics/default_material" type="String" setter="" getter="" default="&quot;&quot;">
+			The [AcousticMaterial] for colliders that have none of their own. If empty, a material with its default values is used.
+		</member>
+		<member name="audio/acoustics/hearing_range" type="float" setter="" getter="" default="40.0">
+			How far a sound of [member AcousticEvent.intensity] [code]1.0[/code] carries for [AcousticHearing3D], in meters.
+		</member>
+		<member name="audio/acoustics/reverb" type="bool" setter="" getter="" default="true">
+			If [code]true[/code], the [AcousticEngine] measures the room around the listener and drives a reverb on [member audio/acoustics/reverb_bus] from it, which [AudioStreamPlayer3D]s with [member AudioStreamPlayer3D.acoustics] on send to.
+		</member>
+		<member name="audio/acoustics/reverb_bus" type="String" setter="" getter="" default="&quot;AAE Reverb&quot;">
+			The audio bus the room reverb is on. It is made, sending to Master, if the bus layout has no bus by this name.
 		</member>
 		<member name="audio/buses/channel_disable_threshold_db" type="float" setter="" getter="" default="-60.0">
 			Audio buses will disable automatically when sound goes below a given dB threshold for a given time. This saves CPU as effects assigned to that bus will no longer do any processing.

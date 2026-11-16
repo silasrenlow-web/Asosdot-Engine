@@ -34,6 +34,7 @@
 #include "core/config/project_settings.h"
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
+#include "scene/3d/acoustic_engine.h"
 #include "scene/3d/audio_listener_3d.h"
 #include "scene/3d/camera_3d.h"
 #include "scene/3d/velocity_tracker_3d.h"
@@ -266,10 +267,18 @@ void AudioStreamPlayer3D::_notification(int p_what) {
 		case NOTIFICATION_ENTER_TREE: {
 			velocity_tracker->reset(get_global_transform().origin);
 			AudioServer::get_singleton()->add_listener_changed_callback(_listener_changed_cb, this);
+			if (acoustics && AcousticEngine::get_singleton()) {
+				AcousticEngine::get_singleton()->register_player(this);
+			}
 		} break;
 
 		case NOTIFICATION_EXIT_TREE: {
 			AudioServer::get_singleton()->remove_listener_changed_callback(_listener_changed_cb, this);
+			if (AcousticEngine::get_singleton()) {
+				AcousticEngine::get_singleton()->unregister_player(this);
+			}
+			acoustic_state = AcousticState();
+			acoustic_target = AcousticState();
 		} break;
 
 		case NOTIFICATION_TRANSFORM_CHANGED: {
@@ -429,6 +438,11 @@ Vector<AudioFrame> AudioStreamPlayer3D::_update_panning() {
 
 	bool has_any_listener_in_range = false;
 	linear_attenuation = 0;
+
+	// Asosdot Acoustic Engine: the way the sound gets to the listener it was found
+	// for, round corners and through walls.
+	const bool use_acoustics = acoustics && acoustic_state.valid;
+
 	for (Camera3D *camera : cameras) {
 		if (!camera) {
 			continue;
@@ -448,7 +462,13 @@ Vector<AudioFrame> AudioStreamPlayer3D::_update_panning() {
 			listener_node = listener;
 		}
 
-		Vector3 local_pos = listener_node->get_global_transform().orthonormalized().affine_inverse().xform(global_pos);
+		Vector3 source_pos = global_pos;
+		const bool acoustic_listener_match = use_acoustics && listener_node->get_instance_id() == acoustic_listener;
+		if (acoustic_listener_match) {
+			// Heard from where it comes in, as far away as it travelled.
+			source_pos = listener_node->get_global_transform().origin + acoustic_state.offset;
+		}
+		Vector3 local_pos = listener_node->get_global_transform().orthonormalized().affine_inverse().xform(source_pos);
 
 		float dist = local_pos.length();
 
@@ -479,6 +499,9 @@ Vector<AudioFrame> AudioStreamPlayer3D::_update_panning() {
 		float multiplier = Math::db_to_linear(_get_attenuation_db(dist));
 		if (max_distance > 0) {
 			multiplier *= MAX(0, 1.0 - (dist / max_distance));
+		}
+		if (acoustic_listener_match) {
+			multiplier *= acoustic_state.gain;
 		}
 
 		float db_att = (1.0 - MIN(1.0, multiplier)) * attenuation_filter_db;
@@ -557,8 +580,15 @@ Vector<AudioFrame> AudioStreamPlayer3D::_update_panning() {
 		actual_pitch_scale = pitch_scale_sum / pitch_scale_weight;
 	}
 
+	float highshelf_gain = linear_attenuation;
+	float highshelf_cutoff = attenuation_filter_cutoff_hz;
+	if (use_acoustics && acoustic_state.muffle > 0.0f) {
+		// Muffled by what it came through: the high end goes, from lower down.
+		highshelf_gain *= Math::lerp(1.0f, 0.05f, acoustic_state.muffle);
+		highshelf_cutoff = Math::lerp(highshelf_cutoff, MIN(highshelf_cutoff, 600.0f), acoustic_state.muffle);
+	}
 	for (Ref<AudioStreamPlayback> &playback : internal->stream_playbacks) {
-		AudioServer::get_singleton()->set_playback_highshelf_params(playback, linear_attenuation, attenuation_filter_cutoff_hz);
+		AudioServer::get_singleton()->set_playback_highshelf_params(playback, highshelf_gain, highshelf_cutoff);
 	}
 
 	bus_volumes.clear();
@@ -578,6 +608,17 @@ Vector<AudioFrame> AudioStreamPlayer3D::_update_panning() {
 #endif // PHYSICS_3D_DISABLED
 		{
 			bus_volumes[internal->bus] = output_volume_vector;
+
+			// The reverb of the room the listener is in, on the bus the engine keeps.
+			const StringName reverb_bus = use_acoustics && AcousticEngine::get_singleton() ? AcousticEngine::get_singleton()->get_reverb_bus() : StringName();
+			if (reverb_bus != StringName() && reverb_bus != internal->bus && acoustic_state.reverb_send > 0.0f) {
+				Vector<AudioFrame> reverb_vector = output_volume_vector;
+				AudioFrame *frames = reverb_vector.ptrw();
+				for (int i = 0; i < reverb_vector.size(); i++) {
+					frames[i] *= acoustic_state.reverb_send;
+				}
+				bus_volumes[reverb_bus] = reverb_vector;
+			}
 		}
 	}
 
@@ -806,6 +847,37 @@ float AudioStreamPlayer3D::get_attenuation_filter_cutoff_hz() const {
 	return attenuation_filter_cutoff_hz;
 }
 
+void AudioStreamPlayer3D::set_acoustics(bool p_enabled) {
+	if (acoustics == p_enabled) {
+		return;
+	}
+	acoustics = p_enabled;
+	acoustic_state = AcousticState();
+	acoustic_target = AcousticState();
+	AcousticEngine *engine = AcousticEngine::get_singleton();
+	if (engine && is_inside_tree()) {
+		if (acoustics) {
+			engine->register_player(this);
+		} else {
+			engine->unregister_player(this);
+		}
+	}
+}
+
+bool AudioStreamPlayer3D::is_using_acoustics() const {
+	return acoustics;
+}
+
+Dictionary AudioStreamPlayer3D::get_acoustic_state() const {
+	Dictionary state;
+	state["valid"] = acoustic_state.valid;
+	state["apparent_offset"] = acoustic_state.offset;
+	state["gain"] = acoustic_state.gain;
+	state["muffle"] = acoustic_state.muffle;
+	state["reverb_send"] = acoustic_state.reverb_send;
+	return state;
+}
+
 void AudioStreamPlayer3D::set_attenuation_filter_db(float p_db) {
 	attenuation_filter_db = p_db;
 }
@@ -948,6 +1020,10 @@ void AudioStreamPlayer3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_emission_angle_filter_attenuation_db", "db"), &AudioStreamPlayer3D::set_emission_angle_filter_attenuation_db);
 	ClassDB::bind_method(D_METHOD("get_emission_angle_filter_attenuation_db"), &AudioStreamPlayer3D::get_emission_angle_filter_attenuation_db);
 
+	ClassDB::bind_method(D_METHOD("set_acoustics", "enabled"), &AudioStreamPlayer3D::set_acoustics);
+	ClassDB::bind_method(D_METHOD("is_using_acoustics"), &AudioStreamPlayer3D::is_using_acoustics);
+	ClassDB::bind_method(D_METHOD("get_acoustic_state"), &AudioStreamPlayer3D::get_acoustic_state);
+
 	ClassDB::bind_method(D_METHOD("set_attenuation_filter_cutoff_hz", "degrees"), &AudioStreamPlayer3D::set_attenuation_filter_cutoff_hz);
 	ClassDB::bind_method(D_METHOD("get_attenuation_filter_cutoff_hz"), &AudioStreamPlayer3D::get_attenuation_filter_cutoff_hz);
 
@@ -998,6 +1074,7 @@ void AudioStreamPlayer3D::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "bus", PROPERTY_HINT_ENUM, ""), "set_bus", "get_bus");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "area_mask", PROPERTY_HINT_LAYERS_3D_PHYSICS), "set_area_mask", "get_area_mask");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "playback_type", PROPERTY_HINT_ENUM, "Default,Stream,Sample"), "set_playback_type", "get_playback_type");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "acoustics"), "set_acoustics", "is_using_acoustics");
 	ADD_GROUP("Emission Angle", "emission_angle");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "emission_angle_enabled", PROPERTY_HINT_GROUP_ENABLE), "set_emission_angle_enabled", "is_emission_angle_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "emission_angle_degrees", PROPERTY_HINT_RANGE, "0.1,90,0.1,degrees"), "set_emission_angle", "get_emission_angle");

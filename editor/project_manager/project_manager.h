@@ -49,6 +49,7 @@ class ProjectList;
 class QuickSettingsDialog;
 class RichTextLabel;
 class TabContainer;
+class TextureRect;
 class VBoxContainer;
 
 class ProjectManager : public Control {
@@ -79,6 +80,8 @@ class ProjectManager : public Control {
 
 	void _update_size_limits();
 	void _update_theme(bool p_skip_creation = false);
+	// The one button on a screen that is what you came to do, in the accent colour.
+	void _style_accent_button(Button *p_button);
 	void _titlebar_resized();
 
 	MarginContainer *root_container = nullptr;
@@ -135,11 +138,12 @@ class ProjectManager : public Control {
 	// Project list.
 
 	VBoxContainer *empty_list_placeholder = nullptr;
+	// The buttons for a project, which have nothing to act on while there is none.
+	VBoxContainer *project_list_sidebar = nullptr;
+	TextureRect *empty_list_mark = nullptr;
 	RichTextLabel *empty_list_message = nullptr;
 	Button *empty_list_create_project = nullptr;
 	Button *empty_list_import_project = nullptr;
-	Button *empty_list_open_assetlib = nullptr;
-	Label *empty_list_online_warning = nullptr;
 
 	void _update_list_placeholder();
 
@@ -163,7 +167,6 @@ class ProjectManager : public Control {
 	Button *manage_tags_btn = nullptr;
 	Button *erase_btn = nullptr;
 	Button *erase_missing_btn = nullptr;
-	Button *donate_btn = nullptr;
 
 	HBoxContainer *open_btn_container = nullptr;
 	PopupMenu *open_options_popup = nullptr;
@@ -204,7 +207,6 @@ class ProjectManager : public Control {
 	void _update_project_buttons();
 	void _open_options_popup();
 	void _open_recovery_mode_ask(bool manual = false);
-	void _open_donate_page();
 
 	void _on_project_created(const String &dir, bool edit);
 	void _on_project_duplicated(const String &p_original_path, const String &p_duplicate_path, bool p_edit);

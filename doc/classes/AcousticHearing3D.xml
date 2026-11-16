@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="AcousticHearing3D" inherits="Node3D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		Ears for an enemy, or anything else that reacts to sound, from the Asosdot Acoustic Engine.
+	</brief_description>
+	<description>
+		Hears the sounds given to [method AcousticEngine.emit_sound] that reach it: straight through what is in the way, as much as its [AcousticMaterial]s let through, or round through the doorways and corridors of the level's navigation mesh, whichever is louder. Put it where the ears are, on the enemy's body, and react in [signal sound_heard].
+		[codeblock]
+		func _on_ears_sound_heard(event, loudness, from_position):
+		    if loudness &gt; 0.4:
+		        chase(from_position)
+		    else:
+		        investigate(from_position)
+		[/codeblock]
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="listens_to" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="event" type="AcousticEvent" />
+			<description>
+				Returns [code]true[/code] if [param event] is a sound these ears listen for at all, before how loud it is: one of [member sound_types], and not their own unless [member hears_own_sounds] is on.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="hears_own_sounds" type="bool" setter="set_hears_own_sounds" getter="is_hearing_own_sounds" default="false">
+			If [code]false[/code], sounds whose [member AcousticEvent.source] is these ears or a node they are inside, such as the enemy's own footsteps, aren't heard.
+		</member>
+		<member name="min_loudness" type="float" setter="set_min_loudness" getter="get_min_loudness" default="0.02">
+			The least loudness heard, from [code]0.0[/code] to [code]1.0[/code]. Quieter sounds aren't heard at all.
+		</member>
+		<member name="sensitivity" type="float" setter="set_sensitivity" getter="get_sensitivity" default="1.0">
+			How keen these ears are: how far a sound carries for them is multiplied by this. [code]2.0[/code] hears the same sound from twice as far away.
+		</member>
+		<member name="sound_types" type="PackedStringArray" setter="set_sound_types" getter="get_sound_types" default="PackedStringArray()">
+			The kinds of sound these ears listen for, matched against [member AcousticEvent.sound_type]. Empty listens for every kind.
+		</member>
+	</members>
+	<signals>
+		<signal name="sound_heard">
+			<param index="0" name="event" type="AcousticEvent" />
+			<param index="1" name="loudness" type="float" />
+			<param index="2" name="from_position" type="Vector3" />
+			<description>
+				Emitted when a sound reaches these ears. [param loudness] is how loud it is here, from [code]1.0[/code] right next to it to [code]0.0[/code] at the edge of how far it carries. [param from_position] is where it seems to come from: where it was made when it came straight, or the last opening it came round through, which is the place to go and look.
+			</description>
+		</signal>
+	</signals>
+</class>

@@ -66,7 +66,9 @@
 #include "editor/docks/inspector_dock.h"
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/docks/signals_dock.h"
+#include "editor/docks/transmit_dock.h"
 #include "editor/editor_data.h"
+#include "editor/editor_freeze_watchdog.h"
 #include "editor/editor_interface.h"
 #include "editor/editor_log.h"
 #include "editor/editor_main_screen.h"
@@ -87,7 +89,6 @@
 #include "editor/gui/editor_file_dialog.h"
 #include "editor/gui/editor_quick_open_dialog.h"
 #include "editor/gui/editor_title_bar.h"
-#include "editor/editor_freeze_watchdog.h"
 #include "editor/gui/editor_toaster.h"
 #include "editor/gui/progress_dialog.h"
 #include "editor/gui/window_wrapper.h"
@@ -9209,6 +9210,9 @@ EditorNode::EditorNode() {
 	memnew(GroupsDock);
 	editor_dock_manager->add_dock(GroupsDock::get_singleton());
 
+	memnew(TransmitDock);
+	editor_dock_manager->add_dock(TransmitDock::get_singleton());
+
 	history_dock = memnew(HistoryDock);
 	editor_dock_manager->add_dock(history_dock);
 
@@ -9239,7 +9243,8 @@ EditorNode::EditorNode() {
 		const String inspector_key = InspectorDock::get_singleton()->get_effective_layout_key();
 		const String signals_key = SignalsDock::get_singleton()->get_effective_layout_key();
 		const String groups_key = GroupsDock::get_singleton()->get_effective_layout_key();
-		default_layout->set_value(docks_section, "dock_5", vformat("%s,%s,%s", inspector_key, signals_key, groups_key));
+		const String transmit_key = TransmitDock::get_singleton()->get_effective_layout_key();
+		default_layout->set_value(docks_section, "dock_5", vformat("%s,%s,%s,%s", inspector_key, signals_key, groups_key, transmit_key));
 		default_layout->set_value(docks_section, "dock_5_selected_tab_idx", 0);
 	}
 

@@ -45,9 +45,11 @@
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
+#include "editor/gui/editor_file_dialog.h"
 #include "editor/gui/editor_spin_slider.h"
 #include "editor/gui/editor_validation_panel.h"
 #include "editor/inspector/multi_node_edit.h"
+#include "editor/scene/3d/skeleton_3d_editor_plugin.h"
 #include "editor/scene/scene_tree_editor.h"
 #include "editor/script/script_editor_plugin.h"
 #include "editor/settings/editor_settings.h"
@@ -62,6 +64,7 @@
 #include "scene/gui/grid_container.h"
 #include "scene/gui/option_button.h"
 #include "scene/gui/panel_container.h"
+#include "scene/gui/popup.h"
 #include "scene/gui/separator.h"
 #include "scene/gui/slider.h"
 #include "scene/gui/spin_box.h"
@@ -437,6 +440,51 @@ bool AnimationTrackKeyEdit::_set(const StringName &p_name, const Variant &p_valu
 				return true;
 			}
 		} break;
+		case Animation::TYPE_TRANSMIT: {
+			Dictionary d_old = animation->track_get_key_value(track, key);
+			Dictionary d_new = d_old.duplicate(true);
+			const Variant channel = d_old.get("channel", StringName());
+			bool change_notify_deserved = false;
+			bool mergeable = false;
+
+			if (name == "channel_kind") {
+				const bool number = int(p_value) == 1;
+				if (number && channel.get_type() != Variant::INT) {
+					d_new["channel"] = String(channel).to_int();
+				} else if (!number && channel.get_type() == Variant::INT) {
+					d_new["channel"] = StringName(itos(channel));
+				}
+				change_notify_deserved = true;
+			} else if (name == "channel_name") {
+				d_new["channel"] = StringName(p_value);
+				mergeable = true;
+			} else if (name == "channel_number") {
+				d_new["channel"] = int64_t(p_value);
+				mergeable = true;
+			} else if (name == "arguments") {
+				d_new["arguments"] = p_value;
+				mergeable = true;
+			} else {
+				return false;
+			}
+
+			if (mergeable) {
+				undo_redo->create_action(TTR("Animation Change Transmission"), UndoRedo::MERGE_ENDS);
+			} else {
+				undo_redo->create_action(TTR("Animation Change Transmission"));
+			}
+			setting = true;
+			undo_redo->add_do_method(animation.ptr(), "track_set_key_value", track, key, d_new);
+			undo_redo->add_undo_method(animation.ptr(), "track_set_key_value", track, key, d_old);
+			undo_redo->add_do_method(this, "_update_obj", animation);
+			undo_redo->add_undo_method(this, "_update_obj", animation);
+			undo_redo->commit_action();
+			setting = false;
+			if (change_notify_deserved) {
+				notify_change();
+			}
+			return true;
+		} break;
 		case Animation::TYPE_ANIMATION: {
 			if (name == "animation") {
 				StringName anim_name = p_value;
@@ -570,6 +618,26 @@ bool AnimationTrackKeyEdit::_get(const StringName &p_name, Variant &r_ret) const
 			}
 
 		} break;
+		case Animation::TYPE_TRANSMIT: {
+			const Dictionary d = animation->track_get_key_value(track, key);
+			const Variant channel = d.get("channel", StringName());
+			if (name == "channel_kind") {
+				r_ret = channel.get_type() == Variant::INT ? 1 : 0;
+				return true;
+			}
+			if (name == "channel_name") {
+				r_ret = StringName(channel);
+				return true;
+			}
+			if (name == "channel_number") {
+				r_ret = channel;
+				return true;
+			}
+			if (name == "arguments") {
+				r_ret = d.get("arguments", Array());
+				return true;
+			}
+		} break;
 		case Animation::TYPE_ANIMATION: {
 			if (name == "animation") {
 				r_ret = animation->animation_track_get_key_animation(track, key);
@@ -675,6 +743,17 @@ void AnimationTrackKeyEdit::_get_property_list(List<PropertyInfo> *p_list) const
 			p_list->push_back(PropertyInfo(Variant::FLOAT, PNAME("volume_db"), PROPERTY_HINT_RANGE, "-80,24,0.1,suffix:dB"));
 			p_list->push_back(PropertyInfo(Variant::FLOAT, PNAME("pitch_scale"), PROPERTY_HINT_RANGE, "0.01,4,0.01,or_greater"));
 
+		} break;
+		case Animation::TYPE_TRANSMIT: {
+			const Dictionary d = animation->track_get_key_value(track, key);
+			const bool number = Variant(d.get("channel", StringName())).get_type() == Variant::INT;
+			p_list->push_back(PropertyInfo(Variant::INT, PNAME("channel_kind"), PROPERTY_HINT_ENUM, "Name,Number"));
+			if (number) {
+				p_list->push_back(PropertyInfo(Variant::INT, PNAME("channel_number")));
+			} else {
+				p_list->push_back(PropertyInfo(Variant::STRING_NAME, PNAME("channel_name")));
+			}
+			p_list->push_back(PropertyInfo(Variant::ARRAY, PNAME("arguments")));
 		} break;
 		case Animation::TYPE_ANIMATION: {
 			String animations;
@@ -1017,6 +1096,8 @@ bool AnimationMultiTrackKeyEdit::_set(const StringName &p_name, const Variant &p
 						update_obj = true;
 					}
 				} break;
+				case Animation::TYPE_TRANSMIT: {
+				} break;
 				case Animation::TYPE_ANIMATION: {
 					if (name == "animation") {
 						StringName anim_name = p_value;
@@ -1170,6 +1251,8 @@ bool AnimationMultiTrackKeyEdit::_get(const StringName &p_name, Variant &r_ret) 
 					}
 
 				} break;
+				case Animation::TYPE_TRANSMIT: {
+				} break;
 				case Animation::TYPE_ANIMATION: {
 					if (name == "animation") {
 						r_ret = animation->animation_track_get_key_animation(track, key);
@@ -1300,6 +1383,8 @@ void AnimationMultiTrackKeyEdit::_get_property_list(List<PropertyInfo> *p_list) 
 				p_list->push_back(PropertyInfo(Variant::FLOAT, "end_offset", PROPERTY_HINT_RANGE, "0,3600,0.0001,or_greater"));
 				p_list->push_back(PropertyInfo(Variant::FLOAT, "volume_db", PROPERTY_HINT_RANGE, "-80,24,0.1,suffix:dB"));
 				p_list->push_back(PropertyInfo(Variant::FLOAT, "pitch_scale", PROPERTY_HINT_RANGE, "0.01,4,0.01,or_greater"));
+			} break;
+			case Animation::TYPE_TRANSMIT: {
 			} break;
 			case Animation::TYPE_ANIMATION: {
 				if (key_ofs_map.size() > 1) {
@@ -1531,6 +1616,8 @@ void AnimationTimelineEdit::_notification(int p_what) {
 			add_track->get_popup()->add_icon_item(get_editor_theme_icon(SNAME("KeyBezier")), TTRC("Bezier Curve Track..."));
 			add_track->get_popup()->add_icon_item(get_editor_theme_icon(SNAME("KeyAudio")), TTRC("Audio Playback Track..."));
 			add_track->get_popup()->add_icon_item(get_editor_theme_icon(SNAME("KeyAnimation")), TTRC("Animation Playback Track..."));
+			add_track->get_popup()->add_icon_item(get_editor_theme_icon(SNAME("KeyTransmit")), TTRC("Transmit Track"));
+			add_track->get_popup()->set_item_tooltip(-1 + add_track->get_popup()->get_item_count(), TTRC("A track whose keys send Global Transmit transmissions: a channel, by name or number, and arguments."));
 
 			timeline_resize_rect.size = get_editor_theme_icon(SNAME("TimelineHandle"))->get_size();
 		} break;
@@ -2278,7 +2365,7 @@ void AnimationTrackEdit::_notification(int p_what) {
 
 				Ref<Texture2D> check = animation->track_is_enabled(track) ? get_theme_icon(SNAME("checked"), SNAME("CheckBox")) : get_theme_icon(SNAME("unchecked"), SNAME("CheckBox"));
 
-				int ofs = in_group ? outer_margin : 0;
+				int ofs = in_group ? outer_margin + indent : 0;
 
 				check_rect = Rect2(Point2(ofs, (get_size().height - check->get_height()) / 2).round(), check->get_size());
 				draw_texture(check, check_rect.position);
@@ -2297,16 +2384,25 @@ void AnimationTrackEdit::_notification(int p_what) {
 				String text;
 				Color text_color = color;
 				if (node && EditorNode::get_singleton()->get_editor_selection()->is_selected(node)) {
-					text_color = get_theme_color(SNAME("accent_color"), EditorStringName(Editor));
+					// Asosdot: a skeleton with bones selected only highlights those bones' tracks.
+					Skeleton3D *skeleton = Object::cast_to<Skeleton3D>(node);
+					const int bone = skeleton && anim_path.get_subname_count() == 1 ? skeleton->find_bone(anim_path.get_subname(0)) : -1;
+					if (bone < 0 || Skeleton3DEditor::get_selected_bones(skeleton).is_empty() || Skeleton3DEditor::is_bone_selected(skeleton, bone)) {
+						text_color = get_theme_color(SNAME("accent_color"), EditorStringName(Editor));
+					}
 				}
 
 				if (in_group) {
-					if (animation->track_get_type(track) == Animation::TYPE_METHOD) {
+					if (!label_override.is_empty()) {
+						text = label_override;
+					} else if (animation->track_get_type(track) == Animation::TYPE_METHOD) {
 						text = TTR("Functions:");
 					} else if (animation->track_get_type(track) == Animation::TYPE_AUDIO) {
 						text = TTR("Audio Clips:");
 					} else if (animation->track_get_type(track) == Animation::TYPE_ANIMATION) {
 						text = TTR("Animation Clips:");
+					} else if (animation->track_get_type(track) == Animation::TYPE_TRANSMIT) {
+						text = TTR("Transmissions:");
 					} else {
 						text += anim_path.get_concatenated_subnames();
 					}
@@ -2684,7 +2780,7 @@ void AnimationTrackEdit::draw_key_link(int p_index_from, int p_index_to, float p
 
 	Variant current = animation->track_get_key_value(get_track(), p_index_from);
 	Variant next = animation->track_get_key_value(get_track(), p_index_to);
-	if (current != next || animation->track_get_type(get_track()) == Animation::TrackType::TYPE_METHOD) {
+	if (current != next || animation->track_get_type(get_track()) == Animation::TrackType::TYPE_METHOD || animation->track_get_type(get_track()) == Animation::TrackType::TYPE_TRANSMIT) {
 		return;
 	}
 
@@ -2758,6 +2854,29 @@ void AnimationTrackEdit::draw_key(int p_index, float p_pixels_sec, int p_x, bool
 
 		int limit = editor->is_function_name_pressed() ? 0 : MAX(0, p_clip_right - p_x - icon_to_draw->get_width() * 2);
 
+		if (limit > 0) {
+			draw_string(font, Vector2(p_x + icon_to_draw->get_width(), int(get_size().height - font->get_height(font_size)) / 2 + font->get_ascent(font_size)), text, HORIZONTAL_ALIGNMENT_LEFT, limit, font_size, color);
+		}
+	} else if (animation->track_get_type(track) == Animation::TYPE_TRANSMIT) {
+		// Asosdot: the channel, then the arguments, like a method key shows its call.
+		Ref<Font> font = get_theme_font(SceneStringName(font), SNAME("Label"));
+		int font_size = get_theme_font_size(SceneStringName(font_size), SNAME("Label"));
+		Color color = get_theme_color(SceneStringName(font_color), SNAME("Label"));
+		color.a = 0.5;
+
+		const Variant channel = animation->transmit_track_get_channel(track, p_index);
+		const Array arguments = animation->transmit_track_get_arguments(track, p_index);
+		String text = channel.get_type() == Variant::INT ? "#" + itos(channel) : String(channel);
+		text += "(";
+		for (int i = 0; i < arguments.size(); i++) {
+			if (i > 0) {
+				text += ", ";
+			}
+			text += arguments[i].get_construct_string();
+		}
+		text += ")";
+
+		int limit = editor->is_function_name_pressed() ? 0 : MAX(0, p_clip_right - p_x - icon_to_draw->get_width() * 2);
 		if (limit > 0) {
 			draw_string(font, Vector2(p_x + icon_to_draw->get_width(), int(get_size().height - font->get_height(font_size)) / 2 + font->get_ascent(font_size)), text, HORIZONTAL_ALIGNMENT_LEFT, limit, font_size, color);
 		}
@@ -2968,7 +3087,7 @@ bool AnimationTrackEdit::_is_value_key_valid(const Variant &p_key_value, Variant
 
 Ref<Texture2D> AnimationTrackEdit::_get_key_type_icon() const {
 	// Indexed by Animation::TrackType.
-	static const StringName type_icon_names[9] = {
+	static const StringName type_icon_names[10] = {
 		SNAME("KeyValue"),
 		SNAME("KeyTrackPosition"),
 		SNAME("KeyTrackRotation"),
@@ -2978,6 +3097,7 @@ Ref<Texture2D> AnimationTrackEdit::_get_key_type_icon() const {
 		SNAME("KeyBezier"),
 		SNAME("KeyAudio"),
 		SNAME("KeyAnimation"),
+		SNAME("KeyTransmit"),
 	};
 	return get_editor_theme_icon(type_icon_names[animation->track_get_type(track)]);
 }
@@ -3158,6 +3278,12 @@ String AnimationTrackEdit::get_tooltip(const Point2 &p_pos) const {
 					if (!Math::is_equal_approx(pitch_scale, 1.0f)) {
 						text += "\n" + TTR("Pitch:") + " " + rtos(pitch_scale);
 					}
+				} break;
+				case Animation::TYPE_TRANSMIT: {
+					const Variant channel = animation->transmit_track_get_channel(track, key_idx);
+					const Array arguments = animation->transmit_track_get_arguments(track, key_idx);
+					text += TTR("Transmit on channel:") + " " + String(channel) + "\n";
+					text += vformat(TTR("Arguments: %d"), arguments.size()) + "\n";
 				} break;
 				case Animation::TYPE_ANIMATION: {
 					String name = animation->animation_track_get_key_animation(track, key_idx);
@@ -3902,6 +4028,259 @@ AnimationTrackEdit *AnimationTrackEditPlugin::create_animation_track_edit(Object
 
 ///////////////////////////////////////
 
+// Asosdot: how far each nesting level of the track list is indented.
+static int _group_indent_step() {
+	return Math::round(12 * EDSCALE);
+}
+
+bool AnimationTrackEditGroup::is_folded() const {
+	Ref<Animation> animation = editor ? editor->get_current_animation() : Ref<Animation>();
+	if (animation.is_null()) {
+		return folded_by_default;
+	}
+	const bool stored = animation->editor_is_group_folded(fold_key);
+	return folded_by_default ? !stored : stored;
+}
+
+void AnimationTrackEditGroup::set_folded(bool p_folded) {
+	Ref<Animation> animation = editor ? editor->get_current_animation() : Ref<Animation>();
+	if (animation.is_valid()) {
+		animation->editor_set_group_folded(fold_key, folded_by_default ? !p_folded : p_folded);
+	}
+}
+
+Skeleton3D *AnimationTrackEditGroup::_get_skeleton() const {
+	return root ? Object::cast_to<Skeleton3D>(root->get_node_or_null(node)) : nullptr;
+}
+
+bool AnimationTrackEditGroup::is_bone_row_selected() const {
+	Skeleton3D *skeleton = _get_skeleton();
+	if (!skeleton) {
+		return false;
+	}
+	if (kind == KIND_BONE) {
+		return Skeleton3DEditor::is_bone_selected(skeleton, bone);
+	}
+	if (kind == KIND_BODY_PART && !part_bones.is_empty()) {
+		for (int part_bone : part_bones) {
+			if (!Skeleton3DEditor::is_bone_selected(skeleton, part_bone)) {
+				return false;
+			}
+		}
+		return true;
+	}
+	return false;
+}
+
+bool AnimationTrackEditGroup::_shows_summary() const {
+	return kind != KIND_NODE || is_folded();
+}
+
+// Asosdot: every clip on the lanes under an audio player's header, for the strip a folded header
+// draws. A clip whose stream doesn't know its length is drawn a moment long.
+LocalVector<AnimationTrackEditGroup::AudioClip> AnimationTrackEditGroup::_get_audio_clips(int &r_lanes) const {
+	LocalVector<AudioClip> clips;
+	r_lanes = 0;
+	Ref<Animation> animation = editor->get_current_animation();
+	if (animation.is_null()) {
+		return clips;
+	}
+	for (const AnimationTrackEdit *track_edit : track_edits) {
+		const int track = track_edit->get_track();
+		if (track >= animation->get_track_count() || animation->track_get_type(track) != Animation::TYPE_AUDIO) {
+			continue;
+		}
+		for (int i = 0; i < animation->track_get_key_count(track); i++) {
+			AudioClip clip;
+			clip.lane = r_lanes;
+			clip.begin = animation->track_get_key_time(track, i);
+			clip.end = clip.begin + MAX(AnimationTrackEditor::get_audio_clip_length(animation, track, i), 0.05);
+			clip.selected = editor->is_key_selected(track, i);
+			clips.push_back(clip);
+		}
+		r_lanes++;
+	}
+	return clips;
+}
+
+Vector<Ref<AudioStream>> AnimationTrackEditGroup::_get_dragged_streams(const Variant &p_data) {
+	Vector<Ref<AudioStream>> streams;
+	if (p_data.get_type() != Variant::DICTIONARY) {
+		return streams;
+	}
+	const Dictionary drag_data = p_data;
+	const String type = drag_data.get("type", String());
+	if (type == "resource") {
+		Ref<AudioStream> stream = drag_data.get("resource", Variant());
+		if (stream.is_valid()) {
+			streams.push_back(stream);
+		}
+	} else if (type == "files") {
+		const Vector<String> files = drag_data.get("files", Vector<String>());
+		for (const String &file : files) {
+			if (!ClassDB::is_parent_class(ResourceLoader::get_resource_type(file), "AudioStream")) {
+				continue;
+			}
+			Ref<AudioStream> stream = ResourceLoader::load(file);
+			if (stream.is_valid()) {
+				streams.push_back(stream);
+			}
+		}
+	}
+	return streams;
+}
+
+bool AnimationTrackEditGroup::can_drop_data(const Point2 &p_point, const Variant &p_data) const {
+	if (!audio || !editor || editor->is_read_only()) {
+		return false;
+	}
+	return !_get_dragged_streams(p_data).is_empty();
+}
+
+void AnimationTrackEditGroup::drop_data(const Point2 &p_point, const Variant &p_data) {
+	const Vector<Ref<AudioStream>> streams = _get_dragged_streams(p_data);
+	if (!audio || streams.is_empty()) {
+		return;
+	}
+	// Dropped on the timeline, the sounds start where they were dropped; on the name, at the playhead.
+	double time = editor->get_playhead_time();
+	if (p_point.x > timeline->get_name_limit()) {
+		time = editor->snap_time((p_point.x - timeline->get_name_limit()) / timeline->get_zoom_scale() + timeline->get_value());
+	}
+	editor->add_audio_clips(NodePath(String(node.get_concatenated_names())), streams, time);
+}
+
+String AnimationTrackEditGroup::get_tooltip(const Point2 &p_pos) const {
+	if (audio && add_sound_rect.has_point(p_pos)) {
+		return TTR("Add sounds from files, at the playhead. Sounds that would overlap go on a new lane, so they play together from this one player.");
+	}
+	return Control::get_tooltip(p_pos);
+}
+
+// The keys of every track under this header, one per distinct time.
+LocalVector<AnimationTrackEditGroup::SummaryKey> AnimationTrackEditGroup::_get_summary_keys() const {
+	LocalVector<SummaryKey> result;
+	Ref<Animation> animation = editor->get_current_animation();
+	if (animation.is_null()) {
+		return result;
+	}
+	struct TimedKey {
+		double time = 0.0;
+		int track = 0;
+		int key = 0;
+		bool operator<(const TimedKey &p_other) const { return time < p_other.time; }
+	};
+	LocalVector<TimedKey> keys;
+	for (const AnimationTrackEdit *track_edit : track_edits) {
+		const int track = track_edit->get_track();
+		if (track >= animation->get_track_count() || animation->track_is_compressed(track) || !editor->_track_passes_filters(track)) {
+			continue;
+		}
+		for (int i = 0; i < animation->track_get_key_count(track); i++) {
+			keys.push_back({ animation->track_get_key_time(track, i), track, i });
+		}
+	}
+	keys.sort();
+	for (const TimedKey &key : keys) {
+		if (result.is_empty() || key.time - result[result.size() - 1].time > 0.0001) {
+			SummaryKey summary;
+			summary.time = key.time;
+			summary.selected = true;
+			result.push_back(summary);
+		}
+		SummaryKey &summary = result[result.size() - 1];
+		summary.keys.push_back(Pair<int, int>(key.track, key.key));
+		summary.selected = summary.selected && editor->is_key_selected(key.track, key.key);
+	}
+	return result;
+}
+
+float AnimationTrackEditGroup::_summary_key_x(double p_time) const {
+	return (p_time - timeline->get_value()) * timeline->get_zoom_scale() + timeline->get_name_limit();
+}
+
+int AnimationTrackEditGroup::_summary_key_at(const LocalVector<SummaryKey> &p_keys, float p_x) const {
+	const float half_width = get_editor_theme_icon(SNAME("KeyValue"))->get_width() * 0.5 + 1;
+	int found = -1;
+	float found_distance = 1e20;
+	for (uint32_t i = 0; i < p_keys.size(); i++) {
+		const float distance = Math::abs(_summary_key_x(p_keys[i].time) - p_x);
+		if (distance <= half_width && distance < found_distance) {
+			found = i;
+			found_distance = distance;
+		}
+	}
+	return found;
+}
+
+void AnimationTrackEditGroup::_select_summary_key(const SummaryKey &p_key, bool p_single) {
+	bool single = p_single;
+	for (const Pair<int, int> &key : p_key.keys) {
+		editor->_key_selected(key.second, single, key.first);
+		single = false;
+	}
+	editor->_redraw_groups();
+}
+
+void AnimationTrackEditGroup::append_to_selection(const Rect2 &p_box, bool p_deselection) {
+	if (!_shows_summary()) {
+		return;
+	}
+	const Ref<Texture2D> key_icon = get_editor_theme_icon(SNAME("KeyValue"));
+	for (const SummaryKey &summary : _get_summary_keys()) {
+		const float x = _summary_key_x(summary.time);
+		const Rect2 rect(x - key_icon->get_width() * 0.5, (get_size().height - key_icon->get_height()) * 0.5, key_icon->get_width(), key_icon->get_height());
+		if (!p_box.intersects(rect)) {
+			continue;
+		}
+		for (const Pair<int, int> &key : summary.keys) {
+			if (p_deselection) {
+				editor->_key_deselected(key.second, key.first);
+			} else {
+				editor->_key_selected(key.second, false, key.first);
+			}
+		}
+	}
+	editor->_redraw_groups();
+}
+
+// Clicking a bone row's name selects that bone, and a body part's name selects its bones. Shift or
+// Ctrl adds to the selection, or takes them out when they are all selected already.
+void AnimationTrackEditGroup::_select_rows(bool p_append) {
+	Skeleton3D *skeleton = _get_skeleton();
+	if (!skeleton) {
+		return;
+	}
+	LocalVector<int> rows;
+	if (kind == KIND_BONE) {
+		rows.push_back(bone);
+	} else {
+		rows = part_bones;
+	}
+	Vector<int> bones = p_append ? Skeleton3DEditor::get_selected_bones(skeleton) : Vector<int>();
+	int active = rows.is_empty() ? -1 : int(rows[0]);
+	if (p_append && is_bone_row_selected()) {
+		for (int row : rows) {
+			bones.erase(row);
+		}
+		active = Skeleton3DEditor::get_active_bone(skeleton);
+	} else {
+		for (int row : rows) {
+			if (!bones.has(row)) {
+				bones.push_back(row);
+			}
+		}
+	}
+
+	// The skeleton becomes the edited node, so the viewport and the inspector show its bones.
+	EditorSelection *editor_selection = EditorNode::get_singleton()->get_editor_selection();
+	if (!editor_selection->is_selected(skeleton) || editor_selection->get_selection().size() != 1) {
+		editor_selection->clear();
+		editor_selection->add_node(skeleton);
+	}
+	Skeleton3DEditor::set_selected_bones(skeleton, bones, active);
+}
+
 void AnimationTrackEditGroup::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_THEME_CHANGED: {
@@ -3912,9 +4291,10 @@ void AnimationTrackEditGroup::_notification(int p_what) {
 			const Ref<Font> font = get_theme_font(SceneStringName(font), SNAME("Label"));
 			const int font_size = get_theme_font_size(SceneStringName(font_size), SNAME("Label"));
 			Color color = get_theme_color(SceneStringName(font_color), SNAME("Label"));
+			const Color accent = get_theme_color(SNAME("accent_color"), EditorStringName(Editor));
 
 			const Ref<StyleBox> &stylebox_header = get_theme_stylebox(SNAME("header"), SNAME("AnimationTrackEditGroup"));
-			float v_margin_offset = stylebox_header->get_content_margin(SIDE_TOP) - stylebox_header->get_content_margin(SIDE_BOTTOM);
+			float v_margin_offset = kind == KIND_NODE ? stylebox_header->get_content_margin(SIDE_TOP) - stylebox_header->get_content_margin(SIDE_BOTTOM) : 0.0f;
 
 			const Color h_line_color = get_theme_color(SNAME("h_line_color"), SNAME("AnimationTrackEditGroup"));
 			const Color v_line_color = get_theme_color(SNAME("v_line_color"), SNAME("AnimationTrackEditGroup"));
@@ -3922,24 +4302,43 @@ void AnimationTrackEditGroup::_notification(int p_what) {
 
 			const Ref<StyleBox> &stylebox_hover = get_theme_stylebox(SceneStringName(hover), SNAME("AnimationTrackEditGroup"));
 
-			if (root) {
-				Node *n = root->get_node_or_null(node);
-				if (n && EditorNode::get_singleton()->get_editor_selection()->is_selected(n)) {
-					color = get_theme_color(SNAME("accent_color"), EditorStringName(Editor));
+			bool row_selected = false;
+			if (kind == KIND_NODE) {
+				if (root) {
+					Node *n = root->get_node_or_null(node);
+					if (n && EditorNode::get_singleton()->get_editor_selection()->is_selected(n)) {
+						color = accent;
+					}
 				}
-			}
-
-			draw_style_box(stylebox_header, Rect2(Point2(), get_size()));
-
-			if (hovered) {
-				// Draw hover feedback for AnimationTrackEditGroup.
-				// Add a limit to just show hover over portion with text.
-				int limit = timeline->get_name_limit();
-				draw_style_box(stylebox_hover, Rect2(Point2(1 * EDSCALE, 0), Size2(limit - 1 * EDSCALE, get_size().height)));
+			} else {
+				row_selected = is_bone_row_selected();
+				if (row_selected) {
+					color = accent;
+				} else if (kind == KIND_BONE) {
+					color.a *= 0.85;
+				}
 			}
 
 			int limit = timeline->get_name_limit();
 			int limit_end = get_size().width - timeline->get_buttons_width();
+
+			if (kind == KIND_NODE) {
+				draw_style_box(stylebox_header, Rect2(Point2(), get_size()));
+			} else {
+				// Nested headers are lighter than a node's, so the node still stands out.
+				const Color base = get_theme_color(SceneStringName(font_color), SNAME("Label"));
+				draw_rect(Rect2(Point2(), Size2(limit, get_size().height)), Color(base.r, base.g, base.b, kind == KIND_BODY_PART ? 0.06 : 0.025));
+				if (row_selected) {
+					draw_rect(Rect2(Point2(), Size2(limit, get_size().height)), Color(accent.r, accent.g, accent.b, 0.12));
+					draw_rect(Rect2(Point2(), Size2(Math::round(3 * EDSCALE), get_size().height)), accent);
+				}
+			}
+
+			if (hovered) {
+				// Draw hover feedback for AnimationTrackEditGroup.
+				// Add a limit to just show hover over portion with text.
+				draw_style_box(stylebox_hover, Rect2(Point2(1 * EDSCALE, 0), Size2(limit - 1 * EDSCALE, get_size().height)));
+			}
 
 			// Unavailable timeline.
 
@@ -4013,8 +4412,8 @@ void AnimationTrackEditGroup::_notification(int p_what) {
 			draw_line(Point2(timeline->get_name_limit(), 0), Point2(timeline->get_name_limit(), get_size().height), v_line_color, Math::round(EDSCALE));
 			draw_line(Point2(get_size().width - timeline->get_buttons_width(), 0), Point2(get_size().width - timeline->get_buttons_width(), get_size().height), v_line_color, Math::round(EDSCALE));
 
-			int ofs = stylebox_header->get_margin(SIDE_LEFT);
-			bool is_group_folded = editor->get_current_animation()->editor_is_group_folded(node_name);
+			int ofs = stylebox_header->get_margin(SIDE_LEFT) + level * _group_indent_step();
+			bool is_group_folded = is_folded();
 			Ref<Texture2D> fold_icon = get_theme_icon(is_group_folded ? SNAME("arrow_collapsed") : SNAME("arrow"), SNAME("Tree"));
 			Size2 fold_icon_size = fold_icon->get_size();
 			draw_texture_rect(fold_icon, Rect2(Point2(ofs, (get_size().height - fold_icon_size.y) / 2 + v_margin_offset).round(), fold_icon_size));
@@ -4023,30 +4422,64 @@ void AnimationTrackEditGroup::_notification(int p_what) {
 			draw_texture_rect(icon, Rect2(Point2(ofs, (get_size().height - icon_size.y) / 2 + v_margin_offset).round(), icon_size));
 
 			ofs += h_separation + icon_size.x;
-			draw_string(font, Point2(ofs, (get_size().height - font->get_height(font_size)) / 2 + font->get_ascent(font_size) + v_margin_offset).round(), node_name, HORIZONTAL_ALIGNMENT_LEFT, timeline->get_name_limit() - ofs, font_size, color);
+			int name_end = timeline->get_name_limit();
+			add_sound_rect = Rect2();
+			if (audio && !editor->is_read_only()) {
+				// The add button, at the end of the name.
+				const Ref<Texture2D> add_icon = get_editor_theme_icon(SNAME("Add"));
+				add_sound_rect = Rect2(Point2(limit - add_icon->get_width() - h_separation * 2, (get_size().height - add_icon->get_height()) / 2 + v_margin_offset).round(), add_icon->get_size());
+				draw_texture(add_icon, add_sound_rect.position, Color(1, 1, 1, hovered ? 1.0 : 0.7));
+				name_end = add_sound_rect.position.x - h_separation;
+			}
+			draw_string(font, Point2(ofs, (get_size().height - font->get_height(font_size)) / 2 + font->get_ascent(font_size) + v_margin_offset).round(), node_name, HORIZONTAL_ALIGNMENT_LEFT, MAX(1, name_end - ofs), font_size, color);
+
+			if (audio && is_group_folded) {
+				// Folded, the header shows every lane's clips as thin bars, one row per lane.
+				int lanes = 0;
+				const LocalVector<AudioClip> clips = _get_audio_clips(lanes);
+				if (lanes > 0) {
+					const float zoom_scale = timeline->get_zoom_scale();
+					const float scroll_time = timeline->get_value();
+					const float inner = get_size().height - Math::round(6 * EDSCALE);
+					const float row = MIN(inner / lanes, Math::round(7 * EDSCALE));
+					const float top = (get_size().height - row * lanes) * 0.5;
+					for (const AudioClip &clip : clips) {
+						double offset = clip.selected && editor->is_moving_selection() ? editor->get_moving_selection_offset() : 0.0;
+						float from_x = (clip.begin + offset - scroll_time) * zoom_scale + limit;
+						float to_x = (clip.end + offset - scroll_time) * zoom_scale + limit;
+						from_x = MAX(from_x, float(limit));
+						to_x = MIN(to_x, float(limit_end));
+						if (to_x <= from_x) {
+							continue;
+						}
+						const Rect2 bar(from_x, top + row * clip.lane + 1, MAX(to_x - from_x, 2.0f), MAX(row - 2, 2.0f));
+						draw_rect(bar, clip.selected ? accent : Color(accent.r, accent.g, accent.b, 0.55));
+					}
+				}
+			}
 
 			int px = (-timeline->get_value() + timeline->get_play_position()) * timeline->get_zoom_scale() + timeline->get_name_limit();
 			if (px >= timeline->get_name_limit() && px < limit_end) {
-				const Color accent = get_theme_color(SNAME("accent_color"), EditorStringName(Editor));
 				draw_line(Point2(px, 0), Point2(px, get_size().height), accent, Math::round(2 * EDSCALE));
 			}
 
-			if (is_group_folded) {
-				for (const AnimationTrackEdit *track_edit : track_edits) {
-					const Ref<Texture2D> &key_type_icon = track_edit->get_key_type_icon();
-					int track = track_edit->get_track();
-					for (int i = 0; i < editor->get_current_animation()->track_get_key_count(track); ++i) {
-						float key_time_offset = editor->get_current_animation()->track_get_key_time(track, i) - timeline->get_value();
-						int key_screen_pos = int(key_time_offset * timeline->get_zoom_scale() + limit);
-						int key_limit_left = timeline->get_name_limit();
-						int key_limit_right = get_size().width - timeline->get_buttons_width();
-						if (key_screen_pos >= key_limit_left && key_screen_pos <= key_limit_right) {
-							draw_texture(
-									key_type_icon,
-									Vector2(key_screen_pos - key_type_icon->get_width() / 2, (get_size().height - key_type_icon->get_height()) / 2),
-									Color(1, 1, 1, 0.3));
-						}
+			if (_shows_summary()) {
+				// One key per time over every track below. A bone's row is the one animators work in,
+				// so it is drawn solid; rows above it are fainter.
+				const Ref<Texture2D> key_icon = get_editor_theme_icon(SNAME("KeyValue"));
+				const Ref<Texture2D> key_selected_icon = get_editor_theme_icon(SNAME("KeySelected"));
+				const float alpha = kind == KIND_BONE ? 1.0 : (kind == KIND_BODY_PART ? 0.75 : 0.5);
+				for (const SummaryKey &summary : _get_summary_keys()) {
+					double time = summary.time;
+					if (summary.selected && editor->is_moving_selection()) {
+						time += editor->get_moving_selection_offset();
 					}
+					const int x = int(_summary_key_x(time));
+					if (x < limit - key_icon->get_width() / 2 || x > limit_end) {
+						continue;
+					}
+					const Ref<Texture2D> &drawn = summary.selected ? key_selected_icon : key_icon;
+					draw_texture(drawn, Vector2(x - drawn->get_width() / 2, (get_size().height - drawn->get_height()) / 2).round(), Color(1, 1, 1, summary.selected ? 1.0 : alpha));
 				}
 			}
 		} break;
@@ -4063,37 +4496,127 @@ void AnimationTrackEditGroup::_notification(int p_what) {
 
 void AnimationTrackEditGroup::gui_input(const Ref<InputEvent> &p_event) {
 	ERR_FAIL_COND(p_event.is_null());
+	if (editor->get_current_animation().is_null()) {
+		return;
+	}
+	const int limit = timeline->get_name_limit();
+	const int limit_end = get_size().width - timeline->get_buttons_width();
 
 	Ref<InputEventMouseButton> mb = p_event;
 	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT) {
 		Point2 pos = mb->get_position();
 
-		int left_ofs = get_theme_stylebox(SNAME("header"), SNAME("AnimationTrackEditGroup"))->get_margin(SIDE_LEFT);
-		bool is_group_folded = editor->get_current_animation()->editor_is_group_folded(node_name);
-		Ref<Texture2D> fold_icon = get_theme_icon(is_group_folded ? SNAME("arrow_collapsed") : SNAME("arrow"), SNAME("Tree"));
+		int left_ofs = get_theme_stylebox(SNAME("header"), SNAME("AnimationTrackEditGroup"))->get_margin(SIDE_LEFT) + level * _group_indent_step();
+		Ref<Texture2D> fold_icon = get_theme_icon(is_folded() ? SNAME("arrow_collapsed") : SNAME("arrow"), SNAME("Tree"));
 		int fold_icon_width = fold_icon->get_size().width;
 		Rect2 fold_area_rect = Rect2(0, 0, left_ofs + fold_icon_width, get_size().height);
 
-		if (fold_area_rect.has_point(pos)) {
-			bool current_group_folded = !editor->get_current_animation()->editor_is_group_folded(node_name);
-			editor->get_current_animation()->editor_set_group_folded(node_name, current_group_folded);
+		if (audio && add_sound_rect.grow(2 * EDSCALE).has_point(pos)) {
+			editor->popup_add_sound_dialog(NodePath(String(node.get_concatenated_names())));
+			accept_event();
+			return;
+		}
 
+		if (fold_area_rect.has_point(pos) || (mb->is_double_click() && pos.x < limit)) {
+			set_folded(!is_folded());
 			editor->_refresh_track_visibility();
-
 			queue_redraw();
-		} else {
-			Rect2 node_name_rect = Rect2(0, 0, timeline->get_name_limit(), get_size().height);
-			if (node_name_rect.has_point(pos)) {
+			accept_event();
+			return;
+		}
+
+		if (pos.x < limit) {
+			if (kind == KIND_NODE) {
 				EditorSelection *editor_selection = EditorNode::get_singleton()->get_editor_selection();
 				editor_selection->clear();
 				Node *n = root->get_node_or_null(node);
 				if (n) {
 					editor_selection->add_node(n);
 				}
+			} else {
+				_select_rows(mb->is_shift_pressed() || mb->is_command_or_control_pressed());
+			}
+			accept_event();
+			return;
+		}
+
+		if (pos.x <= limit_end && _shows_summary()) {
+			const LocalVector<SummaryKey> keys = _get_summary_keys();
+			const int index = _summary_key_at(keys, pos.x);
+			if (index >= 0) {
+				const bool aggregate = mb->is_shift_pressed() || mb->is_command_or_control_pressed();
+				if (aggregate && keys[index].selected) {
+					for (const Pair<int, int> &key : keys[index].keys) {
+						editor->_key_deselected(key.second, key.first);
+					}
+					editor->_redraw_groups();
+				} else {
+					if (aggregate) {
+						_select_summary_key(keys[index], false);
+					} else if (keys[index].selected) {
+						select_single_attempt = index; // A drag moves the whole selection; a click selects only this.
+					} else {
+						_select_summary_key(keys[index], true);
+					}
+					moving_attempt = true;
+					moving_effective = false;
+					moving_pivot = keys[index].time;
+					moving_mouse_begin_x = pos.x;
+				}
+				accept_event();
+				return;
 			}
 		}
 	}
+
+	if (mb.is_valid() && moving_attempt) {
+		if (!mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT) {
+			moving_attempt = false;
+			if (moving) {
+				if (moving_effective && std::abs(editor->get_moving_selection_offset()) > CMP_EPSILON) {
+					editor->_move_selection_commit();
+				} else {
+					editor->_move_selection_cancel();
+				}
+			} else if (select_single_attempt != -1) {
+				const LocalVector<SummaryKey> keys = _get_summary_keys();
+				if (select_single_attempt < (int)keys.size()) {
+					_select_summary_key(keys[select_single_attempt], true);
+				}
+			}
+			moving = false;
+			select_single_attempt = -1;
+			editor->_redraw_groups();
+			accept_event();
+		} else if (moving && mb->is_pressed() && mb->get_button_index() == MouseButton::RIGHT) {
+			moving_attempt = false;
+			moving = false;
+			select_single_attempt = -1;
+			editor->_move_selection_cancel();
+			editor->_redraw_groups();
+			accept_event();
+		}
+	}
+
 	Ref<InputEventMouseMotion> mm = p_event;
+	if (mm.is_valid() && moving_attempt && mm->get_button_mask().has_flag(MouseButtonMask::LEFT)) {
+		if (!moving) {
+			moving = true;
+			editor->_move_selection_begin();
+		}
+		const float begin_time = ((moving_mouse_begin_x - limit) / timeline->get_zoom_scale()) + timeline->get_value();
+		const float new_time = ((mm->get_position().x - limit) / timeline->get_zoom_scale()) + timeline->get_value();
+		const float delta = new_time - begin_time;
+		const float snapped_time = editor->snap_time(moving_pivot + delta);
+		float offset = 0.0;
+		if (std::abs(editor->get_moving_selection_offset()) > CMP_EPSILON || (snapped_time > moving_pivot && delta > CMP_EPSILON) || (snapped_time < moving_pivot && delta < -CMP_EPSILON)) {
+			offset = snapped_time - moving_pivot;
+			moving_effective = true;
+		}
+		editor->_move_selection(offset);
+		accept_event();
+	}
+
 	if (mm.is_valid()) {
 		Point2 pos = mm->get_position();
 		Rect2 node_name_rect = Rect2(0, 0, timeline->get_name_limit(), get_size().height);
@@ -4119,6 +4642,11 @@ Size2 AnimationTrackEditGroup::get_minimum_size() const {
 	const Ref<Font> font = get_theme_font(SceneStringName(font), SNAME("Label"));
 	const int font_size = get_theme_font_size(SceneStringName(font_size), SNAME("Label"));
 	const int separation = get_theme_constant(SNAME("v_separation"), SNAME("ItemList"));
+
+	if (kind != KIND_NODE) {
+		// Asosdot: body part and bone rows are slim, so a whole rig fits on screen.
+		return Vector2(0, MAX(font->get_height(font_size), icon_size.y) + Math::round(6 * EDSCALE));
+	}
 
 	const Ref<StyleBox> &header_style = get_theme_stylebox(SNAME("header"), SNAME("AnimationTrackEditGroup"));
 	const int content_margin = header_style->get_content_margin(SIDE_TOP) + header_style->get_content_margin(SIDE_BOTTOM);
@@ -5150,7 +5678,8 @@ AnimationTrackEditor::TrackIndices AnimationTrackEditor::_confirm_insert(InsertD
 		case Animation::TYPE_BLEND_SHAPE:
 		case Animation::TYPE_VALUE:
 		case Animation::TYPE_AUDIO:
-		case Animation::TYPE_ANIMATION: {
+		case Animation::TYPE_ANIMATION:
+		case Animation::TYPE_TRANSMIT: {
 			value = p_id.value;
 
 		} break;
@@ -5275,7 +5804,7 @@ bool AnimationTrackEditor::can_add_reset_key() const {
 	}
 	for (const KeyValue<SelectedKey, KeyInfo> &E : selection) {
 		const Animation::TrackType track_type = animation->track_get_type(E.key.track);
-		if (track_type != Animation::TYPE_ANIMATION && track_type != Animation::TYPE_AUDIO && track_type != Animation::TYPE_METHOD) {
+		if (track_type != Animation::TYPE_ANIMATION && track_type != Animation::TYPE_AUDIO && track_type != Animation::TYPE_METHOD && track_type != Animation::TYPE_TRANSMIT) {
 			return true;
 		}
 	}
@@ -5392,6 +5921,210 @@ SkeletonBodyParts get_skeleton_body_parts(const Skeleton3D *p_skeleton) {
 
 } // namespace
 
+// Asosdot: puts the rows under nested headers. Each node gets one header, in the order its first
+// track appears. A skeleton's bone tracks are then sorted by the skeleton, not by when they were
+// made: body parts in hierarchy order, the bones of each part, and Position, Rotation and Scale for
+// each bone. So a new track sits with its bone instead of at the bottom of the list.
+void AnimationTrackEditor::_build_track_groups(LocalVector<VBoxContainer *> &r_containers) {
+	struct NodeTracks {
+		String base_path;
+		LocalVector<AnimationTrackEdit *> tracks;
+	};
+	LocalVector<NodeTracks> nodes;
+	HashMap<String, int> node_index;
+	for (AnimationTrackEdit *track_edit : track_edits) {
+		const String base_path = String(animation->track_get_path(track_edit->get_track())).get_slicec(':', 0); // Remove sub-path.
+		if (!node_index.has(base_path)) {
+			node_index[base_path] = nodes.size();
+			nodes.push_back({ base_path, {} });
+		}
+		nodes[node_index[base_path]].tracks.push_back(track_edit);
+	}
+
+	const int indent_step = Math::round(12 * EDSCALE);
+
+	for (const NodeTracks &node_tracks : nodes) {
+		VBoxContainer *vb = memnew(VBoxContainer);
+		vb->add_theme_constant_override("separation", 0);
+		r_containers.push_back(vb);
+
+		const NodePath first_path = animation->track_get_path(node_tracks.tracks[0]->get_track());
+		Node *node = root ? root->get_node_or_null(node_tracks.base_path) : nullptr;
+
+		auto add_group = [&](AnimationTrackEditGroup::Kind p_kind, const Ref<Texture2D> &p_icon, const String &p_name, const String &p_tooltip, AnimationTrackEditGroup *p_parent, const String &p_fold_key, bool p_folded_by_default) {
+			AnimationTrackEditGroup *g = memnew(AnimationTrackEditGroup);
+			g->kind = p_kind;
+			g->parent_group = p_parent;
+			g->level = p_parent ? p_parent->level + 1 : 0;
+			g->fold_key = p_fold_key;
+			g->folded_by_default = p_folded_by_default;
+			g->set_type_and_name(p_icon, p_name, first_path);
+			g->set_root(root);
+			g->set_tooltip_text(p_tooltip);
+			g->set_timeline(timeline);
+			g->set_editor(this);
+			groups.push_back(g);
+			vb->add_child(g);
+			return g;
+		};
+		auto add_track = [&](AnimationTrackEdit *p_track_edit, AnimationTrackEditGroup *p_group, const String &p_label) {
+			p_track_edit->set_in_group(true);
+			p_track_edit->parent_group = p_group;
+			p_track_edit->set_indent(p_group->level * indent_step);
+			p_track_edit->set_label_override(p_label);
+			vb->add_child(p_track_edit);
+			for (AnimationTrackEditGroup *g = p_group; g; g = g->parent_group) {
+				g->track_edits.push_back(p_track_edit);
+			}
+		};
+
+		Ref<Texture2D> node_icon = get_editor_theme_icon(SNAME("Node"));
+		String node_name = node_tracks.base_path;
+		String tooltip;
+		if (node) {
+			node_icon = EditorNode::get_singleton()->get_object_icon(node);
+			node_name = node->get_name();
+			tooltip = String(root->get_path_to(node));
+		}
+		// A node's fold is stored by its name, as it always was, so existing folds still apply.
+		AnimationTrackEditGroup *node_group = add_group(AnimationTrackEditGroup::KIND_NODE, node_icon, node_name, tooltip, nullptr, node_name, false);
+
+		Skeleton3D *skeleton = Object::cast_to<Skeleton3D>(node);
+		if (!skeleton) {
+			// An audio player's audio tracks are its lanes: sounds on different lanes overlap, all
+			// played by that one node. Its property tracks come first.
+			const bool audio_player = node && node->has_method(SNAME("play_layered"));
+			int lanes = 0;
+			for (AnimationTrackEdit *track_edit : node_tracks.tracks) {
+				if (!audio_player || animation->track_get_type(track_edit->get_track()) != Animation::TYPE_AUDIO) {
+					add_track(track_edit, node_group, String());
+				}
+			}
+			if (audio_player) {
+				for (AnimationTrackEdit *track_edit : node_tracks.tracks) {
+					if (animation->track_get_type(track_edit->get_track()) == Animation::TYPE_AUDIO) {
+						add_track(track_edit, node_group, vformat(TTR("Lane %d"), ++lanes));
+					}
+				}
+			}
+			if (lanes > 0) {
+				node_group->audio = true;
+				node_group->set_tooltip_text(vformat(TTR("%s\nEvery lane plays through this one node, so sounds on different lanes overlap.\nDrop sounds here, or press +, to add them: they go on the first lane with room."), tooltip));
+			}
+			continue;
+		}
+
+		// The skeleton's own property tracks come first, then its bones.
+		HashMap<int, LocalVector<AnimationTrackEdit *>> tracks_of_bone;
+		for (AnimationTrackEdit *track_edit : node_tracks.tracks) {
+			const NodePath path = animation->track_get_path(track_edit->get_track());
+			const int bone = path.get_subname_count() == 1 ? skeleton->find_bone(path.get_subname(0)) : -1;
+			if (bone < 0) {
+				add_track(track_edit, node_group, String());
+			} else {
+				tracks_of_bone[bone].push_back(track_edit);
+			}
+		}
+		if (tracks_of_bone.is_empty()) {
+			continue;
+		}
+
+		// Bones in hierarchy order: a parent, then each of its children's branches in turn.
+		LocalVector<int> bone_order;
+		{
+			LocalVector<int> stack;
+			const Vector<int> roots = skeleton->get_parentless_bones();
+			for (int i = roots.size() - 1; i >= 0; i--) {
+				stack.push_back(roots[i]);
+			}
+			while (!stack.is_empty()) {
+				const int bone = stack[stack.size() - 1];
+				stack.resize(stack.size() - 1);
+				bone_order.push_back(bone);
+				const Vector<int> children = skeleton->get_bone_children(bone);
+				for (int i = children.size() - 1; i >= 0; i--) {
+					stack.push_back(children[i]);
+				}
+			}
+		}
+
+		const SkeletonBodyParts parts = get_skeleton_body_parts(skeleton);
+		HashMap<int, LocalVector<int>> keyed_bones_of_part;
+		for (int bone : bone_order) {
+			if (tracks_of_bone.has(bone)) {
+				keyed_bones_of_part[parts.part_of_bone[bone]].push_back(bone);
+			}
+		}
+
+		const Ref<Texture2D> part_icon = get_editor_theme_icon(SNAME("BoneAttachment3D"));
+		const Ref<Texture2D> bone_icon = get_editor_theme_icon(SNAME("Bone"));
+		const String skeleton_tooltip = tooltip.is_empty() ? node_name : tooltip;
+		int current_part = -1;
+		AnimationTrackEditGroup *part_group = nullptr;
+		for (int bone : bone_order) {
+			if (!tracks_of_bone.has(bone)) {
+				continue;
+			}
+			const int part = parts.part_of_bone[bone];
+			// A part gets a header when there are several and it holds more than one keyed bone;
+			// a header over a single bone would only repeat that bone's row.
+			const bool part_header = parts.labels.size() > 1 && keyed_bones_of_part[part].size() > 1;
+			if (part_header && part != current_part) {
+				part_group = add_group(AnimationTrackEditGroup::KIND_BODY_PART, part_icon, parts.labels[part], vformat(U"%s · %s", skeleton_tooltip, parts.labels[part]), node_group, node_tracks.base_path + "/" + parts.labels[part], false);
+				part_group->part_bones = keyed_bones_of_part[part];
+			}
+			current_part = part;
+			AnimationTrackEditGroup *parent = part_header ? part_group : node_group;
+
+			const String bone_name = skeleton->get_bone_name(bone);
+			AnimationTrackEditGroup *bone_group = add_group(AnimationTrackEditGroup::KIND_BONE, bone_icon, bone_name, vformat(U"%s · %s\n%s", skeleton_tooltip, bone_name, TTR("Click to select the bone; Shift+click to add it. Open it to see its tracks.")), parent, "~open/" + node_tracks.base_path + "/" + bone_name, true);
+			bone_group->bone = bone;
+
+			LocalVector<AnimationTrackEdit *> &bone_tracks = tracks_of_bone[bone];
+			struct BoneTrackOrder {
+				Ref<Animation> animation;
+				static int rank(Animation::TrackType p_type) {
+					switch (p_type) {
+						case Animation::TYPE_POSITION_3D:
+							return 0;
+						case Animation::TYPE_ROTATION_3D:
+							return 1;
+						case Animation::TYPE_SCALE_3D:
+							return 2;
+						default:
+							return 3;
+					}
+				}
+				bool operator()(const AnimationTrackEdit *p_lhs, const AnimationTrackEdit *p_rhs) const {
+					const int lhs = rank(animation->track_get_type(p_lhs->get_track()));
+					const int rhs = rank(animation->track_get_type(p_rhs->get_track()));
+					return lhs != rhs ? lhs < rhs : p_lhs->get_track() < p_rhs->get_track();
+				}
+			};
+			SortArray<AnimationTrackEdit *, BoneTrackOrder> sorter;
+			sorter.compare.animation = animation;
+			sorter.sort(bone_tracks.ptr(), bone_tracks.size());
+			for (AnimationTrackEdit *track_edit : bone_tracks) {
+				String label;
+				switch (animation->track_get_type(track_edit->get_track())) {
+					case Animation::TYPE_POSITION_3D:
+						label = TTR("Position");
+						break;
+					case Animation::TYPE_ROTATION_3D:
+						label = TTR("Rotation");
+						break;
+					case Animation::TYPE_SCALE_3D:
+						label = TTR("Scale");
+						break;
+					default:
+						break;
+				}
+				add_track(track_edit, bone_group, label);
+			}
+		}
+	}
+}
+
 void AnimationTrackEditor::_update_tracks() {
 	int selected = _get_track_selected();
 
@@ -5429,8 +6162,6 @@ void AnimationTrackEditor::_update_tracks() {
 		}
 	}
 
-	RBMap<String, VBoxContainer *> group_sort;
-	HashMap<ObjectID, SkeletonBodyParts> body_parts;
 	LocalVector<VBoxContainer *> group_containers;
 
 	bool use_grouping = !view_group->is_pressed();
@@ -5506,75 +6237,10 @@ void AnimationTrackEditor::_update_tracks() {
 
 		track_edits.push_back(track_edit);
 
-		if (use_grouping) {
-			String base_path = String(animation->track_get_path(i));
-			base_path = base_path.get_slicec(':', 0); // Remove sub-path.
-
-			// Asosdot: a skeleton's bone tracks are grouped by body part, each with its own fold.
-			String group_key = base_path;
-			String body_part;
-			if (root) {
-				Skeleton3D *skeleton = Object::cast_to<Skeleton3D>(root->get_node_or_null(base_path));
-				const NodePath track_path = animation->track_get_path(i);
-				const int bone = skeleton && track_path.get_subname_count() == 1 ? skeleton->find_bone(track_path.get_subname(0)) : -1;
-				if (bone >= 0) {
-					const ObjectID id = skeleton->get_instance_id();
-					if (!body_parts.has(id)) {
-						body_parts.insert(id, get_skeleton_body_parts(skeleton));
-					}
-					const SkeletonBodyParts &parts = body_parts[id];
-					if (parts.labels.size() > 1) {
-						const int part = parts.part_of_bone[bone];
-						group_key = base_path + ":" + itos(part); // A node path can't hold a colon.
-						body_part = parts.labels[part];
-					}
-				}
-			}
-
-			if (!group_sort.has(group_key)) {
-				AnimationTrackEditGroup *g = memnew(AnimationTrackEditGroup);
-				Ref<Texture2D> icon = get_editor_theme_icon(SNAME("Node"));
-				String name = base_path;
-				String tooltip;
-				if (root) {
-					Node *n = root->get_node_or_null(base_path);
-					if (n) {
-						icon = EditorNode::get_singleton()->get_object_icon(n);
-						name = n->get_name();
-						tooltip = String(root->get_path_to(n));
-					}
-				}
-				if (!body_part.is_empty()) {
-					// The bone icon marks a body part; the skeleton is named in the tooltip, as the
-					// track names column is too narrow for both.
-					icon = get_editor_theme_icon(SNAME("BoneAttachment3D"));
-					tooltip = vformat(U"%s · %s", tooltip.is_empty() ? name : tooltip, body_part);
-					name = body_part;
-				}
-
-				g->set_type_and_name(icon, name, animation->track_get_path(i));
-				g->set_root(root);
-				g->set_tooltip_text(tooltip);
-				g->set_timeline(timeline);
-				g->set_editor(this);
-				groups.push_back(g);
-				VBoxContainer *vb = memnew(VBoxContainer);
-				vb->add_theme_constant_override("separation", 0);
-				vb->add_child(g);
-				group_sort[group_key] = vb;
-				group_containers.push_back(vb);
-			}
-
-			track_edit->set_in_group(true);
-			group_sort[group_key]->add_child(track_edit);
-
-			AnimationTrackEditGroup *g = Object::cast_to<AnimationTrackEditGroup>(group_sort[group_key]->get_child(0));
-			ERR_FAIL_NULL_MSG(g, "The first child of this group's VBoxContainer isn't an AnimationTrackEditGroup. Collapsing this animation group may not work.");
-			g->track_edits.push_back(track_edit);
-
-		} else {
-			track_edit->set_in_group(false);
-		}
+		track_edit->set_in_group(false);
+		track_edit->set_indent(0);
+		track_edit->set_label_override(String());
+		track_edit->parent_group = nullptr;
 
 		track_edit->set_timeline(timeline);
 		track_edit->set_root(root);
@@ -5606,6 +6272,8 @@ void AnimationTrackEditor::_update_tracks() {
 	}
 
 	if (use_grouping) {
+		_build_track_groups(group_containers);
+
 		if (use_alphabetic_sorting) {
 			struct GroupAlphaCompare {
 				bool operator()(const VBoxContainer *p_lhs, const VBoxContainer *p_rhs) const {
@@ -5655,6 +6323,14 @@ bool AnimationTrackEditor::_track_passes_filters(int p_track) const {
 		if (!node || !EditorNode::get_singleton()->get_editor_selection()->is_selected(node)) {
 			return false;
 		}
+		// Asosdot: on a skeleton with bones selected, only those bones' tracks are shown.
+		Skeleton3D *skeleton = Object::cast_to<Skeleton3D>(node);
+		if (skeleton && path.get_subname_count() == 1) {
+			const int bone = skeleton->find_bone(path.get_subname(0));
+			if (bone >= 0 && !Skeleton3DEditor::is_bone_selected(skeleton, bone) && !Skeleton3DEditor::get_selected_bones(skeleton).is_empty()) {
+				return false;
+			}
+		}
 	}
 
 	const String filter_text = timeline->filter_track->get_text();
@@ -5697,20 +6373,214 @@ void AnimationTrackEditor::_refresh_track_visibility() {
 		return;
 	}
 
+	// Headers nest, so a row shows when every header above it is open.
+	HashMap<const AnimationTrackEditGroup *, bool> open;
+	auto is_open = [&](const AnimationTrackEditGroup *p_group) {
+		for (const AnimationTrackEditGroup *g = p_group; g; g = g->parent_group) {
+			bool *known = open.getptr(g);
+			if (!known) {
+				known = &open.insert(g, !g->is_folded())->value;
+			}
+			if (!*known) {
+				return false;
+			}
+		}
+		return true;
+	};
+
+	HashMap<const AnimationTrackEdit *, bool> passes;
+	for (AnimationTrackEdit *track_edit : track_edits) {
+		const bool track_passes = _track_passes_filters(track_edit->get_track());
+		passes[track_edit] = track_passes;
+		const bool shown = track_passes && is_open(track_edit->parent_group);
+		if (track_edit->is_visible() != shown) {
+			track_edit->set_visible(shown);
+			track_edit->queue_redraw();
+		}
+	}
+
 	for (AnimationTrackEditGroup *g : groups) {
-		const bool folded = animation->editor_is_group_folded(g->node_name);
 		bool any_passes = false;
 		for (AnimationTrackEdit *track_edit : g->track_edits) {
-			const bool passes = _track_passes_filters(track_edit->get_track());
-			if (track_edit->is_visible() != (passes && !folded)) {
-				track_edit->set_visible(passes && !folded);
-				track_edit->queue_redraw();
+			if (passes[track_edit]) {
+				any_passes = true;
+				break;
 			}
-			any_passes = any_passes || passes;
 		}
-		if (VBoxContainer *group_container = Object::cast_to<VBoxContainer>(g->get_parent())) {
-			group_container->set_visible(any_passes);
+		const bool shown = any_passes && (!g->parent_group || is_open(g->parent_group));
+		if (g->is_visible() != shown) {
+			g->set_visible(shown);
 		}
+		g->queue_redraw();
+		if (!g->parent_group) {
+			if (VBoxContainer *group_container = Object::cast_to<VBoxContainer>(g->get_parent())) {
+				group_container->set_visible(any_passes);
+			}
+		}
+	}
+}
+
+double AnimationTrackEditor::get_audio_clip_length(const Ref<Animation> &p_animation, int p_track, int p_key) {
+	Ref<AudioStream> stream = p_animation->audio_track_get_key_stream(p_track, p_key);
+	if (stream.is_null()) {
+		return 0.0;
+	}
+	double length = stream->get_length();
+	if (length <= 0.0) {
+		return 0.0; // The stream doesn't know.
+	}
+	length -= p_animation->audio_track_get_key_start_offset(p_track, p_key) + p_animation->audio_track_get_key_end_offset(p_track, p_key);
+	return MAX(0.0, length / MAX(p_animation->audio_track_get_key_pitch_scale(p_track, p_key), 0.01f));
+}
+
+double AnimationTrackEditor::get_playhead_time() const {
+	return timeline->get_play_position();
+}
+
+void AnimationTrackEditor::add_audio_clips(const NodePath &p_player_path, const Vector<Ref<AudioStream>> &p_streams, double p_time, int p_preferred_track) {
+	ERR_FAIL_COND(animation.is_null());
+	if (p_streams.is_empty()) {
+		return;
+	}
+	if (read_only) {
+		popup_read_only_dialog();
+		return;
+	}
+
+	// The lanes this player already has: every audio track that points at it, however the path is written.
+	struct Lane {
+		int track = 0;
+		bool is_new = false;
+		LocalVector<Pair<double, double>> clips;
+	};
+	LocalVector<Lane> lanes;
+	Node *player = root ? root->get_node_or_null(p_player_path) : nullptr;
+	for (int i = 0; i < animation->get_track_count(); i++) {
+		if (animation->track_get_type(i) != Animation::TYPE_AUDIO) {
+			continue;
+		}
+		const NodePath track_path = animation->track_get_path(i);
+		if (player ? root->get_node_or_null(track_path) != player : track_path != p_player_path) {
+			continue;
+		}
+		Lane lane;
+		lane.track = i;
+		for (int k = 0; k < animation->track_get_key_count(i); k++) {
+			const double begin = animation->track_get_key_time(i, k);
+			lane.clips.push_back(Pair<double, double>(begin, begin + MAX(get_audio_clip_length(animation, i, k), 0.05)));
+		}
+		if (i == p_preferred_track) {
+			lanes.insert(0, lane);
+		} else {
+			lanes.push_back(lane);
+		}
+	}
+
+	const double time = MAX(0.0, p_time);
+	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+	undo_redo->create_action(p_streams.size() == 1 ? TTR("Add Audio Clip") : TTR("Add Audio Clips"), UndoRedo::MERGE_DISABLE, animation.ptr());
+	int next_track = animation->get_track_count();
+	LocalVector<int> existing_tracks_keyed;
+	LocalVector<int> new_tracks;
+	for (const Ref<AudioStream> &stream : p_streams) {
+		if (stream.is_null()) {
+			continue;
+		}
+		const double length = stream->get_length() > 0.0 ? stream->get_length() : 0.05;
+		Lane *free_lane = nullptr;
+		for (Lane &lane : lanes) {
+			bool overlaps = false;
+			for (const Pair<double, double> &clip : lane.clips) {
+				if (time < clip.second - 0.0001 && clip.first < time + length - 0.0001) {
+					overlaps = true;
+					break;
+				}
+			}
+			if (!overlaps) {
+				free_lane = &lane;
+				break;
+			}
+		}
+		if (!free_lane) {
+			Lane lane;
+			lane.track = next_track++;
+			lane.is_new = true;
+			undo_redo->add_do_method(animation.ptr(), "add_track", Animation::TYPE_AUDIO, -1);
+			undo_redo->add_do_method(animation.ptr(), "track_set_path", lane.track, p_player_path);
+			new_tracks.push_back(lane.track);
+			lanes.push_back(lane);
+			free_lane = &lanes[lanes.size() - 1];
+		}
+		undo_redo->add_do_method(animation.ptr(), "audio_track_insert_key", free_lane->track, time, stream);
+		if (!free_lane->is_new) {
+			existing_tracks_keyed.push_back(free_lane->track);
+		}
+		free_lane->clips.push_back(Pair<double, double>(time, time + length));
+	}
+	// Undo runs in this order: the keys come off the lanes that were there, then the new lanes go, last one first.
+	for (int track : existing_tracks_keyed) {
+		undo_redo->add_undo_method(animation.ptr(), "track_remove_key_at_time", track, time);
+	}
+	for (int i = int(new_tracks.size()) - 1; i >= 0; i--) {
+		undo_redo->add_undo_method(animation.ptr(), "remove_track", new_tracks[i]);
+	}
+	undo_redo->commit_action();
+}
+
+void AnimationTrackEditor::popup_add_sound_dialog(const NodePath &p_player_path) {
+	if (animation.is_null()) {
+		return;
+	}
+	if (read_only) {
+		popup_read_only_dialog();
+		return;
+	}
+	if (!add_sound_dialog) {
+		add_sound_dialog = memnew(EditorFileDialog);
+		add_sound_dialog->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_FILES);
+		add_sound_dialog->set_title(TTR("Add Sounds at the Playhead"));
+		List<String> extensions;
+		ResourceLoader::get_recognized_extensions_for_type("AudioStream", &extensions);
+		for (const String &extension : extensions) {
+			add_sound_dialog->add_filter("*." + extension, extension.to_upper());
+		}
+		add_sound_dialog->connect("files_selected", callable_mp(this, &AnimationTrackEditor::_add_sound_files_selected));
+		add_child(add_sound_dialog);
+	}
+	add_sound_path = p_player_path;
+	add_sound_dialog->popup_file_dialog();
+}
+
+void AnimationTrackEditor::_add_sound_files_selected(const PackedStringArray &p_paths) {
+	Vector<Ref<AudioStream>> streams;
+	for (const String &path : p_paths) {
+		Ref<AudioStream> stream = ResourceLoader::load(path);
+		if (stream.is_valid()) {
+			streams.push_back(stream);
+		}
+	}
+	if (streams.is_empty()) {
+		EditorNode::get_singleton()->show_warning(TTR("None of the chosen files is a sound the project has imported."));
+		return;
+	}
+	add_audio_clips(add_sound_path, streams, get_playhead_time());
+}
+
+void AnimationTrackEditor::_more_options_pressed() {
+	more_options_popup->reset_size();
+	const Rect2 button_rect = more_options->get_screen_rect();
+	const Size2 popup_size = more_options_popup->get_contents_minimum_size();
+	more_options_popup->set_position(Point2(button_rect.position.x + button_rect.size.x - popup_size.x, button_rect.position.y - popup_size.y - 4 * EDSCALE));
+	more_options_popup->popup();
+}
+
+void AnimationTrackEditor::bone_selection_changed() {
+	if (selected_filter->is_pressed()) {
+		_refresh_track_visibility();
+		bezier_edit->set_filtered(true);
+	} else {
+		_redraw_tracks();
+		_redraw_groups();
 	}
 }
 
@@ -5746,6 +6616,7 @@ void AnimationTrackEditor::_redraw_tracks() {
 	for (int i = 0; i < track_edits.size(); i++) {
 		track_edits[i]->queue_redraw();
 	}
+	_redraw_groups(); // Asosdot: bone rows draw their tracks' keys, so they change with them.
 }
 
 void AnimationTrackEditor::_redraw_groups() {
@@ -5911,6 +6782,7 @@ void AnimationTrackEditor::_notification(int p_what) {
 			function_name_toggler->set_button_icon(get_editor_theme_icon(SNAME("MemberMethod")));
 			selected_filter->set_button_icon(get_editor_theme_icon(SNAME("AnimationFilter")));
 			alphabetic_sorting->set_button_icon(get_editor_theme_icon(SNAME("Sort")));
+			more_options->set_button_icon(get_editor_theme_icon(SNAME("GuiTabMenuHl")));
 			imported_anim_warning->set_button_icon(get_editor_theme_icon(SNAME("NodeWarning")));
 			dummy_player_warning->set_button_icon(get_editor_theme_icon(SNAME("NodeWarning")));
 			inactive_player_warning->set_button_icon(get_editor_theme_icon(SNAME("NodeWarning")));
@@ -6127,6 +6999,9 @@ void AnimationTrackEditor::_new_track_node_selected(NodePath p_path) {
 			undo_redo->commit_action();
 
 		} break;
+		case Animation::TYPE_TRANSMIT: {
+			// Added without picking a node, see _add_track().
+		} break;
 		case Animation::TYPE_ANIMATION: {
 			if (!node->is_class("AnimationPlayer")) {
 				EditorNode::get_singleton()->show_warning(TTR("Animation tracks can only point to AnimationPlayer nodes."));
@@ -6150,6 +7025,17 @@ void AnimationTrackEditor::_new_track_node_selected(NodePath p_path) {
 }
 
 void AnimationTrackEditor::_add_track(int p_type) {
+	if (p_type == Animation::TYPE_TRANSMIT) {
+		// Asosdot: a transmission needs no target; the track sits on the root node.
+		EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+		undo_redo->create_action(TTR("Add Transmit Track"));
+		undo_redo->add_do_method(animation.ptr(), "add_track", Animation::TYPE_TRANSMIT);
+		undo_redo->add_do_method(animation.ptr(), "track_set_path", animation->get_track_count(), NodePath("."));
+		undo_redo->add_undo_method(animation.ptr(), "remove_track", animation->get_track_count());
+		undo_redo->commit_action();
+		return;
+	}
+
 	AnimationPlayer *ap = AnimationPlayerEditor::get_singleton()->get_player();
 	if (!ap) {
 		ERR_FAIL_EDMSG("No AnimationPlayer is currently being edited.");
@@ -6182,6 +7068,8 @@ void AnimationTrackEditor::_add_track(int p_type) {
 			valid_types.push_back(SNAME("AudioStreamPlayer2D"));
 			valid_types.push_back(SNAME("AudioStreamPlayer3D"));
 			title_text = TTRC("Pick a node to play audio:");
+		} break;
+		case Animation::TYPE_TRANSMIT: {
 		} break;
 		case Animation::TYPE_ANIMATION: {
 			valid_types.push_back(SNAME("AnimationPlayer"));
@@ -6813,6 +7701,12 @@ void AnimationTrackEditor::_insert_key_from_track(float p_ofs, int p_track) {
 		case Animation::TYPE_ANIMATION: {
 			id.value = StringName("[stop]");
 		} break;
+		case Animation::TYPE_TRANSMIT: {
+			Dictionary tk;
+			tk["channel"] = StringName("transmission");
+			tk["arguments"] = Array();
+			id.value = tk;
+		} break;
 		default: {
 			// All track types should be handled by now.
 			DEV_ASSERT(false);
@@ -6921,6 +7815,7 @@ void AnimationTrackEditor::_move_selection(float p_offset) {
 			track_edit->queue_redraw();
 		}
 	}
+	_redraw_groups(); // Bone rows and folded headers show the moving keys too.
 }
 
 struct _AnimMoveRestore {
@@ -7184,6 +8079,15 @@ void AnimationTrackEditor::_scroll_input(const Ref<InputEvent> &p_event) {
 					Rect2 local_rect = box_select_rect;
 					local_rect.position -= track_edits[i]->get_global_position();
 					track_edits[i]->append_to_selection(local_rect, mb->is_command_or_control_pressed());
+				}
+				// Asosdot: the keys shown on bone rows and folded headers can be box selected too.
+				for (AnimationTrackEditGroup *g : groups) {
+					if (!g->is_visible_in_tree()) {
+						continue;
+					}
+					Rect2 local_rect = box_select_rect;
+					local_rect.position -= g->get_global_position();
+					g->append_to_selection(local_rect, mb->is_command_or_control_pressed());
 				}
 
 				if (_get_track_selected() == -1 && track_edits.size() > 0) { // Minimal hack to make shortcuts work.
@@ -7832,6 +8736,9 @@ void AnimationTrackEditor::_edit_menu_pressed(int p_option) {
 					case Animation::TYPE_AUDIO:
 						track_type = TTR("Audio");
 						break;
+					case Animation::TYPE_TRANSMIT:
+						track_type = TTR("Transmissions");
+						break;
 					default: {
 					};
 				}
@@ -8269,7 +9176,7 @@ void AnimationTrackEditor::_edit_menu_pressed(int p_option) {
 				const SelectedKey &sk = E.key;
 
 				const Animation::TrackType track_type = animation->track_get_type(E.key.track);
-				if (track_type == Animation::TYPE_ANIMATION || track_type == Animation::TYPE_AUDIO || track_type == Animation::TYPE_METHOD) {
+				if (track_type == Animation::TYPE_ANIMATION || track_type == Animation::TYPE_AUDIO || track_type == Animation::TYPE_METHOD || track_type == Animation::TYPE_TRANSMIT) {
 					continue;
 				}
 
@@ -9077,8 +9984,21 @@ AnimationTrackEditor::AnimationTrackEditor() {
 	bezier_key_mode->select(Animation::HANDLE_MODE_BALANCED);
 	bezier_key_mode->set_accessibility_name(TTRC("Bezier Default Mode"));
 
-	bottom_hf->add_child(bezier_key_mode);
-	bottom_hf->add_child(memnew(VSeparator));
+	// Asosdot: the switches that are seldom touched sit in a popup behind one button, so the bar
+	// under the tracks stays on one line.
+	more_options_popup = memnew(PopupPanel);
+	add_child(more_options_popup);
+	VBoxContainer *more_vb = memnew(VBoxContainer);
+	more_options_popup->add_child(more_vb);
+	Label *more_title = memnew(Label(TTRC("Track List Options")));
+	more_title->set_theme_type_variation("HeaderSmall");
+	more_vb->add_child(more_title);
+
+	HBoxContainer *bezier_mode_hb = memnew(HBoxContainer);
+	bezier_mode_hb->add_child(memnew(Label(TTRC("New Bezier keys:"))));
+	bezier_key_mode->set_h_size_flags(SIZE_EXPAND_FILL);
+	bezier_mode_hb->add_child(bezier_key_mode);
+	more_vb->add_child(bezier_mode_hb);
 
 	bezier_edit_icon = memnew(Button);
 	bezier_edit_icon->set_flat(true);
@@ -9087,7 +10007,9 @@ AnimationTrackEditor::AnimationTrackEditor() {
 	bezier_edit_icon->connect(SceneStringName(pressed), callable_mp(this, &AnimationTrackEditor::_toggle_bezier_edit));
 	bezier_edit_icon->set_tooltip_text(TTRC("Toggle between the bezier curve editor and track editor."));
 
-	bottom_hf->add_child(bezier_edit_icon);
+	bezier_edit_icon->set_text(TTRC("Bezier Curve Editor"));
+	bezier_edit_icon->set_text_alignment(HORIZONTAL_ALIGNMENT_LEFT);
+	more_vb->add_child(bezier_edit_icon);
 
 	graph_edit_icon = memnew(Button);
 	graph_edit_icon->set_flat(true);
@@ -9106,7 +10028,9 @@ AnimationTrackEditor::AnimationTrackEditor() {
 	function_name_toggler->set_shortcut_in_tooltip(false);
 	function_name_toggler->set_tooltip_text(TTRC("Toggle function names in the track editor."));
 
-	bottom_hf->add_child(function_name_toggler);
+	function_name_toggler->set_text(TTRC("Show Method Names"));
+	function_name_toggler->set_text_alignment(HORIZONTAL_ALIGNMENT_LEFT);
+	more_vb->add_child(function_name_toggler);
 
 	selected_filter = memnew(Button);
 	selected_filter->set_flat(true);
@@ -9122,7 +10046,9 @@ AnimationTrackEditor::AnimationTrackEditor() {
 	alphabetic_sorting->set_toggle_mode(true);
 	alphabetic_sorting->set_tooltip_text(TTRC("Sort tracks/groups alphabetically.\nIf disabled, tracks are shown in the order they are added and can be reordered using drag-and-drop."));
 
-	bottom_hf->add_child(alphabetic_sorting);
+	alphabetic_sorting->set_text(TTRC("Sort Alphabetically"));
+	alphabetic_sorting->set_text_alignment(HORIZONTAL_ALIGNMENT_LEFT);
+	more_vb->add_child(alphabetic_sorting);
 
 	view_group = memnew(Button);
 	view_group->set_flat(true);
@@ -9130,7 +10056,9 @@ AnimationTrackEditor::AnimationTrackEditor() {
 	view_group->set_toggle_mode(true);
 	view_group->set_tooltip_text(TTRC("Group tracks by node or display them as plain list."));
 
-	bottom_hf->add_child(view_group);
+	view_group->set_text(TTRC("Plain List, Without Groups"));
+	view_group->set_text_alignment(HORIZONTAL_ALIGNMENT_LEFT);
+	more_vb->add_child(view_group);
 
 	insert_at_current_time = memnew(Button);
 	insert_at_current_time->set_flat(true);
@@ -9162,7 +10090,9 @@ AnimationTrackEditor::AnimationTrackEditor() {
 
 	fps_compat = memnew(Button);
 	fps_compat->set_flat(true);
-	bottom_hf->add_child(fps_compat);
+	fps_compat->set_text(TTRC("Snap to Whole FPS"));
+	fps_compat->set_text_alignment(HORIZONTAL_ALIGNMENT_LEFT);
+	more_vb->add_child(fps_compat);
 	fps_compat->set_disabled(true);
 	fps_compat->set_toggle_mode(true);
 	fps_compat->set_pressed(true);
@@ -9172,7 +10102,7 @@ AnimationTrackEditor::AnimationTrackEditor() {
 	nearest_fps_label = memnew(Label);
 	nearest_fps_label->set_focus_mode(FOCUS_ACCESSIBILITY);
 	nearest_fps_label->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
-	bottom_hf->add_child(nearest_fps_label);
+	more_vb->add_child(nearest_fps_label);
 
 	step = memnew(EditorSpinSlider);
 	step->set_min(0);
@@ -9228,6 +10158,13 @@ AnimationTrackEditor::AnimationTrackEditor() {
 	auto_fit_bezier->set_shortcut(ED_GET_SHORTCUT("animation_editor/auto_fit"));
 	auto_fit_bezier->set_accessibility_name(TTRC("Auto Fit Bezier"));
 	bottom_hf->add_child(auto_fit_bezier);
+
+	more_options = memnew(Button);
+	more_options->set_flat(true);
+	more_options->set_tooltip_text(TTRC("More options: the Bezier curve editor and the handle mode of new Bezier keys, method names, sorting, grouping, and snapping to whole FPS."));
+	more_options->set_accessibility_name(TTRC("More Options"));
+	more_options->connect(SceneStringName(pressed), callable_mp(this, &AnimationTrackEditor::_more_options_pressed));
+	bottom_hf->add_child(more_options);
 
 	track_menu = memnew(MenuButton);
 	track_menu->set_shortcut_context(this);

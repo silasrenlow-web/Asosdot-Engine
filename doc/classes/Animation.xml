@@ -688,6 +688,32 @@
 				Swaps the track [param track_idx]'s index position with the track [param with_idx].
 			</description>
 		</method>
+		<method name="transmit_track_get_arguments" qualifiers="const">
+			<return type="Array" />
+			<param index="0" name="track_idx" type="int" />
+			<param index="1" name="key_idx" type="int" />
+			<description>
+				Returns the arguments the key [param key_idx] of the Transmit track [param track_idx] sends.
+			</description>
+		</method>
+		<method name="transmit_track_get_channel" qualifiers="const">
+			<return type="Variant" />
+			<param index="0" name="track_idx" type="int" />
+			<param index="1" name="key_idx" type="int" />
+			<description>
+				Returns the channel, a [StringName] or an [int], the key [param key_idx] of the Transmit track [param track_idx] transmits on.
+			</description>
+		</method>
+		<method name="transmit_track_insert_key">
+			<return type="int" />
+			<param index="0" name="track_idx" type="int" />
+			<param index="1" name="time" type="float" />
+			<param index="2" name="channel" type="Variant" />
+			<param index="3" name="arguments" type="Array" default="[]" />
+			<description>
+				Inserts a key at [param time] in the Transmit track [param track_idx] that transmits [param arguments] on [param channel], a name or a number, through [GlobalTransmit] when the animation passes it. Returns the key's index.
+			</description>
+		</method>
 		<method name="value_track_get_update_mode" qualifiers="const">
 			<return type="int" enum="Animation.UpdateMode" />
 			<param index="0" name="track_idx" type="int" />
@@ -756,6 +782,9 @@
 		</constant>
 		<constant name="TYPE_ANIMATION" value="8" enum="TrackType">
 			Animation tracks play animations in other [AnimationPlayer] nodes.
+		</constant>
+		<constant name="TYPE_TRANSMIT" value="9" enum="TrackType">
+			Transmit track: each key sends a [GlobalTransmit] transmission, a channel (a name or a number) and arguments, when the animation passes it, the way a method track calls a method. The track's path is the animation's root node, [code].[/code]; it doesn't target a node. Like method tracks, it doesn't transmit while the animation is previewed in the editor.
 		</constant>
 		<constant name="INTERPOLATION_NEAREST" value="0" enum="InterpolationType">
 			No interpolation (nearest value).

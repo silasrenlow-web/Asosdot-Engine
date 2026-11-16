@@ -5,6 +5,9 @@ layout(push_constant, std430) uniform PushConstant {
 	float exposure_adjust;
 	float min_luminance;
 	float max_luminance;
+	float dark_speed;
+	float center_weight;
+	float center_norm;
 	uint pad1;
 }
 settings;

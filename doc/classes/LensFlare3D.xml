@@ -47,9 +47,6 @@
 		</method>
 	</methods>
 	<members>
-		<member name="occlusion_exceptions" type="NodePath[]" setter="set_occlusion_exceptions" getter="get_occlusion_exceptions" default="[]">
-			Paths, from this node, to the [VisualInstance3D]s the flare looks past when it checks whether its source is hidden. Put a flare in a bulb and add the bulb here, so its glass doesn't hide it. See [method add_occlusion_exception]. Saved with the scene.
-		</member>
 		<member name="angle_fade" type="float" setter="set_angle_fade" getter="get_angle_fade" default="0.2">
 			How softly the flare fades out as the camera leaves the cone set by [member angle_limit], as a fraction of the cone. [code]0.0[/code] cuts the flare off at the edge of the cone. Has no effect when [member angle_limit] is [code]0.0[/code] or [member directional] is [code]true[/code].
 		</member>
@@ -88,6 +85,9 @@
 		<member name="occlusion_enabled" type="bool" setter="set_occlusion_enabled" getter="is_occlusion_enabled" default="true">
 			If [code]true[/code], the flare is faded out by whatever the scene drew in front of the source, sampled from the depth buffer over a disc of [member occlusion_radius] (or [member occlusion_angle] for a directional source). Partially hidden sources give a partially faded flare rather than an all-or-nothing pop.
 			Samples that fall outside the frame are clamped to the nearest edge of the depth buffer, so a source just off screen is still occluded by whatever fills the edge of the view.
+		</member>
+		<member name="occlusion_exceptions" type="NodePath[]" setter="set_occlusion_exceptions" getter="get_occlusion_exceptions" default="[]">
+			Paths, from this node, to the [VisualInstance3D]s the flare looks past when it checks whether its source is hidden. Put a flare in a bulb and add the bulb here, so its glass doesn't hide it. See [method add_occlusion_exception]. Saved with the scene.
 		</member>
 		<member name="occlusion_radius" type="float" setter="set_occlusion_radius" getter="get_occlusion_radius" default="0.25">
 			Radius of the disc sampled against the depth buffer, in metres at the source. A larger radius makes the flare fade earlier and more gradually as something moves in front of it. Replaced by [member occlusion_angle] when [member directional] is [code]true[/code].

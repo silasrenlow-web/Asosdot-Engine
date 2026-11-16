@@ -48,6 +48,7 @@ STATIC_ASSERT_INCOMPLETE_TYPE(class, Engine);
 #include "core/object/script_language.h"
 #include "core/string/print_string.h"
 #include "scene/animation/tween.h"
+#include "scene/main/global_transmit.h"
 #include "scene/main/instance_placeholder.h"
 #include "scene/main/multiplayer_api.h"
 #include "scene/main/scene_tree.h"
@@ -184,6 +185,10 @@ void Node::_notification(int p_notification) {
 
 			data.tree->nodes_in_tree_count++;
 
+			// Asosdot: receivers set up in the editor's Transmit tab.
+			if (GlobalTransmit::get_singleton() && has_meta(SNAME("_transmit_receivers"))) {
+				GlobalTransmit::get_singleton()->_node_entered(this);
+			}
 		} break;
 
 		case NOTIFICATION_POST_ENTER_TREE: {
@@ -236,6 +241,10 @@ void Node::_notification(int p_notification) {
 			if (data.path_cache) {
 				memdelete(data.path_cache);
 				data.path_cache = nullptr;
+			}
+
+			if (GlobalTransmit::get_singleton() && has_meta(SNAME("_transmit_receivers"))) {
+				GlobalTransmit::get_singleton()->_node_exited(this);
 			}
 		} break;
 

@@ -512,6 +512,9 @@ void SceneTreeEditor::_update_node(Node *p_node, TreeItem *p_item, bool p_part_o
 		if (valid_types.is_empty()) {
 			_set_item_custom_color(p_item, get_theme_color(SNAME("warning_color"), EditorStringName(Editor)));
 		}
+	} else if (marked.has(p_node) && marked_icon != StringName()) {
+		p_item->add_button(0, get_editor_theme_icon(marked_icon), BUTTON_MARKED, false, marked_tooltip);
+		p_item->set_button_color(0, p_item->get_button_count(0) - 1, get_theme_color(SNAME("accent_color"), EditorStringName(Editor)));
 	} else if (marked.has(p_node)) {
 		String node_name = p_node->get_name();
 		if (connecting_signal) {
@@ -1799,6 +1802,11 @@ void SceneTreeEditor::set_marked(const HashSet<Node *> &p_marked, bool p_selecta
 	marked_selectable = p_selectable;
 	marked_children_selectable = p_children_selectable;
 	_update_tree();
+}
+
+void SceneTreeEditor::set_marked_icon(const StringName &p_icon, const String &p_tooltip) {
+	marked_icon = p_icon;
+	marked_tooltip = p_tooltip;
 }
 
 void SceneTreeEditor::set_marked(Node *p_marked, bool p_selectable, bool p_children_selectable) {

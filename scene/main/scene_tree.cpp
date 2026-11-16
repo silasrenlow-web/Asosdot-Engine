@@ -61,6 +61,7 @@ STATIC_ASSERT_INCOMPLETE_TYPE(class, RenderingServer);
 #include "servers/rendering/rendering_server.h"
 
 #ifndef _3D_DISABLED
+#include "scene/3d/acoustic_engine.h"
 #include "scene/3d/node_3d.h"
 #include "scene/resources/3d/world_3d.h"
 #endif // _3D_DISABLED
@@ -733,6 +734,11 @@ bool SceneTree::process(double p_time) {
 	if (Saves *saves = Saves::get_singleton()) {
 		saves->_tick(p_time, paused);
 	}
+#ifndef _3D_DISABLED
+	if (AcousticEngine *acoustics = AcousticEngine::get_singleton()) {
+		acoustics->_tick(p_time);
+	}
+#endif // _3D_DISABLED
 
 	flush_transform_notifications(); // Additional transforms after timers update.
 

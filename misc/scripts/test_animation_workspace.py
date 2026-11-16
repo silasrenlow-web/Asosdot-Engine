@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Check the Animation workspace inside the editor: hosting the 3D editor, camera cuts, recording and poses."""
+"""Check the Animation workspace inside the editor: hosting the 3D editor, its scene tree and panels,
+camera cuts, recording, poses, and several sounds on the lanes of one audio player."""
 
 from __future__ import annotations
 
@@ -13,6 +14,12 @@ from test_blender_roundtrip import run
 PLUGIN = r"""
 @tool
 extends EditorPlugin
+
+# AsosdotAnimationWorkspace::PanelsMenu.
+const PANELS_SCENE := 0
+const PANELS_LIBRARY := 1
+const PANELS_MONITOR := 2
+const PANELS_DOCKS := 3
 
 var failures := []
 
@@ -46,6 +53,10 @@ func build_scene() -> void:
 	rig.add_bone("Hip")
 	rig.add_bone("Spine")
 	rig.set_bone_parent(1, 0)
+	var sounds := AudioStreamPlayer.new()
+	sounds.name = "Sounds"
+	var sounds_3d := AudioStreamPlayer3D.new()
+	sounds_3d.name = "Sounds3D"
 	var player := AnimationPlayer.new()
 	player.name = "Player"
 	var anim := Animation.new()
@@ -53,9 +64,18 @@ func build_scene() -> void:
 	var library := AnimationLibrary.new()
 	library.add_animation("cut", anim)
 	player.add_animation_library("", library)
-	for node in [cam_a, cam_b, door, rig, player]:
+	for node in [cam_a, cam_b, door, rig, sounds, sounds_3d, player]:
 		root.add_child(node)
 		node.owner = root
+	# Two sounds, two seconds and half a second long.
+	for sound in [["long", 2.0], ["short", 0.5]]:
+		var wav := AudioStreamWAV.new()
+		wav.format = AudioStreamWAV.FORMAT_16_BITS
+		wav.mix_rate = 8000
+		var data := PackedByteArray()
+		data.resize(int(8000 * sound[1]) * 2)
+		wav.data = data
+		ResourceSaver.save(wav, "res://%s.tres" % sound[0])
 	var packed := PackedScene.new()
 	packed.pack(root)
 	ResourceSaver.save(packed, "res://cutscene.tscn")
@@ -102,8 +122,12 @@ func live_at(anim: Animation, time: float) -> String:
 
 
 func check_monitor(monitor: Control, spatial: Control, player: AnimationPlayer, anim: Animation, cam_a: Camera3D, cam_b: Camera3D) -> void:
-	var split := monitor.get_parent()
-	check(split is HSplitContainer and monitor.get_index() > 0 and split.is_ancestor_of(spatial.find_children("*", "Node3DEditorViewportContainer", true, false)[0]), "it sits right of the viewer, side by side")
+	# The monitor is inside a workspace panel (which can float it), and the panel is in the split.
+	var panel := monitor.get_parent()
+	while panel != null and not (panel.get_parent() is HSplitContainer):
+		panel = panel.get_parent()
+	var split := panel.get_parent() if panel != null else null
+	check(split is HSplitContainer and panel.get_index() > 0 and split.is_ancestor_of(spatial.find_children("*", "Node3DEditorViewportContainer", true, false)[0]), "it sits right of the viewer, side by side")
 	check(monitor.get_camera_count() == 2, "the monitor knows the scene's two cameras")
 	var source: OptionButton = monitor.find_children("*", "OptionButton", true, false)[0]
 	check(source.item_count == 3 and source.get_item_text(0) == "Live Shot", "its source menu offers the live shot and each camera")
@@ -152,17 +176,99 @@ func check_monitor(monitor: Control, spatial: Control, player: AnimationPlayer, 
 	var on_frame := cut_time > 0.0 and absf(cut_time / anim.step - roundf(cut_time / anim.step)) < 0.001
 	check(on_frame and absf(cut_time - before) <= anim.step * 0.5 + 0.0001, "clicking while playing cuts live, on the frame being shown (%.3f s, playing at %.3f s)" % [cut_time, before])
 
-	var monitor_button: Button = null
-	for button in spatial.find_children("*", "Button", true, false):
-		if button.text == "Monitor":
-			monitor_button = button
-	check(monitor_button != null and monitor_button.button_pressed, "the toolbar has the Monitor switch, on")
-	monitor_button.button_pressed = false
+	# The Panels menu holds the switches for what the workspace shows.
+	var panels: PopupMenu = null
+	for button in spatial.find_children("*", "MenuButton", true, false):
+		if button.text == "Panels":
+			panels = button.get_popup()
+	check(panels != null, "the toolbar has the Panels menu")
+	panels.about_to_popup.emit()
+	check(panels.is_item_checked(panels.get_item_index(PANELS_MONITOR)), "its Camera Monitor switch is on")
+	panels.id_pressed.emit(PANELS_MONITOR)
 	await frames(2)
-	check(not monitor.is_visible_in_tree(), "switching it off gives the viewer the width back")
-	monitor_button.button_pressed = true
+	check(not monitor.is_visible_in_tree() and not panel.is_visible_in_tree(), "switching it off gives the viewer the width back")
+	panels.id_pressed.emit(PANELS_MONITOR)
 	await frames(2)
 	check(monitor.is_visible_in_tree(), "and on again brings the monitor back")
+
+
+func audio_lanes(anim: Animation, path: String) -> Array:
+	var lanes := []
+	for track in anim.get_track_count():
+		if anim.track_get_type(track) == Animation.TYPE_AUDIO and String(anim.track_get_path(track)) == path:
+			lanes.append(track)
+	return lanes
+
+
+# Several sounds on one player: overlapping ones get a lane each, in one group of the track list.
+func check_sounds(scene: Node, library_tabs: TabContainer, player: AnimationPlayer, anim: Animation) -> void:
+	var sounds: AudioStreamPlayer = scene.get_node("Sounds")
+	var sounds_3d: AudioStreamPlayer3D = scene.get_node("Sounds3D")
+	library_tabs.current_tab = 2
+	await frames(3)
+	var sound_tree: Tree = library_tabs.find_children("*", "Tree", true, false)[3]
+	var items := {}
+	for item in sound_tree.get_root().get_children():
+		items[item.get_text(0)] = item
+	check(items.has("long.tres") and items.has("short.tres"), "the Sounds list shows the project's sounds")
+	if not (items.has("long.tres") and items.has("short.tres")):
+		return
+
+	EditorInterface.get_selection().clear()
+	EditorInterface.get_selection().add_node(sounds)
+	EditorInterface.edit_node(sounds)
+	await frames()
+	for add in [["long.tres", 0.5], ["long.tres", 1.0], ["short.tres", 1.2], ["short.tres", 3.0]]:
+		set_playhead(add[1])
+		await frames(2)
+		sound_tree.button_clicked.emit(items[add[0]], 0, 0, MOUSE_BUTTON_LEFT)
+		await frames(3)
+	var lanes := audio_lanes(anim, "Sounds")
+	check(lanes.size() == 3, "three sounds that overlap get three lanes on the one player (%d)" % lanes.size())
+	if lanes.size() == 3:
+		check(anim.track_get_key_count(lanes[0]) == 2 and anim.track_get_key_count(lanes[1]) == 1 and anim.track_get_key_count(lanes[2]) == 1, "a later sound goes back on the first lane, which has room by then")
+		check(is_equal_approx(anim.track_get_key_time(lanes[2], 0), 1.2), "each starts at the playhead")
+	var history := EditorInterface.get_editor_undo_redo().get_history_undo_redo(EditorInterface.get_editor_undo_redo().get_object_history_id(anim))
+	history.undo()
+	history.undo()
+	await frames(3)
+	check(audio_lanes(anim, "Sounds").size() == 2, "undo takes a sound out, and the lane made for it")
+	history.redo()
+	history.redo()
+	await frames(3)
+	check(audio_lanes(anim, "Sounds").size() == 3, "redo puts them back")
+
+	EditorInterface.get_selection().clear()
+	EditorInterface.get_selection().add_node(sounds_3d)
+	EditorInterface.edit_node(sounds_3d)
+	await frames()
+	for add in [["long.tres", 0.6], ["long.tres", 0.9]]:
+		set_playhead(add[1])
+		await frames(2)
+		sound_tree.button_clicked.emit(items[add[0]], 0, 0, MOUSE_BUTTON_LEFT)
+		await frames(3)
+	check(audio_lanes(anim, "Sounds3D").size() == 2 and audio_lanes(anim, "Sounds").size() == 3, "a 3D player gets lanes of its own the same way")
+
+	var groups := EditorInterface.get_base_control().find_children("*", "AnimationTrackEditGroup", true, false)
+	var headers := groups.map(func(group): return group.tooltip_text.get_slice("\n", 0))
+	check(headers.count("Sounds") == 1 and headers.count("Sounds3D") == 1, "each player is one group in the track list (%s)" % [headers])
+	var lane_rows := EditorInterface.get_base_control().find_children("*", "AnimationTrackEditTypeAudio", true, false)
+	check(lane_rows.size() == 5, "with a row per lane under them (%d)" % lane_rows.size())
+
+	set_playhead(0.0)
+	await frames(2)
+	player.play("cut")
+	var most := 0
+	var most_3d := 0
+	while player.is_playing() and player.current_animation_position < 1.9:
+		await get_tree().process_frame
+		most = maxi(most, sounds.get_layered_count())
+		most_3d = maxi(most_3d, sounds_3d.get_layered_count())
+	player.stop()
+	check(most == 3, "played in the editor, the one player sounds three at once (%d)" % most)
+	check(most_3d == 2, "and the 3D player two (%d)" % most_3d)
+	await frames(3)
+	check(sounds.get_layered_count() == 0 and not sounds.playing, "stopping silences them, and the player's own stream never played")
 
 
 func run() -> void:
@@ -205,8 +311,43 @@ func run() -> void:
 	await frames()
 	check(animation_button.button_pressed, "selecting a 3D node keeps the workspace open")
 
+	# The scene tree, above the library.
+	var hierarchy: Control = workspace.find_children("*", "SceneTreeEditor", true, false)[0]
+	var hierarchy_tree: Tree = hierarchy.find_children("*", "Tree", true, false)[0]
+	await frames(5)
+	check(hierarchy.is_visible_in_tree() and hierarchy_tree.get_root() != null and hierarchy_tree.get_root().get_child_count() == 7, "the scene tree lists the scene's nodes")
+	check(hierarchy_tree.get_selected() != null and hierarchy_tree.get_selected().get_text(0) == "Door", "it shows the editor's selection")
+	EditorInterface.get_selection().clear()
+	await frames(3)
+	var rig_item: TreeItem = null
+	for item in hierarchy_tree.get_root().get_children():
+		if item.get_text(0) == "Rig":
+			rig_item = item
+	# What the tree emits when a row is clicked.
+	rig_item.select(0)
+	hierarchy_tree.multi_selected.emit(rig_item, 0, true)
+	await frames(5)
+	check(EditorInterface.get_selection().get_selected_nodes() == [rig], "selecting a node in it selects it in the editor")
+	check(EditorInterface.get_inspector().get_edited_object() == rig, "and the Inspector follows")
+	check(animation_button.button_pressed, "the workspace stays open")
+	var panels_menu: PopupMenu = null
+	for button in spatial.find_children("*", "MenuButton", true, false):
+		if button.text == "Panels":
+			panels_menu = button.get_popup()
+	var library_tabs: TabContainer = workspace.find_children("*", "TabContainer", true, false)[0]
+	panels_menu.id_pressed.emit(PANELS_SCENE)
+	await frames(3)
+	check(not hierarchy.is_visible_in_tree() and library_tabs.is_visible_in_tree(), "hiding the scene tree leaves the library the column")
+	panels_menu.id_pressed.emit(PANELS_LIBRARY)
+	await frames(3)
+	check(not workspace.is_visible_in_tree(), "with both hidden the viewer gets the whole width")
+	panels_menu.id_pressed.emit(PANELS_SCENE)
+	panels_menu.id_pressed.emit(PANELS_LIBRARY)
+	await frames(3)
+	check(hierarchy.is_visible_in_tree() and library_tabs.is_visible_in_tree(), "and both come back")
+
 	# Camera cuts, through the Shots list.
-	var trees: Array = workspace.find_children("*", "Tree", true, false)
+	var trees: Array = library_tabs.find_children("*", "Tree", true, false)
 	var camera_tree: Tree = trees[1]
 	var cut_tree: Tree = trees[2]
 	player.play("cut")
@@ -319,6 +460,17 @@ func run() -> void:
 	apply_button.pressed.emit()
 	await frames()
 	check(rig.get_bone_pose_rotation(1).is_equal_approx(turned), "applying the pose puts the bone back")
+
+	await check_sounds(scene, library_tabs, player, anim)
+	var marked := 0
+	var unmarked := 0
+	for item in hierarchy_tree.get_root().get_children():
+		if item.get_button_count(0) > 0:
+			marked += 1
+		else:
+			unmarked += 1
+	# Player has no tracks of its own; the cameras, the door, the rig and both audio players do.
+	check(marked == 6 and unmarked == 1, "the scene tree marks the nodes that have tracks (%d marked, %d not)" % [marked, unmarked])
 
 	EditorInterface.set_main_screen_editor("3D")
 	await frames(10)

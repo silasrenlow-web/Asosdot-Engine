@@ -31,6 +31,7 @@
 #include "nav_mesh_generator_3d.h"
 
 #include "core/config/project_settings.h"
+#include "core/math/triangle_mesh.h"
 #include "core/os/thread.h"
 #include "scene/3d/node_3d.h"
 #include "scene/main/scene_tree.h"
@@ -525,14 +526,14 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 	ERR_FAIL_NULL(detail_mesh);
 	ERR_FAIL_COND(!rcBuildPolyMeshDetail(&ctx, *poly_mesh, *chf, cfg.detailSampleDist, cfg.detailSampleMaxError, *detail_mesh));
 
-	// Optionally remove the polygons of areas that are fully enclosed by
-	// geometry. The voxel bake can generate walkable patches in places an
-	// agent can never legitimately reach, e.g. on the floor inside thick or
-	// hollow walls. Agents that get pushed or spawned onto such a patch are
-	// stuck there, so the patch must not be baked at all. An area counts as
-	// enclosed when it is surrounded on every side by walls standing on its
-	// own level; open areas like roofs, balconies and ledges always have an
-	// open edge and are kept, and so is the largest area of the mesh.
+	// Remove the polygons of areas that lie inside solid geometry. The voxel
+	// bake reads geometry as surfaces, not volumes, so the floor running under
+	// a thick or hollow wall comes out as a walkable patch inside the wall.
+	// Nothing can walk there, but agents that phase through walls, or get
+	// pushed or spawned onto such a patch, path along it or are stuck on it.
+	// Only areas that are cut off from the rest of the mesh are considered,
+	// and the largest area is always kept, so the filter can never take away
+	// the level's main floor.
 	LocalVector<bool> poly_isolated;
 	if (p_navigation_mesh->get_filter_isolated_regions() && poly_mesh->npolys > 0 && detail_mesh->nmeshes == poly_mesh->npolys) {
 		const int nvp = poly_mesh->nvp;
@@ -555,9 +556,7 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 			poly_areas[i] = Math::abs(area2) * 0.5f;
 		}
 
-		// Flood fill the polygon adjacency graph into connected components and
-		// remember the Recast region ids of every component for the enclosure
-		// test below.
+		// Flood fill the polygon adjacency graph into connected components.
 		poly_isolated.resize(npolys);
 		for (int i = 0; i < npolys; i++) {
 			poly_isolated[i] = true;
@@ -570,14 +569,12 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 		LocalVector<int> poly_component;
 		poly_component.resize(npolys);
 		LocalVector<float> component_areas;
-		LocalVector<LocalVector<int>> component_regs;
 		LocalVector<int> flood_stack;
 		for (int start = 0; start < npolys; start++) {
 			if (poly_visited[start]) {
 				continue;
 			}
 			const int component_index = component_areas.size();
-			component_regs.resize(component_index + 1);
 			flood_stack.clear();
 			flood_stack.push_back(start);
 			poly_visited[start] = true;
@@ -587,10 +584,6 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 				flood_stack.resize(flood_stack.size() - 1);
 				poly_component[current] = component_index;
 				component_area += poly_areas[current];
-				const int poly_reg = poly_mesh->regs[current];
-				if (!component_regs[component_index].has(poly_reg)) {
-					component_regs[component_index].push_back(poly_reg);
-				}
 				const unsigned short *p = &poly_mesh->polys[current * nvp * 2];
 				for (int j = 0; j < nvp; j++) {
 					if (p[j] == RC_MESH_NULL_IDX) {
@@ -609,97 +602,159 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 			component_areas.push_back(component_area);
 		}
 		// The largest component is always kept. Every other component is kept
-		// unless the enclosure test finds it sealed inside geometry.
+		// unless the test below finds it inside solid geometry.
 		int largest_component = 0;
-		for (int i = 1; i < component_areas.size(); i++) {
+		for (int i = 1; i < (int)component_areas.size(); i++) {
 			if (component_areas[i] > component_areas[largest_component]) {
 				largest_component = i;
 			}
 		}
-		// Enclosure test, run on the component's own spans in the compact
-		// heightfield. Walk outwards from every span in all four directions. A
-		// column counts as filled when it holds any span near the span's level,
-		// from climbing reach below it to agent height above it, so the floor
-		// under a wall, the wall's own surfaces and rising geometry like stairs
-		// all count. A direction is open when empty columns pile up - open air
-		// or a drop - or when the bake border is reached. A direction is sealed
-		// once filled columns add up to more than the eroded ring around every
-		// walkable area plus a meter of geometry: by then the walk is inside
-		// something solid, and whatever lies beyond it, floor or void, does not
-		// make the area any less enclosed. Only a component sealed in every
-		// direction of every span is enclosed, e.g. a patch generated inside a
-		// wall. Open areas like roofs, balconies and ledges always have a span
-		// near their edge whose outward walk runs out of filled columns.
-		const int walk_length = cfg.walkableRadius + 16;
-		const int max_gap = 2 * cfg.walkableRadius + 2;
-		const int seal_total = cfg.walkableRadius + 3;
-		for (int component_index = 0; component_index < component_areas.size(); component_index++) {
-			if (component_index == largest_component) {
-				continue;
-			}
-			const LocalVector<int> &regs = component_regs[component_index];
-			LocalVector<int> comp_spans;
-			LocalVector<int> comp_columns;
-			for (int z = 0; z < chf->height; z++) {
-				for (int x = 0; x < chf->width; x++) {
-					const rcCompactCell &cell = chf->cells[x + z * chf->width];
-					for (int i = 0; i < (int)cell.count; i++) {
-						const rcCompactSpan &span = chf->spans[cell.index + i];
-						if (span.reg != 0 && regs.has(span.reg)) {
-							comp_spans.push_back(cell.index + i);
-							comp_columns.push_back(x + z * chf->width);
-						}
-					}
-				}
-			}
-			if (comp_spans.is_empty()) {
-				continue; // No spans found for this component: keep it.
-			}
-			bool enclosed = true;
-			for (int k = 0; k < comp_spans.size() && enclosed; k++) {
-				const rcCompactSpan &span = chf->spans[comp_spans[k]];
-				const int x = comp_columns[k] % chf->width;
-				const int z = comp_columns[k] / chf->width;
-				for (int dir = 0; dir < 4 && enclosed; dir++) {
-					const int dx = rcGetDirOffsetX(dir);
-					const int dz = rcGetDirOffsetY(dir);
-					int gap = 0;
-					int filled = 0;
-					for (int step = 1; step <= walk_length; step++) {
-						const int nx = x + dx * step;
-						const int nz = z + dz * step;
-						if (nx < 0 || nz < 0 || nx >= chf->width || nz >= chf->height) {
-							enclosed = false; // The bake border is open.
-							break;
-						}
-						const rcCompactCell &ncell = chf->cells[nx + nz * chf->width];
-						bool in_band = false;
-						for (int j = 0; j < (int)ncell.count; j++) {
-							const rcCompactSpan &t = chf->spans[ncell.index + j];
-							if ((int)t.y >= (int)span.y - cfg.walkableClimb && (int)t.y <= (int)span.y + cfg.walkableHeight) {
-								in_band = true;
-								break;
-							}
-						}
-						if (in_band) {
-							gap = 0;
-							if (++filled >= seal_total) {
-								break; // Inside something solid: sealed.
-							}
-						} else if (++gap > max_gap) {
-							enclosed = false; // Open air or a drop in this direction.
-							break;
-						}
-					}
-				}
-			}
-			if (enclosed) {
-				continue; // Sealed inside geometry: its polygons stay marked isolated.
-			}
+		// Which areas are inside solid geometry, read from the way the source
+		// geometry's faces point. Faces point out of the solid they bound, in the
+		// winding Recast reads walkable surfaces in (a floor's normal points up),
+		// so a ray leaving a wall meets the back of a face, while a ray crossing
+		// a room or the open meets the front of one, or nothing at all. From
+		// points above an area's floor, rays go out in eight horizontal
+		// directions: a point is inside something solid when nearly all of them
+		// leave through the back of a face. This needs no thresholds about wall
+		// thickness and no floor beyond the wall: a patch between a wall's inner
+		// surface and the building's outer skin is found even when there is only
+		// void outside. Rooms are kept even when they are sealed, because their
+		// walls face into them; roofs, balconies and ledges are kept because
+		// their rays get out into the open.
+		const int max_samples = 16;
+		const float sample_rise = cfg.walkableHeight * cfg.ch * 0.5f;
+		struct Sample {
+			Vector3 point;
+			float area = 0.0f;
+		};
+		LocalVector<LocalVector<Sample>> component_samples;
+		component_samples.resize(component_areas.size());
+		float sample_min_y = Math::INF;
+		float sample_max_y = -Math::INF;
+		{
+			// The largest polygons of every area but the largest one.
+			LocalVector<LocalVector<int>> component_polys;
+			component_polys.resize(component_areas.size());
 			for (int i = 0; i < npolys; i++) {
-				if (poly_component[i] == component_index) {
-					poly_isolated[i] = false;
+				if (poly_component[i] != largest_component) {
+					component_polys[poly_component[i]].push_back(i);
 				}
+			}
+			struct ByArea {
+				const float *areas = nullptr;
+				bool operator()(int p_a, int p_b) const { return areas[p_a] > areas[p_b]; }
+			};
+			for (int component_index = 0; component_index < (int)component_polys.size(); component_index++) {
+				LocalVector<int> &polys = component_polys[component_index];
+				if (polys.is_empty()) {
+					continue;
+				}
+				SortArray<int, ByArea> sorter;
+				sorter.compare.areas = poly_areas.ptr();
+				sorter.sort(polys.ptr(), polys.size());
+				for (int k = 0; k < (int)polys.size() && k < max_samples; k++) {
+					const unsigned short *p = &poly_mesh->polys[polys[k] * nvp * 2];
+					Vector3 center;
+					int corner_count = 0;
+					for (int j = 0; j < nvp && p[j] != RC_MESH_NULL_IDX; j++) {
+						const unsigned short *v = &poly_mesh->verts[p[j] * 3];
+						center += Vector3(poly_mesh->bmin[0] + v[0] * poly_mesh->cs, poly_mesh->bmin[1] + v[1] * poly_mesh->ch, poly_mesh->bmin[2] + v[2] * poly_mesh->cs);
+						corner_count++;
+					}
+					if (corner_count == 0) {
+						continue;
+					}
+					Sample sample;
+					sample.point = center / corner_count + Vector3(0, sample_rise, 0);
+					sample.area = poly_areas[polys[k]];
+					component_samples[component_index].push_back(sample);
+					sample_min_y = MIN(sample_min_y, sample.point.y);
+					sample_max_y = MAX(sample_max_y, sample.point.y);
+				}
+			}
+		}
+
+		// Only faces that a horizontal ray at one of those heights can meet:
+		// flat ones are skipped, and so is everything above or below them all.
+		Vector<Vector3> faces;
+		LocalVector<Vector3> face_normals;
+		if (sample_min_y <= sample_max_y) {
+			for (int i = 0; i < ntris; i++) {
+				const float *va = &verts[tris[i * 3 + 0] * 3];
+				const float *vb = &verts[tris[i * 3 + 1] * 3];
+				const float *vc = &verts[tris[i * 3 + 2] * 3];
+				const Vector3 a(va[0], va[1], va[2]);
+				const Vector3 b(vb[0], vb[1], vb[2]);
+				const Vector3 c(vc[0], vc[1], vc[2]);
+				if (MAX(a.y, MAX(b.y, c.y)) < sample_min_y || MIN(a.y, MIN(b.y, c.y)) > sample_max_y) {
+					continue;
+				}
+				Vector3 normal = (b - a).cross(c - a);
+				const real_t length = normal.length();
+				if (length < CMP_EPSILON) {
+					continue;
+				}
+				normal /= length;
+				if (Math::abs(normal.y) > 0.99f) {
+					continue;
+				}
+				faces.push_back(a);
+				faces.push_back(b);
+				faces.push_back(c);
+				face_normals.push_back(normal);
+			}
+		}
+
+		if (!faces.is_empty()) {
+			Ref<TriangleMesh> solid_test;
+			solid_test.instantiate();
+			solid_test->create(faces);
+			for (int component_index = 0; component_index < (int)component_areas.size(); component_index++) {
+				const LocalVector<Sample> &samples = component_samples[component_index];
+				if (component_index == largest_component || samples.is_empty()) {
+					continue;
+				}
+				float inside_area = 0.0f;
+				float sampled_area = 0.0f;
+				for (const Sample &sample : samples) {
+					int back = 0;
+					int front = 0;
+					for (int k = 0; k < 8; k++) {
+						const real_t angle = Math::TAU * k / 8.0;
+						const Vector3 direction(Math::cos(angle), 0, Math::sin(angle));
+						Vector3 hit_point;
+						Vector3 hit_normal;
+						int32_t face = -1;
+						if (!solid_test->intersect_ray(sample.point, direction, hit_point, hit_normal, nullptr, &face) || face < 0 || face >= (int)face_normals.size()) {
+							continue; // Out into the open.
+						}
+						const real_t facing = face_normals[face].dot(direction);
+						if (facing > 0.05f) {
+							back++;
+						} else if (facing < -0.05f) {
+							front++;
+						}
+					}
+					// A column or a pipe standing inside the wall may face a ray or
+					// two; a room's own walls face nearly all of them.
+					if (back >= 5 && back >= 2 * front) {
+						inside_area += sample.area;
+					}
+					sampled_area += sample.area;
+				}
+				if (sampled_area > 0.0f && inside_area >= 0.6f * sampled_area) {
+					continue; // Inside solid geometry: its polygons stay marked isolated.
+				}
+				for (int i = 0; i < npolys; i++) {
+					if (poly_component[i] == component_index) {
+						poly_isolated[i] = false;
+					}
+				}
+			}
+		} else {
+			for (int i = 0; i < npolys; i++) {
+				poly_isolated[i] = false;
 			}
 		}
 		for (int i = 0; i < npolys; i++) {
@@ -715,7 +770,7 @@ void NavMeshGenerator3D::generator_bake_from_source_geometry_data(NavMeshGenerat
 			}
 		}
 		if (isolated_count > 0) {
-			WARN_PRINT(vformat("NavigationMesh bake: filter_isolated_regions removed %d of %d polygons in areas fully enclosed by geometry (e.g. generated inside walls).", isolated_count, npolys));
+			print_verbose(vformat("NavigationMesh bake: filter_isolated_regions removed %d of %d polygons in areas inside solid geometry (e.g. generated inside walls).", isolated_count, npolys));
 		} else {
 			poly_isolated.clear();
 		}

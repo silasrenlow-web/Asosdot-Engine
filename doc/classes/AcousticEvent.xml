@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="AcousticEvent" inherits="RefCounted" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		A sound that gameplay makes, for enemies to hear through the Asosdot Acoustic Engine.
+	</brief_description>
+	<description>
+		Describes a sound, such as footsteps, a door slamming or a gunshot, to hand to [method AcousticEngine.emit_sound]. Every [AcousticHearing3D] that it reaches then hears it. It is not played: play its audio with an [AudioStreamPlayer3D] as usual.
+		[codeblock]
+		var event = AcousticEvent.new()
+		event.source = self
+		event.position = global_position
+		event.sound_type = &amp;"footsteps"
+		event.intensity = 0.8
+		AcousticEngine.emit_sound(event)
+		[/codeblock]
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="intensity" type="float" setter="set_intensity" getter="get_intensity" default="1.0">
+			How loud the sound is, which is how far it carries: [member ProjectSettings.audio/acoustics/hearing_range] times this. Footsteps might be [code]0.3[/code] and a gunshot [code]3.0[/code].
+		</member>
+		<member name="position" type="Vector3" setter="set_position" getter="get_position" default="Vector3(0, 0, 0)">
+			Where the sound is made, in global coordinates.
+		</member>
+		<member name="sound_type" type="StringName" setter="set_sound_type" getter="get_sound_type" default="&amp;&quot;&quot;">
+			What kind of sound it is, such as [code]"footsteps"[/code]. An [AcousticHearing3D] can listen for some kinds only (see [member AcousticHearing3D.sound_types]), and a script that hears it can tell them apart.
+		</member>
+		<member name="source" type="Node" setter="set_source" getter="get_source">
+			What made the sound, if anything. Its body is not counted as being in the way of its own sound, and an [AcousticHearing3D] on it doesn't hear it unless [member AcousticHearing3D.hears_own_sounds] is on.
+		</member>
+	</members>
+</class>
