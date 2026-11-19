@@ -167,7 +167,7 @@ void LightVolume3D::_build_mesh() {
 	uvs.resize(ring_points * 2);
 
 	for (int i = 0; i < ring_points; i++) {
-		real_t t = Math_TAU * real_t(i) / real_t(ring_points);
+		real_t t = Math::TAU * real_t(i) / real_t(ring_points);
 		Vector2 direction;
 		Vector2 near_point;
 		Vector2 far_point;
@@ -175,11 +175,11 @@ void LightVolume3D::_build_mesh() {
 		if (is_box) {
 			// Corners at 45, 135, 225, 315 degrees; the face normal comes
 			// from the segment between this corner and the next.
-			real_t corner = Math_PI * 0.25 + Math_PI * 0.5 * real_t(i);
+			real_t corner = Math::PI * 0.25 + Math::PI * 0.5 * real_t(i);
 			direction = Vector2(Math::cos(corner), Math::sin(corner)).normalized();
 			near_point = Vector2((direction.x > 0 ? 1 : -1) * near_extent.x, (direction.y > 0 ? 1 : -1) * near_extent.y);
 			far_point = Vector2((direction.x > 0 ? 1 : -1) * far_extent.x, (direction.y > 0 ? 1 : -1) * far_extent.y);
-			real_t face = Math_PI * 0.5 * real_t(i);
+			real_t face = Math::PI * 0.5 * real_t(i);
 			side_normal = Vector3(Math::cos(face), Math::sin(face), 0);
 		} else {
 			direction = Vector2(Math::cos(t), Math::sin(t));

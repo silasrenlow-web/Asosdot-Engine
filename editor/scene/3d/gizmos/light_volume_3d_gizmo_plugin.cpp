@@ -73,8 +73,8 @@ void push_ring(PackedVector3Array &r_lines, const Vector3 &p_center, const Vecto
 		return;
 	}
 	for (int i = 0; i < p_segments; i++) {
-		real_t a0 = Math_TAU * real_t(i) / real_t(p_segments);
-		real_t a1 = Math_TAU * real_t(i + 1) / real_t(p_segments);
+		real_t a0 = Math::TAU * real_t(i) / real_t(p_segments);
+		real_t a1 = Math::TAU * real_t(i + 1) / real_t(p_segments);
 		r_lines.push_back(p_center + Vector3(Math::cos(a0) * p_extent.x, Math::sin(a0) * p_extent.y, 0));
 		r_lines.push_back(p_center + Vector3(Math::cos(a1) * p_extent.x, Math::sin(a1) * p_extent.y, 0));
 	}
