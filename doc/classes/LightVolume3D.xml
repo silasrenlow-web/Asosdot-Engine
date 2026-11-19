@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="LightVolume3D" inherits="VisualInstance3D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		An editable shaft of light: a box, cone or cylinder volume that renders as a soft beam of light.
+	</brief_description>
+	<description>
+		A [LightVolume3D] draws the visible shaft of a light — the god-ray beam through a window, the cone under a street lamp, the wedge from a doorway — as a shaped volume the user edits directly, instead of relying on the world volumetric fog to happen to catch the light.
+		The volume extends along the node's [b]-Z[/b] axis from its origin. Pick a [member shape], set its [member length] and end sizes, and use [member shear] to offset the far end so the shaft slants the way light falls through a tilted opening, without rotating its source. Drag the gizmo handles in the editor to shape it.
+		The shaft is rendered by a built-in additive shader: brightness peaks looking through the middle of the beam and fades at its silhouette, fades along its length ([member fade_start], [member fade_end]), drifts with animated noise (the look of dust moving in the light), and softens where scene geometry crosses it ([member depth_fade]). Geometry in front of the shaft still occludes it through the normal depth test.
+		Assign a [member cookie] texture — a window frame, blinds, leaves — and it is projected through the whole shaft, shaping the beam the way a real gobo shapes a stage light. The cookie shapes the visible shaft; pair it with the light's own shadow or a matching decal if the pattern must also land on surfaces.
+		Set [member source_light] to a [Light3D] and, with [member follow_light], the shaft takes the light's colour and energy live. With [member auto_fit], a [SpotLight3D] also drives the shaft's length (its range) and end radius (its angle), and an [OmniLight3D] drives its length, so the beam and the light never disagree.
+		[b]Note:[/b] [LightVolume3D] only has a visible effect in the Forward+ and Mobile renderers; the depth fade needs the scene depth texture. For dusty air inside the beam, add a [DustVolume3D].
+	</description>
+	<methods>
+		<method name="get_mesh" qualifiers="const">
+			<return type="ArrayMesh" />
+			<description>
+				Returns the generated shaft mesh, rebuilt whenever a shape property changes. Mostly useful for tests and tooling; the node draws it itself.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="auto_fit" type="bool" setter="set_auto_fit" getter="get_auto_fit" default="true">
+			If [code]true[/code] and [member source_light] is set, the shaft's length follows the light's range, and a [SpotLight3D] also sets the cone's end radius from its angle.
+		</member>
+		<member name="color" type="Color" setter="set_color" getter="get_color" default="Color(1, 1, 1, 1)">
+			The shaft's colour. Overridden by the source light's colour while [member follow_light] is on.
+		</member>
+		<member name="cookie" type="Texture2D" setter="set_cookie" getter="get_cookie">
+			A texture projected through the shaft along its length, darkening the beam where the texture is dark (a window frame, blinds, foliage). Sampled across the shaft's width at every depth, so the pattern holds its shape down the whole beam.
+		</member>
+		<member name="cookie_strength" type="float" setter="set_cookie_strength" getter="get_cookie_strength" default="1.0">
+			How strongly the [member cookie] shapes and tints the shaft. [code]0[/code] ignores the cookie.
+		</member>
+		<member name="depth_fade" type="bool" setter="set_depth_fade" getter="get_depth_fade" default="true">
+			If [code]true[/code], the shaft fades out where scene geometry crosses it, over [member depth_fade_distance], instead of ending in a hard slice.
+		</member>
+		<member name="depth_fade_distance" type="float" setter="set_depth_fade_distance" getter="get_depth_fade_distance" default="0.75">
+			The distance over which the depth fade blends, in metres.
+		</member>
+		<member name="edge_softness" type="float" setter="set_edge_softness" getter="get_edge_softness" default="1.5">
+			How soft the shaft's silhouette is. Higher values concentrate the brightness toward the middle of the beam.
+		</member>
+		<member name="end_radius" type="float" setter="set_end_radius" getter="get_end_radius" default="1.6">
+			The radius of the far end, for the cone and cylinder shapes.
+		</member>
+		<member name="fade_end" type="float" setter="set_fade_end" getter="get_fade_end" default="0.9">
+			Where along the shaft (0 at the source, 1 at the far end) the fade-out finishes.
+		</member>
+		<member name="fade_start" type="float" setter="set_fade_start" getter="get_fade_start" default="0.05">
+			Where along the shaft the fade-in from the source finishes.
+		</member>
+		<member name="follow_light" type="bool" setter="set_follow_light" getter="get_follow_light" default="true">
+			If [code]true[/code] and [member source_light] is set, the shaft follows the light's colour and energy every frame: [member color] becomes the light's colour, and the light's energy multiplies [member intensity]. Turning it off stops the following; the shaft keeps the last colour it took until you change it.
+		</member>
+		<member name="intensity" type="float" setter="set_intensity" getter="get_intensity" default="0.35">
+			The shaft's brightness multiplier. While following a source light, the light's energy multiplies this.
+		</member>
+		<member name="length" type="float" setter="set_length" getter="get_length" default="6.0">
+			How far the shaft reaches along -Z, in metres.
+		</member>
+		<member name="noise_amount" type="float" setter="set_noise_amount" getter="get_noise_amount" default="0.35">
+			How much animated noise breaks the shaft up — the shimmer of dust and air moving in the light. [code]0[/code] gives a clean, even beam.
+		</member>
+		<member name="noise_scale" type="float" setter="set_noise_scale" getter="get_noise_scale" default="0.45">
+			The size of the noise features, in features per metre.
+		</member>
+		<member name="noise_speed" type="float" setter="set_noise_speed" getter="get_noise_speed" default="0.06">
+			How fast the noise drifts along the shaft. Negative values drift toward the source.
+		</member>
+		<member name="shape" type="int" setter="set_shape" getter="get_shape" enum="LightVolume3D.Shape" default="1">
+			The shaft's shape: a box (window light, doorways), a cone (spotlights), or a cylinder (even beams, shafts from round openings).
+		</member>
+		<member name="shear" type="Vector2" setter="set_shear" getter="get_shear" default="Vector2(0, 0)">
+			Offset of the far end relative to the source end, in metres. This slants the shaft — light falling at an angle through a straight opening — without rotating the node or its source end.
+		</member>
+		<member name="size" type="Vector2" setter="set_size" getter="get_size" default="Vector2(2, 2)">
+			The cross-section width and height, for the box shape.
+		</member>
+		<member name="source_light" type="NodePath" setter="set_source_light" getter="get_source_light" default="NodePath(&quot;&quot;)">
+			Path to the [Light3D] this shaft belongs to. See [member follow_light] and [member auto_fit].
+		</member>
+		<member name="start_radius" type="float" setter="set_start_radius" getter="get_start_radius" default="0.4">
+			The radius at the source end, for the cone and cylinder shapes.
+		</member>
+	</members>
+	<constants>
+		<constant name="SHAPE_BOX" value="0" enum="Shape">
+			A box shaft with a rectangular cross-section: window and doorway light.
+		</constant>
+		<constant name="SHAPE_CONE" value="1" enum="Shape">
+			A cone/frustum shaft widening from [member start_radius] to [member end_radius]: spotlights.
+		</constant>
+		<constant name="SHAPE_CYLINDER" value="2" enum="Shape">
+			A cylinder shaft. Set [member start_radius] and [member end_radius] equal for a straight tube, or different for a tapered beam.
+		</constant>
+	</constants>
+</class>

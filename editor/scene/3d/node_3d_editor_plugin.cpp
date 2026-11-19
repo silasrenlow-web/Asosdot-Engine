@@ -67,6 +67,7 @@
 #include "editor/scene/3d/gizmos/lens_flare_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/light_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/light_catcher_3d_gizmo_plugin.h"
+#include "editor/scene/3d/gizmos/light_volume_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/lightmap_gi_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/lightmap_probe_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/marker_3d_gizmo_plugin.h"
@@ -10336,6 +10337,7 @@ void Node3DEditor::_register_all_gizmos() {
 	add_gizmo_plugin(Ref<Joint3DGizmoPlugin>(memnew(Joint3DGizmoPlugin)));
 	add_gizmo_plugin(Ref<PhysicalBone3DGizmoPlugin>(memnew(PhysicalBone3DGizmoPlugin)));
 	add_gizmo_plugin(Ref<FogVolumeGizmoPlugin>(memnew(FogVolumeGizmoPlugin)));
+	add_gizmo_plugin(Ref<LightVolume3DGizmoPlugin>(memnew(LightVolume3DGizmoPlugin)));
 	if (!ClassDB::is_asosdot_class_group_yielded("lens_flare")) {
 		add_gizmo_plugin(Ref<AsosdotLensFlare3DGizmoPlugin>(memnew(AsosdotLensFlare3DGizmoPlugin)));
 	}

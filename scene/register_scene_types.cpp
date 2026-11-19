@@ -255,7 +255,9 @@
 #include "scene/3d/label_3d.h"
 #include "scene/3d/lens_flare_3d.h"
 #include "scene/3d/light_3d.h"
+#include "scene/3d/dust_volume_3d.h"
 #include "scene/3d/light_catcher_3d.h"
+#include "scene/3d/light_volume_3d.h"
 #include "scene/3d/lightmap_gi.h"
 #include "scene/3d/lightmap_probe.h"
 #include "scene/3d/limit_angular_velocity_modifier_3d.h"
@@ -772,6 +774,9 @@ void register_scene_types() {
 	ClassDB::add_asosdot_class_group("save_state", { "SaveState" });
 	GDREGISTER_CLASS(LightCatcher3D);
 	ClassDB::add_asosdot_class_group("light_catcher", { "LightCatcher3D" });
+	GDREGISTER_CLASS(LightVolume3D);
+	GDREGISTER_CLASS(DustVolume3D);
+	ClassDB::add_asosdot_class_group("light_volume", { "LightVolume3D", "DustVolume3D" });
 
 	GDREGISTER_CLASS(Curve3D);
 	GDREGISTER_CLASS(Path3D);

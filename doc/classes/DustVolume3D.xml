@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="DustVolume3D" inherits="GPUParticles3D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		A box of still, dusty air: slow-drifting motes that fill a volume.
+	</brief_description>
+	<description>
+		A [DustVolume3D] fills its [member size] with dust motes — tiny soft points that drift slowly, fade in and out over their lives, and hang in the air with no gravity. It is a [GPUParticles3D] configured end to end (box emission, mote texture, process material, lifetime), so placing dusty air is one node and a few sliders instead of a particle setup session.
+		The mote count follows from the box: [member density] motes per cubic metre, capped at 4096. The box starts full — the node pre-rolls its particles — so a room is dusty from the first frame.
+		Place a [DustVolume3D] inside a [LightVolume3D] shaft and the motes read as dust caught in the beam; place one across a whole room for air that feels unventilated. Because it is a [GPUParticles3D], everything particles can do (pause, restart, amount ratio) still works; the properties below simply rebuild the setup when changed.
+	</description>
+	<members>
+		<member name="density" type="float" setter="set_density" getter="get_density" default="6.0">
+			Motes per cubic metre of the box. The total count is the box's volume times this, capped at 4096.
+		</member>
+		<member name="drift_speed" type="float" setter="set_drift_speed" getter="get_drift_speed" default="0.05">
+			How fast the motes wander, in metres per second. Dust hangs almost still; values around [code]0.03[/code]–[code]0.1[/code] look like air.
+		</member>
+		<member name="mote_color" type="Color" setter="set_mote_color" getter="get_mote_color" default="Color(1, 0.95, 0.85, 1)">
+			The motes' colour. Warm whites read as dust in sunlight; cool greys as ash or spores.
+		</member>
+		<member name="mote_size" type="float" setter="set_mote_size" getter="get_mote_size" default="0.02">
+			The diameter of one mote, in metres.
+		</member>
+		<member name="opacity" type="float" setter="set_opacity" getter="get_opacity" default="0.5">
+			The motes' opacity at the brightest point of their fade-in/fade-out cycle.
+		</member>
+		<member name="size" type="Vector3" setter="set_size" getter="get_size" default="Vector3(4, 3, 4)">
+			The size of the dusty box, in metres.
+		</member>
+	</members>
+</class>
