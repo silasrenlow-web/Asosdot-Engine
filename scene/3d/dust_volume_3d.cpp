@@ -32,9 +32,10 @@
 
 #include "core/io/image.h"
 #include "scene/resources/gradient_texture.h"
+#include "scene/resources/image_texture.h"
 #include "scene/resources/material.h"
 #include "scene/resources/particle_process_material.h"
-#include "scene/resources/primitive_meshes.h"
+#include "scene/resources/3d/primitive_meshes.h"
 
 Ref<ImageTexture> DustVolume3D::mote_texture;
 
@@ -51,8 +52,8 @@ void DustVolume3D::_rebuild() {
 	set_visibility_aabb(AABB(-size * 0.5 - Vector3(0.5, 0.5, 0.5), size + Vector3(1, 1, 1)));
 
 	process_material->set_emission_box_extents(size * 0.5);
-	process_material->set_initial_velocity_min(drift_speed * 0.4);
-	process_material->set_initial_velocity_max(drift_speed);
+	process_material->set_param_min(ParticleProcessMaterial::PARAM_INITIAL_LINEAR_VELOCITY, drift_speed * 0.4);
+	process_material->set_param_max(ParticleProcessMaterial::PARAM_INITIAL_LINEAR_VELOCITY, drift_speed);
 
 	quad->set_size(Vector2(mote_size, mote_size));
 	mote_material->set_albedo_color(Color(mote_color, opacity));
@@ -162,10 +163,10 @@ DustVolume3D::DustVolume3D() {
 	process_material->set_direction(Vector3(0, 1, 0));
 	process_material->set_spread(180.0);
 	process_material->set_gravity(Vector3());
-	process_material->set_damping_min(0.0);
-	process_material->set_damping_max(0.0);
-	process_material->set_scale_min(0.7);
-	process_material->set_scale_max(1.4);
+	process_material->set_param_min(ParticleProcessMaterial::PARAM_DAMPING, 0.0);
+	process_material->set_param_max(ParticleProcessMaterial::PARAM_DAMPING, 0.0);
+	process_material->set_param_min(ParticleProcessMaterial::PARAM_SCALE, 0.7);
+	process_material->set_param_max(ParticleProcessMaterial::PARAM_SCALE, 1.4);
 
 	Ref<Gradient> gradient;
 	gradient.instantiate();
@@ -186,9 +187,9 @@ DustVolume3D::DustVolume3D() {
 	quad->set_material(mote_material);
 
 	set_lifetime(14.0);
-	set_preprocess(14.0); // The box starts full of dust, not filling up.
-	set_randomness(0.85);
-	set_local_coords(true);
+	set_pre_process_time(14.0); // The box starts full of dust, not filling up.
+	set_randomness_ratio(0.85);
+	set_use_local_coordinates(true);
 	set_draw_pass_mesh(0, quad);
 	set_process_material(process_material);
 	_rebuild();

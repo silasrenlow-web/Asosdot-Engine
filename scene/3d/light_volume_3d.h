@@ -31,6 +31,7 @@
 #pragma once
 
 #include "scene/3d/visual_instance_3d.h"
+#include "scene/resources/image_texture.h"
 #include "scene/resources/mesh.h"
 #include "scene/resources/shader.h"
 #include "scene/resources/texture.h"

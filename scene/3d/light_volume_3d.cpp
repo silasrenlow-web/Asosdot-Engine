@@ -34,7 +34,7 @@
 #include "core/math/math_funcs.h"
 #include "scene/3d/light_3d.h"
 #include "scene/resources/material.h"
-#include "servers/rendering_server.h"
+#include "servers/rendering/rendering_server.h"
 
 namespace {
 // The shaft shader. Additive, double-sided shell: brightness peaks where
