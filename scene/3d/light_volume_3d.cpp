@@ -300,7 +300,7 @@ void LightVolume3D::_notification(int p_what) {
 		} break;
 		case NOTIFICATION_PROCESS: {
 			if (!source_light.is_empty()) {
-				_apply_light(get_node_or_null<Light3D>(source_light));
+				_apply_light(Object::cast_to<Light3D>(get_node_or_null(source_light)));
 			}
 		} break;
 	}
@@ -512,7 +512,7 @@ void LightVolume3D::set_source_light(const NodePath &p_path) {
 		_update_material(); // Restore the shaft's own colour and intensity.
 	}
 	if (follow_light && is_inside_tree() && !source_light.is_empty()) {
-		_apply_light(get_node_or_null<Light3D>(source_light));
+		_apply_light(Object::cast_to<Light3D>(get_node_or_null(source_light)));
 	}
 	update_configuration_warnings();
 }
@@ -536,7 +536,7 @@ bool LightVolume3D::get_follow_light() const {
 void LightVolume3D::set_auto_fit(bool p_fit) {
 	auto_fit = p_fit;
 	if (auto_fit && follow_light && is_inside_tree() && !source_light.is_empty()) {
-		_apply_light(get_node_or_null<Light3D>(source_light));
+		_apply_light(Object::cast_to<Light3D>(get_node_or_null(source_light)));
 	}
 }
 
