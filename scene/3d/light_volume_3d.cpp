@@ -31,6 +31,7 @@
 #include "light_volume_3d.h"
 
 #include "core/io/image.h"
+#include "core/math/math_funcs.h"
 #include "scene/3d/light_3d.h"
 #include "scene/resources/material.h"
 #include "servers/rendering_server.h"
