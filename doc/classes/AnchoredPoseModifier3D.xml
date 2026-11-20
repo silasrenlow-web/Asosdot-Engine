@@ -100,6 +100,15 @@
 		<member name="reach_comfort" type="float" setter="set_reach_comfort" getter="get_reach_comfort" default="0.93">
 			The leaning starts when the target is further than this fraction of the limb's length.
 		</member>
+		<member name="reach_keep" type="float" setter="set_reach_keep" getter="get_reach_keep" default="0.0">
+			How much the root bone keeps the distance between the shoulder and the target at what it is at rest, by moving away when the target comes closer (and towards it when it goes further). [code]1.0[/code] keeps the elbow bend the same when the anchor sways to the sides. The rest distance is measured in the editor and saved with the scene. Use the shoulder bone itself as [member reach_root_bone] to leave the other arm alone.
+		</member>
+		<member name="reach_rest_gap" type="float" setter="set_reach_rest_gap" getter="get_reach_rest_gap" default="0.0">
+			The distance from the shoulder to the target at rest. Set by the editor while the node is shown.
+		</member>
+		<member name="reach_middle_bone" type="String" setter="set_reach_middle_bone" getter="get_reach_middle_bone" default="&quot;&quot;">
+			The middle joint of the limb (the elbow). The limb's length is the distance from [member reach_start_bone] to this bone plus the distance from it to [member reach_tip_bone], in the rest pose. If empty, the length is measured by walking up the parents of the tip bone to the start bone, which fails when the tip hangs on an IK target bone.
+		</member>
 		<member name="reach_root_bone" type="String" setter="set_reach_root_bone" getter="get_reach_root_bone" default="&quot;&quot;">
 			The bone that leans (for arms: the bone both shoulders hang on).
 		</member>
@@ -110,7 +119,7 @@
 			The posed bone without a parent that has to be reached (the hand's IK target).
 		</member>
 		<member name="reach_tip_bone" type="String" setter="set_reach_tip_bone" getter="get_reach_tip_bone" default="&quot;&quot;">
-			The last bone of the limb (the wrist). The limb's length is measured from here up to [member reach_start_bone].
+			The last bone of the limb (the wrist).
 		</member>
 	</members>
 </class>

@@ -133,25 +133,51 @@ float AnchoredPoseModifier3D::_get_reach_length(Skeleton3D *p_skeleton) {
 	reach_version = p_skeleton->get_version();
 	reach_length = 0.0;
 	const int start = p_skeleton->find_bone(reach_start_bone);
+	const int middle = p_skeleton->find_bone(reach_middle_bone);
 	int bone = p_skeleton->find_bone(reach_tip_bone);
 	if (start < 0 || bone < 0) {
 		return 0.0;
 	}
 	float length = 0.0;
-	while (bone != start) {
-		const int parent = p_skeleton->get_bone_parent(bone);
-		if (parent < 0) {
-			return 0.0; // The start bone is not above the tip bone.
+	if (middle >= 0) {
+		// Shoulder to elbow to wrist, as the rest pose has them (the wrist may hang on an IK target bone, so
+		// walking up the parents would not find the shoulder).
+		length = p_skeleton->get_bone_global_rest(start).origin.distance_to(p_skeleton->get_bone_global_rest(middle).origin) + p_skeleton->get_bone_global_rest(middle).origin.distance_to(p_skeleton->get_bone_global_rest(bone).origin);
+	} else {
+		while (bone != start) {
+			const int parent = p_skeleton->get_bone_parent(bone);
+			if (parent < 0) {
+				return 0.0; // The start bone is not above the tip bone.
+			}
+			length += p_skeleton->get_bone_global_rest(bone).origin.distance_to(p_skeleton->get_bone_global_rest(parent).origin);
+			bone = parent;
 		}
-		length += p_skeleton->get_bone_global_rest(bone).origin.distance_to(p_skeleton->get_bone_global_rest(parent).origin);
-		bone = parent;
 	}
 	reach_length = length;
 	return reach_length;
 }
 
-// A target further than the limb can reach: the root bone (both shoulders) leans towards it, so the hand
-// still gets there and the elbow keeps a slight bend.
+// Editor only: remembers how far the target is from the shoulder when the pose is at rest (nothing
+// is swaying the anchor), so the game can keep that distance (see reach_keep).
+void AnchoredPoseModifier3D::_record_rest_gap(Skeleton3D *p_skeleton, const Vector3 &p_target) {
+#ifdef TOOLS_ENABLED
+	if (!Engine::get_singleton()->is_editor_hint()) {
+		return;
+	}
+	const int start = p_skeleton->find_bone(reach_start_bone);
+	if (start < 0) {
+		return;
+	}
+	const float gap = p_skeleton->get_bone_global_pose(start).origin.distance_to(p_target);
+	if (!Math::is_equal_approx(gap, reach_rest_gap)) {
+		reach_rest_gap = gap;
+	}
+#endif // TOOLS_ENABLED
+}
+
+// A target further than the limb can reach: the root bone leans towards it, so the hand still gets there
+// and the elbow keeps a slight bend. With reach_keep, a target that comes closer than it rests also moves
+// the root bone, the other way, so the elbow keeps its bend when the anchor sways sideways.
 void AnchoredPoseModifier3D::_lean_to_reach(Skeleton3D *p_skeleton, const Vector3 &p_target, float p_weight) {
 	const int root = p_skeleton->find_bone(reach_root_bone);
 	const int start = p_skeleton->find_bone(reach_start_bone);
@@ -159,13 +185,24 @@ void AnchoredPoseModifier3D::_lean_to_reach(Skeleton3D *p_skeleton, const Vector
 	if (root < 0 || start < 0 || length <= 0.0) {
 		return;
 	}
+	_record_rest_gap(p_skeleton, p_target);
 	const Vector3 shoulder = p_skeleton->get_bone_global_pose(start).origin;
 	const float gap = shoulder.distance_to(p_target);
 	const float allowed = length * reach_comfort;
-	if (gap <= allowed) {
+	float amount = gap > allowed ? gap - allowed : 0.0f;
+	if (reach_keep > 0.0f && reach_rest_gap > 0.0f) {
+		const float keep = (gap - reach_rest_gap) * reach_keep;
+		amount = gap > allowed ? MAX(amount, keep) : keep;
+	}
+	if (Math::is_zero_approx(amount)) {
 		return;
 	}
-	const Vector3 lean = (p_target - shoulder).normalized() * (gap - allowed) * p_weight;
+	// The root bone's pose is in its parent's space.
+	Vector3 lean = (p_target - shoulder).normalized() * amount * p_weight;
+	const int parent = p_skeleton->get_bone_parent(root);
+	if (parent >= 0) {
+		lean = p_skeleton->get_bone_global_pose(parent).basis.inverse().xform(lean);
+	}
 	p_skeleton->set_bone_pose_position(root, p_skeleton->get_bone_pose_position(root) + lean);
 }
 
@@ -189,6 +226,12 @@ void AnchoredPoseModifier3D::_process_modification(double p_delta) {
 			_unreveal_anchor();
 		}
 		if (edit_active && !edit_suspended) {
+			if (reach_assist) {
+				const int target_bone = skeleton->find_bone(reach_target_bone);
+				if (target_bone >= 0 && skeleton->get_bone_parent(target_bone) < 0) {
+					_record_rest_gap(skeleton, skeleton->get_bone_pose_position(target_bone));
+				}
+			}
 			// The bones are being posed by hand: only watch what changes, change nothing.
 			_capture_edits(skeleton, anchor);
 			return;
@@ -557,6 +600,15 @@ String AnchoredPoseModifier3D::get_reach_start_bone() const {
 	return reach_start_bone;
 }
 
+void AnchoredPoseModifier3D::set_reach_middle_bone(const String &p_name) {
+	reach_middle_bone = p_name;
+	reach_version = UINT64_MAX;
+}
+
+String AnchoredPoseModifier3D::get_reach_middle_bone() const {
+	return reach_middle_bone;
+}
+
 void AnchoredPoseModifier3D::set_reach_tip_bone(const String &p_name) {
 	reach_tip_bone = p_name;
 	reach_version = UINT64_MAX;
@@ -574,12 +626,28 @@ float AnchoredPoseModifier3D::get_reach_comfort() const {
 	return reach_comfort;
 }
 
+void AnchoredPoseModifier3D::set_reach_keep(float p_keep) {
+	reach_keep = CLAMP(p_keep, 0.0f, 1.0f);
+}
+
+float AnchoredPoseModifier3D::get_reach_keep() const {
+	return reach_keep;
+}
+
+void AnchoredPoseModifier3D::set_reach_rest_gap(float p_gap) {
+	reach_rest_gap = MAX(p_gap, 0.0f);
+}
+
+float AnchoredPoseModifier3D::get_reach_rest_gap() const {
+	return reach_rest_gap;
+}
+
 Callable AnchoredPoseModifier3D::get_clear_pose_button() const {
 	return callable_mp(const_cast<AnchoredPoseModifier3D *>(this), &AnchoredPoseModifier3D::clear_pose);
 }
 
 void AnchoredPoseModifier3D::_validate_property(PropertyInfo &p_property) const {
-	if (p_property.name == "reach_target_bone" || p_property.name == "reach_root_bone" || p_property.name == "reach_start_bone" || p_property.name == "reach_tip_bone") {
+	if (p_property.name == "reach_target_bone" || p_property.name == "reach_root_bone" || p_property.name == "reach_start_bone" || p_property.name == "reach_middle_bone" || p_property.name == "reach_tip_bone") {
 		if (!reach_assist) {
 			p_property.usage = PROPERTY_USAGE_NONE;
 		} else if (Engine::get_singleton()->is_editor_hint()) {
@@ -590,7 +658,7 @@ void AnchoredPoseModifier3D::_validate_property(PropertyInfo &p_property) const 
 			}
 		}
 	}
-	if (p_property.name == "reach_comfort" && !reach_assist) {
+	if ((p_property.name == "reach_comfort" || p_property.name == "reach_keep") && !reach_assist) {
 		p_property.usage = PROPERTY_USAGE_NONE;
 	}
 }
@@ -665,10 +733,16 @@ void AnchoredPoseModifier3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_reach_root_bone"), &AnchoredPoseModifier3D::get_reach_root_bone);
 	ClassDB::bind_method(D_METHOD("set_reach_start_bone", "bone_name"), &AnchoredPoseModifier3D::set_reach_start_bone);
 	ClassDB::bind_method(D_METHOD("get_reach_start_bone"), &AnchoredPoseModifier3D::get_reach_start_bone);
+	ClassDB::bind_method(D_METHOD("set_reach_middle_bone", "bone_name"), &AnchoredPoseModifier3D::set_reach_middle_bone);
+	ClassDB::bind_method(D_METHOD("get_reach_middle_bone"), &AnchoredPoseModifier3D::get_reach_middle_bone);
 	ClassDB::bind_method(D_METHOD("set_reach_tip_bone", "bone_name"), &AnchoredPoseModifier3D::set_reach_tip_bone);
 	ClassDB::bind_method(D_METHOD("get_reach_tip_bone"), &AnchoredPoseModifier3D::get_reach_tip_bone);
 	ClassDB::bind_method(D_METHOD("set_reach_comfort", "comfort"), &AnchoredPoseModifier3D::set_reach_comfort);
 	ClassDB::bind_method(D_METHOD("get_reach_comfort"), &AnchoredPoseModifier3D::get_reach_comfort);
+	ClassDB::bind_method(D_METHOD("set_reach_keep", "keep"), &AnchoredPoseModifier3D::set_reach_keep);
+	ClassDB::bind_method(D_METHOD("get_reach_keep"), &AnchoredPoseModifier3D::get_reach_keep);
+	ClassDB::bind_method(D_METHOD("set_reach_rest_gap", "gap"), &AnchoredPoseModifier3D::set_reach_rest_gap);
+	ClassDB::bind_method(D_METHOD("get_reach_rest_gap"), &AnchoredPoseModifier3D::get_reach_rest_gap);
 
 	ClassDB::bind_method(D_METHOD("set_preview_anchor", "preview"), &AnchoredPoseModifier3D::set_preview_anchor);
 	ClassDB::bind_method(D_METHOD("is_preview_anchor"), &AnchoredPoseModifier3D::is_preview_anchor);
@@ -695,8 +769,11 @@ void AnchoredPoseModifier3D::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "reach_target_bone", PROPERTY_HINT_ENUM_SUGGESTION, ""), "set_reach_target_bone", "get_reach_target_bone");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "reach_root_bone", PROPERTY_HINT_ENUM_SUGGESTION, ""), "set_reach_root_bone", "get_reach_root_bone");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "reach_start_bone", PROPERTY_HINT_ENUM_SUGGESTION, ""), "set_reach_start_bone", "get_reach_start_bone");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "reach_middle_bone", PROPERTY_HINT_ENUM_SUGGESTION, ""), "set_reach_middle_bone", "get_reach_middle_bone");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "reach_tip_bone", PROPERTY_HINT_ENUM_SUGGESTION, ""), "set_reach_tip_bone", "get_reach_tip_bone");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "reach_comfort", PROPERTY_HINT_RANGE, "0.5,1,0.01"), "set_reach_comfort", "get_reach_comfort");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "reach_keep", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_reach_keep", "get_reach_keep");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "reach_rest_gap", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_STORAGE), "set_reach_rest_gap", "get_reach_rest_gap");
 
 	ADD_GROUP("Editor", "");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "preview_anchor", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT), "set_preview_anchor", "is_preview_anchor");

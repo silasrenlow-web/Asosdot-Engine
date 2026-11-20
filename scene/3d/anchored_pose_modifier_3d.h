@@ -59,8 +59,11 @@ private:
 	String reach_target_bone;
 	String reach_root_bone;
 	String reach_start_bone;
+	String reach_middle_bone;
 	String reach_tip_bone;
 	float reach_comfort = 0.93;
+	float reach_keep = 0.0;
+	float reach_rest_gap = 0.0; // Shoulder-to-target distance of the pose at rest (measured in the editor, saved).
 
 	bool preview_anchor = true;
 	bool editing = false;
@@ -94,6 +97,7 @@ private:
 	void _rebuild_entries(Skeleton3D *p_skeleton);
 	void _apply_pose(Skeleton3D *p_skeleton, Node3D *p_anchor, float p_weight);
 	void _lean_to_reach(Skeleton3D *p_skeleton, const Vector3 &p_target, float p_weight);
+	void _record_rest_gap(Skeleton3D *p_skeleton, const Vector3 &p_target);
 	float _get_reach_length(Skeleton3D *p_skeleton);
 
 	void _store_bone(Skeleton3D *p_skeleton, Node3D *p_anchor, int p_bone, const Transform3D &p_pose_or_global);
@@ -139,10 +143,16 @@ public:
 	String get_reach_root_bone() const;
 	void set_reach_start_bone(const String &p_name);
 	String get_reach_start_bone() const;
+	void set_reach_middle_bone(const String &p_name);
+	String get_reach_middle_bone() const;
 	void set_reach_tip_bone(const String &p_name);
 	String get_reach_tip_bone() const;
 	void set_reach_comfort(float p_comfort);
 	float get_reach_comfort() const;
+	void set_reach_keep(float p_keep);
+	float get_reach_keep() const;
+	void set_reach_rest_gap(float p_gap);
+	float get_reach_rest_gap() const;
 
 	void set_preview_anchor(bool p_preview);
 	bool is_preview_anchor() const;
