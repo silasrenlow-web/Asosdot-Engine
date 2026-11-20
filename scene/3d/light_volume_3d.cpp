@@ -166,6 +166,10 @@ void LightVolume3D::_build_mesh() {
 	vertices.resize(ring_points * 2);
 	normals.resize(ring_points * 2);
 	uvs.resize(ring_points * 2);
+	// This fork's packed arrays are only indexable for reading; write through the pointers.
+	Vector3 *vertices_w = vertices.ptrw();
+	Vector3 *normals_w = normals.ptrw();
+	Vector2 *uvs_w = uvs.ptrw();
 
 	for (int i = 0; i < ring_points; i++) {
 		real_t t = Math::TAU * real_t(i) / real_t(ring_points);
@@ -190,12 +194,12 @@ void LightVolume3D::_build_mesh() {
 			real_t slope = (near_extent.x - far_extent.x) / MAX(length, 0.001);
 			side_normal = Vector3(direction.x, direction.y, slope).normalized();
 		}
-		vertices[i] = Vector3(near_point.x, near_point.y, 0);
-		vertices[i + ring_points] = far_center + Vector3(far_point.x, far_point.y, 0);
-		normals[i] = side_normal;
-		normals[i + ring_points] = side_normal;
-		uvs[i] = Vector2(real_t(i) / real_t(ring_points), 0);
-		uvs[i + ring_points] = Vector2(real_t(i) / real_t(ring_points), 1);
+		vertices_w[i] = Vector3(near_point.x, near_point.y, 0);
+		vertices_w[i + ring_points] = far_center + Vector3(far_point.x, far_point.y, 0);
+		normals_w[i] = side_normal;
+		normals_w[i + ring_points] = side_normal;
+		uvs_w[i] = Vector2(real_t(i) / real_t(ring_points), 0);
+		uvs_w[i + ring_points] = Vector2(real_t(i) / real_t(ring_points), 1);
 	}
 
 	for (int i = 0; i < ring_points; i++) {
@@ -644,7 +648,8 @@ LightVolume3D::LightVolume3D() {
 	RenderingServer::get_singleton()->instance_geometry_set_material_override(get_instance(), material->get_rid());
 	// Shafts should not be hidden by their own bounding box when the
 	// camera is close, and they never write depth (additive shader).
-	set_cast_shadows_setting(GeometryInstance3D::SHADOW_CASTING_SETTING_OFF);
+	// (LightVolume3D is a VisualInstance3D, not a GeometryInstance3D: ask the RenderingServer.)
+	RenderingServer::get_singleton()->instance_geometry_set_cast_shadows_setting(get_instance(), RSE::SHADOW_CASTING_SETTING_OFF);
 }
 
 LightVolume3D::~LightVolume3D() {
