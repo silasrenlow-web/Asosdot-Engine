@@ -25,6 +25,16 @@
 				Removes every bone from the held pose.
 			</description>
 		</method>
+		<method name="engage">
+			<return type="void" />
+			<param index="0" name="anchor" type="Node3D" />
+			<param index="1" name="pose" type="AnchoredPose" />
+			<param index="2" name="fade_in" type="float" default="-1.0" />
+			<param index="3" name="fade_out" type="float" default="-1.0" />
+			<description>
+				Uses [param pose] relative to [param anchor] instead of this node's own pose, fading in over [param fade_in] seconds (negative: [member fade_time]). It lasts until [method release]. A [PoseTarget3D] does this for you.
+			</description>
+		</method>
 		<method name="erase_pose_bone">
 			<return type="void" />
 			<param index="0" name="bone" type="StringName" />
@@ -66,6 +76,30 @@
 				Stores the pose that the position, rotation and scale tracks of [param animation] have at [param time]. The track paths only need to end in the bone name ([code]Skeleton3D:Bone[/code]). A bone without a parent is stored relative to the anchor as it is now, so its keys are taken as being in the skeleton's space.
 			</description>
 		</method>
+		<method name="is_engaged" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] between [method engage] and [method release].
+			</description>
+		</method>
+		<method name="read_pose_resource">
+			<return type="void" />
+			<description>
+				Takes the pose from [member pose_resource].
+			</description>
+		</method>
+		<method name="release">
+			<return type="void" />
+			<description>
+				Ends [method engage]. The pose fades out over the [code]fade_out[/code] it was engaged with, then this node's own pose is used again.
+			</description>
+		</method>
+		<method name="write_pose_resource">
+			<return type="void" />
+			<description>
+				Copies this node's pose into [member pose_resource] (a new one is made if it is empty), to save as a file and use on [PoseTarget3D] nodes.
+			</description>
+		</method>
 		<method name="set_pose_bone">
 			<return type="void" />
 			<param index="0" name="bone" type="StringName" />
@@ -79,6 +113,12 @@
 		<member name="anchor_node" type="NodePath" setter="set_anchor_node" getter="get_anchor_node" default="NodePath(&quot;&quot;)">
 			The node the bones without a parent follow (the held item). Its scale is ignored.
 		</member>
+		<member name="body_bones" type="PackedStringArray" setter="set_body_bones" getter="get_body_bones" default="PackedStringArray()">
+			Bones without a parent that are stored in the skeleton's space (they follow the body) instead of relative to the anchor.
+		</member>
+		<member name="editor_preview" type="bool" setter="set_editor_preview" getter="is_editor_preview" default="true">
+			Editor only. Shows the pose even when [member holding] is [code]false[/code]. A preview of another character turns it off.
+		</member>
 		<member name="editing" type="bool" setter="set_editing" getter="is_editing" default="false">
 			Editor only, not saved. While [code]true[/code], the held pose is written into the skeleton's stored bone poses and every change made to them is taken into the held pose. The original stored poses are put back when this is turned off and while the scene is saved.
 		</member>
@@ -91,8 +131,14 @@
 		<member name="pose" type="Dictionary" setter="set_pose" getter="get_pose" default="{}">
 			The held pose: bone name to [Transform3D]. Use the methods to change it.
 		</member>
+		<member name="pose_resource" type="AnchoredPose" setter="set_pose_resource" getter="get_pose_resource">
+			Where the pose is moved to and from with the "Write the pose into the resource" and "Read the pose from the resource" buttons.
+		</member>
 		<member name="preview_anchor" type="bool" setter="set_preview_anchor" getter="is_preview_anchor" default="true">
 			Editor only. Shows [member anchor_node] while editing even if the scene hides it. It is hidden again before the scene is saved.
+		</member>
+		<member name="slot" type="StringName" setter="set_slot" getter="get_slot" default="&amp;&quot;&quot;">
+			A name for this modifier, which a [PoseTarget3D] with the same [member PoseTarget3D.slot] poses. For example [code]right_hand[/code].
 		</member>
 		<member name="reach_assist" type="bool" setter="set_reach_assist" getter="is_reach_assist" default="false">
 			If [code]true[/code], when the target is further than the limb can reach, the root bone leans towards it so the hand still gets there.

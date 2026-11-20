@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="AnchoredPose" inherits="Resource" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		A pose of some bones, kept relative to an anchor, that can be saved and shared.
+	</brief_description>
+	<description>
+		Holds what an [AnchoredPoseModifier3D] puts a skeleton in: a [Transform3D] for each of some bones. A bone with no parent bone (the target bone of an IK chain) is stored relative to the anchor, unless it is listed in [member body_bones]. Any other bone is stored as its local pose.
+		Make one in the editor with the modifier's [code]editing[/code] mode and its "Write the pose into the resource" button, save it as a file, and use it on any number of [PoseTarget3D] nodes.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="clear">
+			<return type="void" />
+			<description>
+				Removes every bone from the pose.
+			</description>
+		</method>
+		<method name="erase_bone">
+			<return type="void" />
+			<param index="0" name="bone" type="StringName" />
+			<description>
+				Removes [param bone] from the pose.
+			</description>
+		</method>
+		<method name="get_bone" qualifiers="const">
+			<return type="Transform3D" />
+			<param index="0" name="bone" type="StringName" />
+			<description>
+				Returns the stored transform of [param bone].
+			</description>
+		</method>
+		<method name="get_bone_names" qualifiers="const">
+			<return type="PackedStringArray" />
+			<description>
+				Returns the names of the bones in the pose.
+			</description>
+		</method>
+		<method name="has_bone" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="bone" type="StringName" />
+			<description>
+				Returns [code]true[/code] if [param bone] is in the pose.
+			</description>
+		</method>
+		<method name="set_bone">
+			<return type="void" />
+			<param index="0" name="bone" type="StringName" />
+			<param index="1" name="transform" type="Transform3D" />
+			<description>
+				Stores [param transform] for [param bone]: relative to the anchor for a bone without a parent (unless it is a body bone), the local pose for any other bone.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="body_bones" type="PackedStringArray" setter="set_body_bones" getter="get_body_bones" default="PackedStringArray()">
+			Bones without a parent that stay where they are stored in the skeleton's space (they follow the body), instead of following the anchor. An elbow's pole target is usually one.
+		</member>
+		<member name="bones" type="Dictionary" setter="set_bones" getter="get_bones" default="{}">
+			Bone name to [Transform3D]. Use the methods to change it.
+		</member>
+	</members>
+</class>

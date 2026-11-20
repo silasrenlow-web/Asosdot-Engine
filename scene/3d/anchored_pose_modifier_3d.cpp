@@ -41,7 +41,19 @@ bool AnchoredPoseModifier3D::BoneState::operator==(const BoneState &p_other) con
 
 // ---------------------------------------------------------------- helpers
 
+bool AnchoredPoseModifier3D::_uses_engaged() const {
+	return (engaged || lingering) && engaged_pose.is_valid();
+}
+
+bool AnchoredPoseModifier3D::_is_body_bone(const String &p_name) const {
+	const PackedStringArray list = _uses_engaged() ? engaged_pose->get_body_bones() : body_bones;
+	return list.has(p_name);
+}
+
 Node3D *AnchoredPoseModifier3D::_get_anchor() const {
+	if (engaged || lingering) {
+		return ObjectDB::get_instance<Node3D>(engaged_anchor);
+	}
 	if (anchor_node.is_empty() || !is_inside_tree()) {
 		return nullptr;
 	}
@@ -73,16 +85,17 @@ void AnchoredPoseModifier3D::_rebuild_entries(Skeleton3D *p_skeleton) {
 	entries.clear();
 	entries_dirty = false;
 	entries_version = p_skeleton->get_version();
-	for (const Variant &key : pose.get_key_list()) {
+	const Dictionary source = _uses_engaged() ? engaged_pose->get_bones() : pose;
+	for (const Variant &key : source.get_key_list()) {
 		const String name = key;
 		const int bone = p_skeleton->find_bone(name);
-		if (bone < 0 || pose[key].get_type() != Variant::TRANSFORM3D) {
+		if (bone < 0 || source[key].get_type() != Variant::TRANSFORM3D) {
 			continue;
 		}
-		const Transform3D xform = pose[key];
+		const Transform3D xform = source[key];
 		PoseEntry entry;
 		entry.bone = bone;
-		entry.anchored = p_skeleton->get_bone_parent(bone) < 0;
+		entry.anchored = p_skeleton->get_bone_parent(bone) < 0 && !_is_body_bone(name);
 		entry.position = xform.origin;
 		entry.rotation = xform.basis.get_rotation_quaternion().normalized();
 		entry.scale = xform.basis.get_scale();
@@ -211,7 +224,14 @@ void AnchoredPoseModifier3D::_process_modification(double p_delta) {
 	if (!skeleton) {
 		return;
 	}
-	if (entries_dirty || entries_version != skeleton->get_version()) {
+	if ((engaged || lingering) && !ObjectDB::get_instance<Node3D>(engaged_anchor)) {
+		// The node whose pose this was is gone.
+		engaged = false;
+		lingering = false;
+		engaged_pose.unref();
+		entries_dirty = true;
+	}
+	if (entries_dirty || entries_version != skeleton->get_version() || (_uses_engaged() && Engine::get_singleton()->is_editor_hint())) {
 		_rebuild_entries(skeleton);
 	}
 	Node3D *anchor = _get_anchor();
@@ -236,11 +256,24 @@ void AnchoredPoseModifier3D::_process_modification(double p_delta) {
 			_capture_edits(skeleton, anchor);
 			return;
 		}
-		blend = 1.0; // The editor always shows the hold.
+		// The editor shows the hold at once (what is being posed has to be seen), unless it is told not to.
+		blend = (editor_preview || engaged || holding) && !lingering ? 1.0f : 0.0f;
 	}
 #endif // TOOLS_ENABLED
 	if (!in_editor) {
-		blend = Math::move_toward(blend, holding ? 1.0f : 0.0f, fade_time > 0.0f ? (float)p_delta / fade_time : 1.0f);
+		const float wanted = engaged ? 1.0f : (lingering ? 0.0f : (holding ? 1.0f : 0.0f));
+		float seconds = fade_time;
+		if (wanted > blend && engaged && engage_fade_in >= 0.0f) {
+			seconds = engage_fade_in;
+		} else if (wanted < blend && lingering && engage_fade_out >= 0.0f) {
+			seconds = engage_fade_out;
+		}
+		blend = Math::move_toward(blend, wanted, seconds > 0.0f ? (float)p_delta / seconds : 1.0f);
+		if (lingering && blend <= 0.0f) {
+			lingering = false;
+			engaged_pose.unref();
+			entries_dirty = true;
+		}
 	}
 	if (blend <= 0.0f) {
 		return;
@@ -254,7 +287,7 @@ void AnchoredPoseModifier3D::_process_modification(double p_delta) {
 // space) is stored relative to the anchor. Any other bone: its local pose.
 void AnchoredPoseModifier3D::_store_bone(Skeleton3D *p_skeleton, Node3D *p_anchor, int p_bone, const Transform3D &p_pose_or_global) {
 	Transform3D stored = p_pose_or_global;
-	if (p_skeleton->get_bone_parent(p_bone) < 0) {
+	if (p_skeleton->get_bone_parent(p_bone) < 0 && !body_bones.has(p_skeleton->get_bone_name(p_bone))) {
 		if (!p_anchor) {
 			WARN_PRINT(vformat("AnchoredPoseModifier3D: bone '%s' follows the anchor, but there is no anchor_node. Not stored.", p_skeleton->get_bone_name(p_bone)));
 			return;
@@ -354,6 +387,95 @@ void AnchoredPoseModifier3D::clear_pose() {
 			edit_last = edit_base;
 		}
 	}
+}
+
+// ---------------------------------------------------------------- another node's pose
+
+void AnchoredPoseModifier3D::engage(Node3D *p_anchor, const Ref<AnchoredPose> &p_pose, float p_fade_in, float p_fade_out) {
+	ERR_FAIL_NULL(p_anchor);
+	ERR_FAIL_COND(p_pose.is_null());
+	if (edit_active) {
+		WARN_PRINT("AnchoredPoseModifier3D: can not take another pose while editing.");
+		return;
+	}
+	engaged = true;
+	lingering = false;
+	engaged_anchor = p_anchor->get_instance_id();
+	engaged_pose = p_pose;
+	engage_fade_in = p_fade_in;
+	engage_fade_out = p_fade_out;
+	entries_dirty = true;
+}
+
+void AnchoredPoseModifier3D::release() {
+	if (!engaged) {
+		return;
+	}
+	engaged = false;
+	lingering = true; // Keeps the pose and the anchor until it has faded out.
+}
+
+bool AnchoredPoseModifier3D::is_engaged() const {
+	return engaged;
+}
+
+void AnchoredPoseModifier3D::set_body_bones(const PackedStringArray &p_bones) {
+	body_bones = p_bones;
+	entries_dirty = true;
+}
+
+PackedStringArray AnchoredPoseModifier3D::get_body_bones() const {
+	return body_bones;
+}
+
+void AnchoredPoseModifier3D::set_pose_resource(const Ref<AnchoredPose> &p_resource) {
+	pose_resource = p_resource;
+}
+
+Ref<AnchoredPose> AnchoredPoseModifier3D::get_pose_resource() const {
+	return pose_resource;
+}
+
+void AnchoredPoseModifier3D::set_slot(const StringName &p_slot) {
+	slot = p_slot;
+}
+
+StringName AnchoredPoseModifier3D::get_slot() const {
+	return slot;
+}
+
+void AnchoredPoseModifier3D::set_editor_preview(bool p_preview) {
+	editor_preview = p_preview;
+}
+
+bool AnchoredPoseModifier3D::is_editor_preview() const {
+	return editor_preview;
+}
+
+// Copies the pose into the resource (made if there is none), to save it as a file and use it elsewhere.
+void AnchoredPoseModifier3D::write_pose_resource() {
+	if (pose_resource.is_null()) {
+		pose_resource.instantiate();
+	}
+	pose_resource->set_bones(pose);
+	pose_resource->set_body_bones(body_bones);
+	notify_property_list_changed();
+}
+
+// Takes the pose from the resource.
+void AnchoredPoseModifier3D::read_pose_resource() {
+	ERR_FAIL_COND_MSG(pose_resource.is_null(), "Assign a pose_resource first.");
+	pose = pose_resource->get_bones();
+	body_bones = pose_resource->get_body_bones();
+	entries_dirty = true;
+}
+
+Callable AnchoredPoseModifier3D::get_write_pose_button() const {
+	return callable_mp(const_cast<AnchoredPoseModifier3D *>(this), &AnchoredPoseModifier3D::write_pose_resource);
+}
+
+Callable AnchoredPoseModifier3D::get_read_pose_button() const {
+	return callable_mp(const_cast<AnchoredPoseModifier3D *>(this), &AnchoredPoseModifier3D::read_pose_resource);
 }
 
 // ---------------------------------------------------------------- editing by hand (editor only)
@@ -759,10 +881,28 @@ void AnchoredPoseModifier3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("import_pose_from_animation", "animation", "time"), &AnchoredPoseModifier3D::import_pose_from_animation, DEFVAL(0.0));
 	ClassDB::bind_method(D_METHOD("clear_pose"), &AnchoredPoseModifier3D::clear_pose);
 
+	ClassDB::bind_method(D_METHOD("set_body_bones", "bones"), &AnchoredPoseModifier3D::set_body_bones);
+	ClassDB::bind_method(D_METHOD("get_body_bones"), &AnchoredPoseModifier3D::get_body_bones);
+	ClassDB::bind_method(D_METHOD("set_pose_resource", "resource"), &AnchoredPoseModifier3D::set_pose_resource);
+	ClassDB::bind_method(D_METHOD("get_pose_resource"), &AnchoredPoseModifier3D::get_pose_resource);
+	ClassDB::bind_method(D_METHOD("set_slot", "slot"), &AnchoredPoseModifier3D::set_slot);
+	ClassDB::bind_method(D_METHOD("get_slot"), &AnchoredPoseModifier3D::get_slot);
+	ClassDB::bind_method(D_METHOD("set_editor_preview", "preview"), &AnchoredPoseModifier3D::set_editor_preview);
+	ClassDB::bind_method(D_METHOD("is_editor_preview"), &AnchoredPoseModifier3D::is_editor_preview);
+	ClassDB::bind_method(D_METHOD("engage", "anchor", "pose", "fade_in", "fade_out"), &AnchoredPoseModifier3D::engage, DEFVAL(-1.0), DEFVAL(-1.0));
+	ClassDB::bind_method(D_METHOD("release"), &AnchoredPoseModifier3D::release);
+	ClassDB::bind_method(D_METHOD("is_engaged"), &AnchoredPoseModifier3D::is_engaged);
+	ClassDB::bind_method(D_METHOD("write_pose_resource"), &AnchoredPoseModifier3D::write_pose_resource);
+	ClassDB::bind_method(D_METHOD("read_pose_resource"), &AnchoredPoseModifier3D::read_pose_resource);
+	ClassDB::bind_method(D_METHOD("get_write_pose_button"), &AnchoredPoseModifier3D::get_write_pose_button);
+	ClassDB::bind_method(D_METHOD("get_read_pose_button"), &AnchoredPoseModifier3D::get_read_pose_button);
+
 	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "anchor_node", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Node3D"), "set_anchor_node", "get_anchor_node");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "holding"), "set_holding", "is_holding");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "fade_time", PROPERTY_HINT_RANGE, "0,5,0.01,or_greater,suffix:s"), "set_fade_time", "get_fade_time");
 	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "pose", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_STORAGE), "set_pose", "get_pose");
+	ADD_PROPERTY(PropertyInfo(Variant::PACKED_STRING_ARRAY, "body_bones"), "set_body_bones", "get_body_bones");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "slot"), "set_slot", "get_slot");
 
 	ADD_GROUP("Reach Assist", "reach_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "reach_assist"), "set_reach_assist", "is_reach_assist");
@@ -777,7 +917,11 @@ void AnchoredPoseModifier3D::_bind_methods() {
 
 	ADD_GROUP("Editor", "");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "preview_anchor", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT), "set_preview_anchor", "is_preview_anchor");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "editor_preview"), "set_editor_preview", "is_editor_preview");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "editing", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR), "set_editing", "is_editing");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "pose_resource", PROPERTY_HINT_RESOURCE_TYPE, "AnchoredPose"), "set_pose_resource", "get_pose_resource");
+	ADD_PROPERTY(PropertyInfo(Variant::CALLABLE, "write_pose_button", PROPERTY_HINT_TOOL_BUTTON, "Write the pose into the resource,Save", PROPERTY_USAGE_EDITOR), "", "get_write_pose_button");
+	ADD_PROPERTY(PropertyInfo(Variant::CALLABLE, "read_pose_button", PROPERTY_HINT_TOOL_BUTTON, "Read the pose from the resource,Load", PROPERTY_USAGE_EDITOR), "", "get_read_pose_button");
 	ADD_PROPERTY(PropertyInfo(Variant::CALLABLE, "clear_pose_button", PROPERTY_HINT_TOOL_BUTTON, "Clear the pose,Remove", PROPERTY_USAGE_EDITOR), "", "get_clear_pose_button");
 }
 

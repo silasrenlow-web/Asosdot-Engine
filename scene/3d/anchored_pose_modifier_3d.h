@@ -32,6 +32,7 @@
 
 #include "core/templates/local_vector.h"
 #include "scene/3d/skeleton_modifier_3d.h"
+#include "scene/resources/anchored_pose.h"
 
 class Animation;
 
@@ -54,6 +55,21 @@ private:
 	float fade_time = 0.25;
 	// Bone name -> Transform3D. Bones without a parent: relative to the anchor. Other bones: the local pose.
 	Dictionary pose;
+	// Bones without a parent that are stored in the skeleton's space (follow the body), not the anchor.
+	PackedStringArray body_bones;
+	// An exchange slot to move the pose to and from a resource file (see the buttons).
+	Ref<AnchoredPose> pose_resource;
+	// Names this modifier for whoever wants to drive it (a PoseTarget3D finds it by this).
+	StringName slot;
+	bool editor_preview = true;
+
+	// Another node's pose, used until released (see engage).
+	bool engaged = false;
+	bool lingering = false; // Released, still fading out.
+	ObjectID engaged_anchor;
+	Ref<AnchoredPose> engaged_pose;
+	float engage_fade_in = -1.0;
+	float engage_fade_out = -1.0;
 
 	bool reach_assist = false;
 	String reach_target_bone;
@@ -93,6 +109,8 @@ private:
 	bool anchor_was_hidden = false;
 
 	Node3D *_get_anchor() const;
+	bool _uses_engaged() const;
+	bool _is_body_bone(const String &p_name) const;
 	Transform3D _anchor_in_skeleton(Skeleton3D *p_skeleton, Node3D *p_anchor) const;
 	void _rebuild_entries(Skeleton3D *p_skeleton);
 	void _apply_pose(Skeleton3D *p_skeleton, Node3D *p_anchor, float p_weight);
@@ -168,6 +186,26 @@ public:
 	void capture_bone(const StringName &p_bone);
 	void import_pose_from_animation(const Ref<Animation> &p_animation, double p_time = 0.0);
 	void clear_pose();
+
+	void set_body_bones(const PackedStringArray &p_bones);
+	PackedStringArray get_body_bones() const;
+	void set_pose_resource(const Ref<AnchoredPose> &p_resource);
+	Ref<AnchoredPose> get_pose_resource() const;
+	void set_slot(const StringName &p_slot);
+	StringName get_slot() const;
+	void set_editor_preview(bool p_preview);
+	bool is_editor_preview() const;
+
+	// Uses `p_pose` relative to `p_anchor` instead of the own pose, fading in over `p_fade_in` seconds
+	// (negative = fade_time), until release(), which fades out over `p_fade_out`.
+	void engage(Node3D *p_anchor, const Ref<AnchoredPose> &p_pose, float p_fade_in = -1.0, float p_fade_out = -1.0);
+	void release();
+	bool is_engaged() const;
+
+	void write_pose_resource();
+	void read_pose_resource();
+	Callable get_write_pose_button() const;
+	Callable get_read_pose_button() const;
 
 	Callable get_clear_pose_button() const;
 

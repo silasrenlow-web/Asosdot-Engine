@@ -115,6 +115,7 @@
 #include "scene/main/timer.h"
 #include "scene/main/viewport.h"
 #include "scene/main/window.h"
+#include "scene/resources/anchored_pose.h"
 #include "scene/resources/animation_library.h"
 #include "scene/resources/atlas_texture.h"
 #include "scene/resources/audio_stream_polyphonic.h"
@@ -262,6 +263,7 @@
 #include "scene/3d/lightmap_probe.h"
 #include "scene/3d/limit_angular_velocity_modifier_3d.h"
 #include "scene/3d/anchored_pose_modifier_3d.h"
+#include "scene/3d/pose_target_3d.h"
 #include "scene/3d/look_at_modifier_3d.h"
 #include "scene/3d/marker_3d.h"
 #include "scene/3d/mesh_instance_3d.h"
@@ -645,6 +647,7 @@ void register_scene_types() {
 	GDREGISTER_CLASS(Node3D);
 	GDREGISTER_ABSTRACT_CLASS(Node3DGizmo);
 	GDREGISTER_CLASS(Skin);
+	GDREGISTER_CLASS(AnchoredPose);
 	GDREGISTER_ABSTRACT_CLASS(SkinReference);
 	GDREGISTER_CLASS(Skeleton3D);
 	GDREGISTER_CLASS(ImporterMesh);
@@ -756,6 +759,8 @@ void register_scene_types() {
 	GDREGISTER_CLASS(BoneAttachment3D);
 	GDREGISTER_CLASS(LookAtModifier3D);
 	GDREGISTER_CLASS(AnchoredPoseModifier3D);
+	GDREGISTER_CLASS(PoseTarget3D);
+	GLOBAL_DEF(PropertyInfo(Variant::STRING, "animation/pose_target/preview_rig", PROPERTY_HINT_FILE, "*.tscn,*.scn"), "");
 #ifndef DISABLE_DEPRECATED
 	GDREGISTER_CLASS(SkeletonIK3D);
 #endif
