@@ -32,6 +32,7 @@
 
 #include "core/io/image.h"
 #include "core/math/math_funcs.h"
+#include "core/object/class_db.h"
 #include "scene/3d/light_3d.h"
 #include "scene/resources/material.h"
 #include "servers/rendering/rendering_server.h"

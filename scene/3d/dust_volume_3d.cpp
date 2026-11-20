@@ -31,6 +31,7 @@
 #include "dust_volume_3d.h"
 
 #include "core/io/image.h"
+#include "core/object/class_db.h"
 #include "scene/resources/gradient_texture.h"
 #include "scene/resources/image_texture.h"
 #include "scene/resources/material.h"
@@ -56,7 +57,7 @@ void DustVolume3D::_rebuild() {
 	process_material->set_param_max(ParticleProcessMaterial::PARAM_INITIAL_LINEAR_VELOCITY, drift_speed);
 
 	quad->set_size(Vector2(mote_size, mote_size));
-	mote_material->set_albedo_color(Color(mote_color, opacity));
+	mote_material->set_albedo(Color(mote_color, opacity));
 
 	Ref<Gradient> gradient = fade_ramp->get_gradient();
 	gradient->set_color(0, Color(1, 1, 1, 0));
@@ -180,7 +181,7 @@ DustVolume3D::DustVolume3D() {
 	mote_material->set_shading_mode(StandardMaterial3D::SHADING_MODE_UNSHADED);
 	mote_material->set_transparency(StandardMaterial3D::TRANSPARENCY_ALPHA);
 	mote_material->set_billboard_mode(StandardMaterial3D::BILLBOARD_ENABLED);
-	mote_material->set_albedo_texture(mote_texture);
+	mote_material->set_texture(BaseMaterial3D::TEXTURE_ALBEDO, mote_texture);
 	mote_material->set_flag(StandardMaterial3D::FLAG_DISABLE_DEPTH_TEST, false);
 
 	quad.instantiate();
