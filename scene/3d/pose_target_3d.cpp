@@ -33,9 +33,16 @@
 #include "core/config/engine.h"
 #include "core/config/project_settings.h"
 #include "core/io/resource_loader.h"
+#include "core/io/resource_saver.h"
+#include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
 #include "scene/3d/anchored_pose_modifier_3d.h"
 #include "scene/3d/camera_3d.h"
+#include "scene/3d/mesh_instance_3d.h"
+#include "scene/3d/physics/collision_object_3d.h"
+#include "scene/3d/audio_stream_player_3d.h"
+#include "scene/3d/light_3d.h"
+#include "scene/3d/visual_instance_3d.h"
 #include "scene/main/canvas_item.h"
 #include "scene/main/canvas_layer.h"
 #include "scene/main/scene_tree.h"
@@ -83,6 +90,109 @@ void PoseTarget3D::disengage(Node *p_rig) {
 // ---------------------------------------------------------------- the preview (editor only)
 
 #ifdef TOOLS_ENABLED
+AnchoredPoseModifier3D *PoseTarget3D::_get_ghost_modifier() const {
+	Node *ghost = ObjectDB::get_instance<Node>(ghost_id);
+	return ghost ? _find_modifier(ghost, slot, 0) : nullptr;
+}
+
+// The ghost: see-through, no shadows, no lights of its own.
+void PoseTarget3D::_apply_ghost_look(Node3D *p_ghost) {
+	if (ghost_material.is_null()) {
+		ghost_material.instantiate();
+		ghost_material->set_transparency(BaseMaterial3D::TRANSPARENCY_ALPHA);
+		ghost_material->set_shading_mode(BaseMaterial3D::SHADING_MODE_UNSHADED);
+		ghost_material->set_cull_mode(BaseMaterial3D::CULL_DISABLED);
+	}
+	TypedArray<Node> geometry = p_ghost->find_children("*", "GeometryInstance3D", true, false);
+	for (int i = 0; i < geometry.size(); i++) {
+		GeometryInstance3D *instance = Object::cast_to<GeometryInstance3D>(geometry[i].operator Object *());
+		if (!instance) {
+			continue;
+		}
+		// Only the character itself is shown: what is skinned to a skeleton. Props, gizmo helpers and the like of
+		// the rig scene are not part of the preview.
+		MeshInstance3D *mesh = Object::cast_to<MeshInstance3D>(instance);
+		if (!mesh || mesh->get_skin_reference().is_null()) {
+			instance->set_visible(false);
+			continue;
+		}
+		instance->set_material_override(ghost_material);
+		instance->set_cast_shadows_setting(GeometryInstance3D::SHADOW_CASTING_SETTING_OFF);
+	}
+	// Nothing that only draws a helper in the editor: shapes, rays, speakers, the camera's frustum.
+	const char *helpers[] = { "CollisionObject3D", "CollisionShape3D", "CollisionPolygon3D", "RayCast3D", "ShapeCast3D", "AudioStreamPlayer3D", "Camera3D", "Marker3D", "NavigationAgent3D" };
+	for (const char *helper : helpers) {
+		TypedArray<Node> found = p_ghost->find_children("*", helper, true, false);
+		for (int i = 0; i < found.size(); i++) {
+			Node3D *node = Object::cast_to<Node3D>(found[i].operator Object *());
+			if (node) {
+				node->set_visible(false);
+			}
+		}
+	}
+	TypedArray<Node> lights = p_ghost->find_children("*", "Light3D", true, false);
+	for (int i = 0; i < lights.size(); i++) {
+		Light3D *light = Object::cast_to<Light3D>(lights[i].operator Object *());
+		if (light) {
+			light->set_visible(false);
+		}
+	}
+}
+
+// Puts a node in the editor's selection, which brings up its own editing tools (a Skeleton3D's pose mode).
+void PoseTarget3D::_select_in_editor(Node *p_node) {
+	Object *editor = Engine::get_singleton()->get_singleton_object("EditorInterface");
+	if (!editor || !p_node) {
+		return;
+	}
+	Object *selection = editor->call("get_selection");
+	if (selection) {
+		selection->call("clear");
+		selection->call("add_node", p_node);
+	}
+}
+
+void PoseTarget3D::set_posing(bool p_posing) {
+#ifdef TOOLS_ENABLED
+	if (!Engine::get_singleton()->is_editor_hint() || !is_inside_tree()) {
+		posing = false;
+		return;
+	}
+	if (p_posing) {
+		if (pose.is_null()) {
+			Ref<AnchoredPose> fresh;
+			fresh.instantiate();
+			set_pose(fresh);
+		}
+		_update_preview();
+		AnchoredPoseModifier3D *modifier = _get_ghost_modifier();
+		Skeleton3D *skeleton = modifier ? modifier->get_skeleton() : nullptr;
+		if (!modifier || !skeleton) {
+			posing = false;
+			WARN_PRINT("PoseTarget3D: there is no ghost to pose. Edit the scene this node is in, with a preview rig (see animation/pose_target/preview_rig) that has a modifier with this slot.");
+			notify_property_list_changed();
+			return;
+		}
+		modifier->engage(this, pose, fade_in, fade_out);
+		modifier->set_editing(true);
+		posing = modifier->is_editing();
+		if (posing) {
+			_select_in_editor(skeleton);
+		}
+	} else if (posing) {
+		AnchoredPoseModifier3D *modifier = _get_ghost_modifier();
+		if (modifier) {
+			modifier->set_editing(false);
+		}
+		posing = false;
+		_select_in_editor(this);
+	}
+	notify_property_list_changed();
+#else
+	posing = false;
+#endif // TOOLS_ENABLED
+}
+
 void PoseTarget3D::_free_preview() {
 	Node *ghost = ObjectDB::get_instance<Node>(ghost_id);
 	if (ghost) {
@@ -139,6 +249,8 @@ void PoseTarget3D::_update_preview() {
 		ghost_id = ghost->get_instance_id();
 		ghost_source = source;
 
+		_apply_ghost_look(ghost);
+
 		// A preview has no interface: hide every 2D root of the rig.
 		TypedArray<Node> items = ghost->find_children("*", "CanvasItem", true, false);
 		for (int i = 0; i < items.size(); i++) {
@@ -163,6 +275,10 @@ void PoseTarget3D::_update_preview() {
 				ghost_camera_in_root = ghost->get_global_transform().affine_inverse() * camera->get_global_transform();
 			}
 		}
+	}
+
+	if (ghost_material.is_valid()) {
+		ghost_material->set_albedo(preview_color);
 	}
 
 	// The player stands in front of the object (its own +Z, level), a little back and up, looking at the target.
@@ -197,9 +313,28 @@ void PoseTarget3D::_update_preview() {
 				modifier->release();
 			}
 			modifier->set_editor_preview(false);
+			modifier->set_preview_anchor(false); // Nothing of the preview character's own holds is shown.
 			modifier->set_holding(false);
 		}
 	}
+}
+#endif // TOOLS_ENABLED
+
+bool PoseTarget3D::is_posing() const {
+	return posing;
+}
+
+void PoseTarget3D::set_preview_color(const Color &p_color) {
+	preview_color = p_color;
+}
+
+Color PoseTarget3D::get_preview_color() const {
+	return preview_color;
+}
+
+#ifndef TOOLS_ENABLED
+void PoseTarget3D::set_posing(bool p_posing) {
+	posing = false; // Posing the ghost is an editor tool.
 }
 #endif // TOOLS_ENABLED
 
@@ -211,9 +346,17 @@ void PoseTarget3D::_notification(int p_what) {
 		} break;
 		case NOTIFICATION_EXIT_TREE: {
 			_free_preview();
+			posing = false;
 		} break;
 		case NOTIFICATION_INTERNAL_PROCESS: {
 			_update_preview();
+		} break;
+		case NOTIFICATION_EDITOR_PRE_SAVE: {
+			// A pose that was posed by hand and lives in its own file is saved with the scene.
+			if (pose_dirty && pose.is_valid() && !pose->is_built_in() && !pose->get_path().is_empty()) {
+				ResourceSaver::save(pose, pose->get_path());
+			}
+			pose_dirty = false;
 		} break;
 #endif // TOOLS_ENABLED
 		default:
@@ -243,8 +386,19 @@ StringName PoseTarget3D::get_slot() const {
 	return slot;
 }
 
+void PoseTarget3D::_pose_changed() {
+	pose_dirty = true;
+}
+
 void PoseTarget3D::set_pose(const Ref<AnchoredPose> &p_pose) {
+	if (pose.is_valid()) {
+		pose->disconnect_changed(callable_mp(this, &PoseTarget3D::_pose_changed));
+	}
 	pose = p_pose;
+	if (pose.is_valid()) {
+		pose->connect_changed(callable_mp(this, &PoseTarget3D::_pose_changed));
+	}
+	pose_dirty = false;
 	update_configuration_warnings();
 }
 
@@ -327,6 +481,10 @@ void PoseTarget3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_preview_height"), &PoseTarget3D::get_preview_height);
 	ClassDB::bind_method(D_METHOD("set_preview_yaw", "degrees"), &PoseTarget3D::set_preview_yaw);
 	ClassDB::bind_method(D_METHOD("get_preview_yaw"), &PoseTarget3D::get_preview_yaw);
+	ClassDB::bind_method(D_METHOD("set_preview_color", "color"), &PoseTarget3D::set_preview_color);
+	ClassDB::bind_method(D_METHOD("get_preview_color"), &PoseTarget3D::get_preview_color);
+	ClassDB::bind_method(D_METHOD("set_posing", "posing"), &PoseTarget3D::set_posing);
+	ClassDB::bind_method(D_METHOD("is_posing"), &PoseTarget3D::is_posing);
 	ClassDB::bind_method(D_METHOD("engage", "rig"), &PoseTarget3D::engage);
 	ClassDB::bind_method(D_METHOD("disengage", "rig"), &PoseTarget3D::disengage);
 
@@ -335,11 +493,14 @@ void PoseTarget3D::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "fade_in", PROPERTY_HINT_RANGE, "0,3,0.01,or_greater,suffix:s"), "set_fade_in", "get_fade_in");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "fade_out", PROPERTY_HINT_RANGE, "0,3,0.01,or_greater,suffix:s"), "set_fade_out", "get_fade_out");
 
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "posing", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR), "set_posing", "is_posing");
+
 	ADD_GROUP("Preview", "preview_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "preview_enabled"), "set_preview", "is_preview");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "preview_rig", PROPERTY_HINT_RESOURCE_TYPE, "PackedScene"), "set_preview_rig", "get_preview_rig");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "preview_distance", PROPERTY_HINT_RANGE, "0,5,0.01,or_greater,suffix:m"), "set_preview_distance", "get_preview_distance");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "preview_height", PROPERTY_HINT_RANGE, "-2,3,0.01,or_greater,or_less,suffix:m"), "set_preview_height", "get_preview_height");
+	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "preview_color"), "set_preview_color", "get_preview_color");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "preview_yaw", PROPERTY_HINT_RANGE, "-180,180,0.1,degrees"), "set_preview_yaw", "get_preview_yaw");
 }
 

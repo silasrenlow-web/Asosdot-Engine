@@ -32,6 +32,7 @@
 
 #include "scene/3d/node_3d.h"
 #include "scene/resources/anchored_pose.h"
+#include "scene/resources/material.h"
 #include "scene/resources/packed_scene.h"
 
 class AnchoredPoseModifier3D;
@@ -50,9 +51,17 @@ class PoseTarget3D : public Node3D {
 	float preview_distance = 0.6;
 	float preview_height = 0.35;
 	float preview_yaw = 0.0;
+	Color preview_color = Color(0.45, 0.8, 1.0, 0.4);
+	bool posing = false;
+	bool pose_dirty = false; // Changed while posing: saved to its file with the scene.
+	void _pose_changed();
 
 #ifdef TOOLS_ENABLED
 	ObjectID ghost_id;
+	Ref<StandardMaterial3D> ghost_material;
+	AnchoredPoseModifier3D *_get_ghost_modifier() const;
+	void _apply_ghost_look(Node3D *p_ghost);
+	void _select_in_editor(Node *p_node);
 	String ghost_source;
 	Transform3D ghost_camera_in_root;
 	void _update_preview();
@@ -87,6 +96,10 @@ public:
 	float get_preview_height() const;
 	void set_preview_yaw(float p_degrees);
 	float get_preview_yaw() const;
+	void set_preview_color(const Color &p_color);
+	Color get_preview_color() const;
+	void set_posing(bool p_posing);
+	bool is_posing() const;
 
 	// Poses the part of `p_rig` (any node above the character's skeleton) that has this target's slot.
 	bool engage(Node *p_rig);

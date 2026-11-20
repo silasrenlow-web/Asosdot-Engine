@@ -203,7 +203,8 @@ void AnchoredPoseModifier3D::_lean_to_reach(Skeleton3D *p_skeleton, const Vector
 	const float gap = shoulder.distance_to(p_target);
 	const float allowed = length * reach_comfort;
 	float amount = gap > allowed ? gap - allowed : 0.0f;
-	if (reach_keep > 0.0f && reach_rest_gap > 0.0f) {
+	if (reach_keep > 0.0f && reach_rest_gap > 0.0f && !_uses_engaged()) {
+		// (Not for another node's pose: the rest distance belongs to this node's own pose.)
 		const float keep = (gap - reach_rest_gap) * reach_keep;
 		amount = gap > allowed ? MAX(amount, keep) : keep;
 	}
@@ -246,14 +247,15 @@ void AnchoredPoseModifier3D::_process_modification(double p_delta) {
 			_unreveal_anchor();
 		}
 		if (edit_active && !edit_suspended) {
+			// The bones are being posed by hand: watch what changes, and only help the limb to reach, so what is
+			// posed is what is seen afterwards.
+			_capture_edits(skeleton, anchor);
 			if (reach_assist) {
 				const int target_bone = skeleton->find_bone(reach_target_bone);
 				if (target_bone >= 0 && skeleton->get_bone_parent(target_bone) < 0) {
-					_record_rest_gap(skeleton, skeleton->get_bone_pose_position(target_bone));
+					_lean_to_reach(skeleton, skeleton->get_bone_pose_position(target_bone), 1.0f);
 				}
 			}
-			// The bones are being posed by hand: only watch what changes, change nothing.
-			_capture_edits(skeleton, anchor);
 			return;
 		}
 		// The editor shows the hold at once (what is being posed has to be seen), unless it is told not to.
@@ -287,15 +289,32 @@ void AnchoredPoseModifier3D::_process_modification(double p_delta) {
 // space) is stored relative to the anchor. Any other bone: its local pose.
 void AnchoredPoseModifier3D::_store_bone(Skeleton3D *p_skeleton, Node3D *p_anchor, int p_bone, const Transform3D &p_pose_or_global) {
 	Transform3D stored = p_pose_or_global;
-	if (p_skeleton->get_bone_parent(p_bone) < 0 && !body_bones.has(p_skeleton->get_bone_name(p_bone))) {
+	if (p_skeleton->get_bone_parent(p_bone) < 0 && !_is_body_bone(p_skeleton->get_bone_name(p_bone))) {
 		if (!p_anchor) {
 			WARN_PRINT(vformat("AnchoredPoseModifier3D: bone '%s' follows the anchor, but there is no anchor_node. Not stored.", p_skeleton->get_bone_name(p_bone)));
 			return;
 		}
 		stored = _anchor_in_skeleton(p_skeleton, p_anchor).affine_inverse() * p_pose_or_global;
 	}
-	pose[p_skeleton->get_bone_name(p_bone)] = stored;
+	if (_uses_engaged()) {
+		engaged_pose->set_bone(p_skeleton->get_bone_name(p_bone), stored); // The resource of the node that is posed.
+	} else {
+		pose[p_skeleton->get_bone_name(p_bone)] = stored;
+	}
 	entries_dirty = true;
+}
+
+// Editor only: tells the editor the scene has changes to save.
+void AnchoredPoseModifier3D::_mark_scene_edited() {
+#ifdef TOOLS_ENABLED
+	if (!Engine::get_singleton()->is_editor_hint()) {
+		return;
+	}
+	Object *editor = Engine::get_singleton()->get_singleton_object("EditorInterface");
+	if (editor) {
+		editor->call("mark_scene_as_unsaved");
+	}
+#endif // TOOLS_ENABLED
 }
 
 void AnchoredPoseModifier3D::set_pose_bone(const StringName &p_bone, const Transform3D &p_transform) {
@@ -394,6 +413,12 @@ void AnchoredPoseModifier3D::clear_pose() {
 void AnchoredPoseModifier3D::engage(Node3D *p_anchor, const Ref<AnchoredPose> &p_pose, float p_fade_in, float p_fade_out) {
 	ERR_FAIL_NULL(p_anchor);
 	ERR_FAIL_COND(p_pose.is_null());
+	if (engaged && engaged_pose == p_pose && engaged_anchor == p_anchor->get_instance_id()) {
+		// Already so (a preview asks every frame).
+		engage_fade_in = p_fade_in;
+		engage_fade_out = p_fade_out;
+		return;
+	}
 	if (edit_active) {
 		WARN_PRINT("AnchoredPoseModifier3D: can not take another pose while editing.");
 		return;
@@ -560,6 +585,7 @@ void AnchoredPoseModifier3D::_capture_edits(Skeleton3D *p_skeleton, Node3D *p_an
 		changed = true;
 	}
 	if (changed) {
+		_mark_scene_edited();
 		_rebuild_entries(p_skeleton);
 		if (p_anchor) {
 			edit_anchor_last = _anchor_in_skeleton(p_skeleton, p_anchor);

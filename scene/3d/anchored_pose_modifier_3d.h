@@ -120,6 +120,7 @@ private:
 
 	void _store_bone(Skeleton3D *p_skeleton, Node3D *p_anchor, int p_bone, const Transform3D &p_pose_or_global);
 
+	void _mark_scene_edited();
 	void _begin_editing();
 	void _end_editing();
 	void _write_edit_state(const LocalVector<BoneState> &p_states);
