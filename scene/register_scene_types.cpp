@@ -261,6 +261,7 @@
 #include "scene/3d/lightmap_gi.h"
 #include "scene/3d/lightmap_probe.h"
 #include "scene/3d/limit_angular_velocity_modifier_3d.h"
+#include "scene/3d/anchored_pose_modifier_3d.h"
 #include "scene/3d/look_at_modifier_3d.h"
 #include "scene/3d/marker_3d.h"
 #include "scene/3d/mesh_instance_3d.h"
@@ -754,6 +755,7 @@ void register_scene_types() {
 
 	GDREGISTER_CLASS(BoneAttachment3D);
 	GDREGISTER_CLASS(LookAtModifier3D);
+	GDREGISTER_CLASS(AnchoredPoseModifier3D);
 #ifndef DISABLE_DEPRECATED
 	GDREGISTER_CLASS(SkeletonIK3D);
 #endif

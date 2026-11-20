@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="AnchoredPoseModifier3D" inherits="SkeletonModifier3D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		Holds a stored pose (a hand around an item, for example) relative to a node, so it follows that node.
+	</brief_description>
+	<description>
+		This [SkeletonModifier3D] stores a pose of some bones and puts the skeleton in it. Bones that have no parent bone (the target bones of an IK chain such as [TwoBoneIK3D]) are stored relative to [member anchor_node], so they follow it wherever it goes: a hand stays on a flashlight that trails behind the camera. All other bones (fingers, for example) store their local pose.
+		It is also the editing tool for such a pose. Turn on [member editing] in the editor and the held pose is written into the skeleton's stored bone poses, so the normal tools (the Skeleton3D pose mode, the inspector, undo) work on it. What you change is stored in the modifier. [member preview_anchor] shows the anchor even when the scene hides it (the game shows it later), so the hand can be posed against it.
+		Put this node under the [Skeleton3D], above the IK modifiers that use the target bones. In the game, set [member holding] to make the pose fade in and out.
+		[b]Note:[/b] A modifier never changes the stored bone poses, only what is drawn. That is why the bones of a modified skeleton look unposed in the inspector, and why [member editing] exists.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="capture_bone">
+			<return type="void" />
+			<param index="0" name="bone" type="StringName" />
+			<description>
+				Stores the current pose of [param bone] into the held pose. A bone without a parent is stored relative to the anchor.
+			</description>
+		</method>
+		<method name="clear_pose">
+			<return type="void" />
+			<description>
+				Removes every bone from the held pose.
+			</description>
+		</method>
+		<method name="erase_pose_bone">
+			<return type="void" />
+			<param index="0" name="bone" type="StringName" />
+			<description>
+				Removes [param bone] from the held pose.
+			</description>
+		</method>
+		<method name="get_blend" qualifiers="const">
+			<return type="float" />
+			<description>
+				Returns how far the pose has faded in, from [code]0.0[/code] to [code]1.0[/code].
+			</description>
+		</method>
+		<method name="get_pose_bone" qualifiers="const">
+			<return type="Transform3D" />
+			<param index="0" name="bone" type="StringName" />
+			<description>
+				Returns the stored transform of [param bone]: relative to the anchor for a bone without a parent, the local pose for any other bone.
+			</description>
+		</method>
+		<method name="get_pose_bones" qualifiers="const">
+			<return type="PackedStringArray" />
+			<description>
+				Returns the names of the bones in the held pose.
+			</description>
+		</method>
+		<method name="has_pose_bone" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="bone" type="StringName" />
+			<description>
+				Returns [code]true[/code] if [param bone] is in the held pose.
+			</description>
+		</method>
+		<method name="import_pose_from_animation">
+			<return type="void" />
+			<param index="0" name="animation" type="Animation" />
+			<param index="1" name="time" type="float" default="0.0" />
+			<description>
+				Stores the pose that the position, rotation and scale tracks of [param animation] have at [param time]. The track paths only need to end in the bone name ([code]Skeleton3D:Bone[/code]). A bone without a parent is stored relative to the anchor as it is now, so its keys are taken as being in the skeleton's space.
+			</description>
+		</method>
+		<method name="set_pose_bone">
+			<return type="void" />
+			<param index="0" name="bone" type="StringName" />
+			<param index="1" name="transform" type="Transform3D" />
+			<description>
+				Stores [param transform] as the pose of [param bone]. For a bone without a parent it is in the skeleton's space (it is stored relative to the anchor as it is now). For any other bone it is the local pose.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="anchor_node" type="NodePath" setter="set_anchor_node" getter="get_anchor_node" default="NodePath(&quot;&quot;)">
+			The node the bones without a parent follow (the held item). Its scale is ignored.
+		</member>
+		<member name="editing" type="bool" setter="set_editing" getter="is_editing" default="false">
+			Editor only, not saved. While [code]true[/code], the held pose is written into the skeleton's stored bone poses and every change made to them is taken into the held pose. The original stored poses are put back when this is turned off and while the scene is saved.
+		</member>
+		<member name="fade_time" type="float" setter="set_fade_time" getter="get_fade_time" default="0.25">
+			Seconds the pose takes to fade in and out when [member holding] changes (in the game).
+		</member>
+		<member name="holding" type="bool" setter="set_holding" getter="is_holding" default="true">
+			Whether the pose is held. The editor always shows it.
+		</member>
+		<member name="pose" type="Dictionary" setter="set_pose" getter="get_pose" default="{}">
+			The held pose: bone name to [Transform3D]. Use the methods to change it.
+		</member>
+		<member name="preview_anchor" type="bool" setter="set_preview_anchor" getter="is_preview_anchor" default="true">
+			Editor only. Shows [member anchor_node] while editing even if the scene hides it. It is hidden again before the scene is saved.
+		</member>
+		<member name="reach_assist" type="bool" setter="set_reach_assist" getter="is_reach_assist" default="false">
+			If [code]true[/code], when the target is further than the limb can reach, the root bone leans towards it so the hand still gets there.
+		</member>
+		<member name="reach_comfort" type="float" setter="set_reach_comfort" getter="get_reach_comfort" default="0.93">
+			The leaning starts when the target is further than this fraction of the limb's length.
+		</member>
+		<member name="reach_root_bone" type="String" setter="set_reach_root_bone" getter="get_reach_root_bone" default="&quot;&quot;">
+			The bone that leans (for arms: the bone both shoulders hang on).
+		</member>
+		<member name="reach_start_bone" type="String" setter="set_reach_start_bone" getter="get_reach_start_bone" default="&quot;&quot;">
+			The first bone of the limb (the shoulder).
+		</member>
+		<member name="reach_target_bone" type="String" setter="set_reach_target_bone" getter="get_reach_target_bone" default="&quot;&quot;">
+			The posed bone without a parent that has to be reached (the hand's IK target).
+		</member>
+		<member name="reach_tip_bone" type="String" setter="set_reach_tip_bone" getter="get_reach_tip_bone" default="&quot;&quot;">
+			The last bone of the limb (the wrist). The limb's length is measured from here up to [member reach_start_bone].
+		</member>
+	</members>
+</class>
