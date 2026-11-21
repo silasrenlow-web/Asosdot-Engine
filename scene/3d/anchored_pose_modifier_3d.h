@@ -70,6 +70,11 @@ private:
 	Ref<AnchoredPose> engaged_pose;
 	float engage_fade_in = -1.0;
 	float engage_fade_out = -1.0;
+	// Or the pose is the live bone poses of a Skeleton3D (a PoseTarget3D's pose skeleton, which can be animated).
+	ObjectID engaged_proxy;
+	PackedStringArray engaged_body_bones;
+	// The bones this slot poses: the roots of their subtrees (for example the hand's and the elbow's IK target bones).
+	PackedStringArray pose_roots;
 
 	bool reach_assist = false;
 	String reach_target_bone;
@@ -110,6 +115,7 @@ private:
 
 	Node3D *_get_anchor() const;
 	bool _uses_engaged() const;
+	Skeleton3D *_get_proxy() const;
 	bool _is_body_bone(const String &p_name) const;
 	Transform3D _anchor_in_skeleton(Skeleton3D *p_skeleton, Node3D *p_anchor) const;
 	void _rebuild_entries(Skeleton3D *p_skeleton);
@@ -200,6 +206,10 @@ public:
 	// Uses `p_pose` relative to `p_anchor` instead of the own pose, fading in over `p_fade_in` seconds
 	// (negative = fade_time), until release(), which fades out over `p_fade_out`.
 	void engage(Node3D *p_anchor, const Ref<AnchoredPose> &p_pose, float p_fade_in = -1.0, float p_fade_out = -1.0);
+	// Same, but the pose is what the bones of `p_proxy` are right now, every frame: animate them and the pose animates.
+	void engage_pose_skeleton(Node3D *p_anchor, Skeleton3D *p_proxy, const PackedStringArray &p_body_bones, float p_fade_in = -1.0, float p_fade_out = -1.0);
+	void set_pose_roots(const PackedStringArray &p_roots);
+	PackedStringArray get_pose_roots() const;
 	void release();
 	bool is_engaged() const;
 

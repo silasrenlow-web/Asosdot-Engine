@@ -6,12 +6,25 @@
 	<description>
 		Put this in the scene of anything the character interacts with (a button, a wheel, a handle). Its transform is where the posed bones go, and its [member pose] is how. Which part of the character it poses is named by [member slot], the same name as an [AnchoredPoseModifier3D]'s [member AnchoredPoseModifier3D.slot], so a character can have any number of these (hands, feet, a tail) and nothing here assumes which.
 		Animate or move this node and the posed part follows it: a pressing motion is just the node moving.
-		[b]In the editor[/b], while you edit the scene this node is in, a see-through ghost of the character stands where the player would, looking at the target, with the slot posed, and you can pose it (see [member posing]). The ghost is made from the scene in the project setting [code]animation/pose_target/preview_rig[/code] (or [member preview_rig]), which can be your player scene. It is not part of the scene tree and is never saved.
+		[b]In the editor[/b], while you edit the scene this node is in, a see-through ghost of the character stands where the player would, looking at the target, with the slot posed by the pose skeleton. Pose and animate the pose skeleton and the ghost follows it. The ghost is made from the scene in the project setting [code]animation/pose_target/preview_rig[/code] (or [member preview_rig]), which can be your player scene. It is not part of the scene tree and is never saved.
 		[b]In the game[/b], call [method engage] with the character when the interaction starts and [method disengage] when it ends.
 	</description>
 	<tutorials>
 	</tutorials>
 	<methods>
+		<method name="create_pose_skeleton">
+			<return type="void" />
+			<description>
+				Editor only. Makes the pose skeleton from the preview character and selects it to be posed. See [member pose_skeleton].
+			</description>
+		</method>
+		<method name="create_pose_skeleton_from">
+			<return type="bool" />
+			<param index="0" name="rig" type="Node" />
+			<description>
+				Makes the pose skeleton (a [Skeleton3D] child named [code]PoseSkeleton[/code]) from the bones that the [AnchoredPoseModifier3D] of [param rig] with this node's [member slot] poses (its [member AnchoredPoseModifier3D.pose_roots] and everything below them). The root that the modifier reaches with starts on this node, the others at rest. Returns [code]false[/code] if it could not.
+			</description>
+		</method>
 		<method name="disengage">
 			<return type="void" />
 			<param index="0" name="rig" type="Node" />
@@ -34,8 +47,14 @@
 		<member name="fade_out" type="float" setter="set_fade_out" getter="get_fade_out" default="0.2">
 			Seconds the pose takes to fade out when disengaged.
 		</member>
+		<member name="body_bones" type="PackedStringArray" setter="set_body_bones" getter="get_body_bones" default="PackedStringArray()">
+			Bones of the pose skeleton that follow the body instead of this node (an elbow's pole target, for example). Filled in when the pose skeleton is made.
+		</member>
 		<member name="pose" type="AnchoredPose" setter="set_pose" getter="get_pose">
-			The pose, relative to this node.
+			A pose kept in a resource, relative to this node. It is used only when there is no [member pose_skeleton].
+		</member>
+		<member name="pose_skeleton" type="NodePath" setter="set_pose_skeleton" getter="get_pose_skeleton" default="NodePath(&quot;&quot;)">
+			A [Skeleton3D] (a child of this node) that holds the pose as the poses of its bones. The pose is what they are at every moment, so you pose it with the normal Skeleton3D tools and animate it like any skeleton: key its bones in an [AnimationPlayer] of the scene (fingers, the hand, the wrist, any bone), and the character's slot follows the animation. The bones without a parent are relative to this node, so the hand moves with it. Press "Create the pose skeleton" to make it. The preview ghost shows it on the character, live.
 		</member>
 		<member name="posing" type="bool" setter="set_posing" getter="is_posing" default="false">
 			Editor only, not saved. Turn it on to pose the ghost yourself. The ghost's skeleton is selected in the editor, so the Skeleton3D tools (pose mode, the bone gizmos, undo) work on it, and everything you change is kept in [member pose] at once (a new one is made if there is none). Save [member pose] as a file, or give it to other targets, to reuse it. Select this node again and turn it off when done.

@@ -36,6 +36,7 @@
 #include "scene/resources/packed_scene.h"
 
 class AnchoredPoseModifier3D;
+class Skeleton3D;
 
 // A place in the world that a part of a character (a hand, a foot ...) is posed against, with the pose.
 class PoseTarget3D : public Node3D {
@@ -43,6 +44,10 @@ class PoseTarget3D : public Node3D {
 
 	StringName slot;
 	Ref<AnchoredPose> pose;
+	// A Skeleton3D child that holds the pose as bone poses: pose it with the normal tools and animate it with an
+	// AnimationPlayer, and the character's slot follows it.
+	NodePath pose_skeleton;
+	PackedStringArray body_bones;
 	float fade_in = 0.2;
 	float fade_out = 0.2;
 
@@ -55,6 +60,7 @@ class PoseTarget3D : public Node3D {
 	bool posing = false;
 	bool pose_dirty = false; // Changed while posing: saved to its file with the scene.
 	void _pose_changed();
+	Skeleton3D *_get_pose_skeleton() const;
 
 #ifdef TOOLS_ENABLED
 	ObjectID ghost_id;
@@ -81,6 +87,14 @@ public:
 	StringName get_slot() const;
 	void set_pose(const Ref<AnchoredPose> &p_pose);
 	Ref<AnchoredPose> get_pose() const;
+	void set_pose_skeleton(const NodePath &p_path);
+	NodePath get_pose_skeleton() const;
+	void set_body_bones(const PackedStringArray &p_bones);
+	PackedStringArray get_body_bones() const;
+	// Makes the pose skeleton (a Skeleton3D child with the bones the slot of `p_rig` poses) and puts it in use.
+	bool create_pose_skeleton_from(Node *p_rig);
+	void create_pose_skeleton(); // Editor: from the preview character.
+	Callable get_create_pose_skeleton_button() const;
 	void set_fade_in(float p_seconds);
 	float get_fade_in() const;
 	void set_fade_out(float p_seconds);

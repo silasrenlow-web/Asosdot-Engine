@@ -41,11 +41,21 @@ bool AnchoredPoseModifier3D::BoneState::operator==(const BoneState &p_other) con
 
 // ---------------------------------------------------------------- helpers
 
+Skeleton3D *AnchoredPoseModifier3D::_get_proxy() const {
+	if (!(engaged || lingering)) {
+		return nullptr;
+	}
+	return ObjectDB::get_instance<Skeleton3D>(engaged_proxy);
+}
+
 bool AnchoredPoseModifier3D::_uses_engaged() const {
-	return (engaged || lingering) && engaged_pose.is_valid();
+	return (engaged || lingering) && (engaged_pose.is_valid() || _get_proxy() != nullptr);
 }
 
 bool AnchoredPoseModifier3D::_is_body_bone(const String &p_name) const {
+	if (_get_proxy()) {
+		return engaged_body_bones.has(p_name);
+	}
 	const PackedStringArray list = _uses_engaged() ? engaged_pose->get_body_bones() : body_bones;
 	return list.has(p_name);
 }
@@ -85,6 +95,24 @@ void AnchoredPoseModifier3D::_rebuild_entries(Skeleton3D *p_skeleton) {
 	entries.clear();
 	entries_dirty = false;
 	entries_version = p_skeleton->get_version();
+	if (Skeleton3D *proxy = _get_proxy()) {
+		// The pose is what the bones of the pose skeleton are now (they may be animated).
+		for (int i = 0; i < proxy->get_bone_count(); i++) {
+			const String name = proxy->get_bone_name(i);
+			const int bone = p_skeleton->find_bone(name);
+			if (bone < 0) {
+				continue;
+			}
+			PoseEntry entry;
+			entry.bone = bone;
+			entry.anchored = p_skeleton->get_bone_parent(bone) < 0 && !_is_body_bone(name);
+			entry.position = proxy->get_bone_pose_position(i);
+			entry.rotation = proxy->get_bone_pose_rotation(i).normalized();
+			entry.scale = proxy->get_bone_pose_scale(i);
+			entries.push_back(entry);
+		}
+		return;
+	}
 	const Dictionary source = _uses_engaged() ? engaged_pose->get_bones() : pose;
 	for (const Variant &key : source.get_key_list()) {
 		const String name = key;
@@ -225,14 +253,15 @@ void AnchoredPoseModifier3D::_process_modification(double p_delta) {
 	if (!skeleton) {
 		return;
 	}
-	if ((engaged || lingering) && !ObjectDB::get_instance<Node3D>(engaged_anchor)) {
+	if ((engaged || lingering) && (!ObjectDB::get_instance<Node3D>(engaged_anchor) || (engaged_proxy.is_valid() && !ObjectDB::get_instance<Skeleton3D>(engaged_proxy)))) {
 		// The node whose pose this was is gone.
 		engaged = false;
 		lingering = false;
 		engaged_pose.unref();
+		engaged_proxy = ObjectID();
 		entries_dirty = true;
 	}
-	if (entries_dirty || entries_version != skeleton->get_version() || (_uses_engaged() && Engine::get_singleton()->is_editor_hint())) {
+	if (entries_dirty || entries_version != skeleton->get_version() || _get_proxy() || (_uses_engaged() && Engine::get_singleton()->is_editor_hint())) {
 		_rebuild_entries(skeleton);
 	}
 	Node3D *anchor = _get_anchor();
@@ -274,6 +303,7 @@ void AnchoredPoseModifier3D::_process_modification(double p_delta) {
 		if (lingering && blend <= 0.0f) {
 			lingering = false;
 			engaged_pose.unref();
+			engaged_proxy = ObjectID();
 			entries_dirty = true;
 		}
 	}
@@ -296,7 +326,7 @@ void AnchoredPoseModifier3D::_store_bone(Skeleton3D *p_skeleton, Node3D *p_ancho
 		}
 		stored = _anchor_in_skeleton(p_skeleton, p_anchor).affine_inverse() * p_pose_or_global;
 	}
-	if (_uses_engaged()) {
+	if (_uses_engaged() && engaged_pose.is_valid()) {
 		engaged_pose->set_bone(p_skeleton->get_bone_name(p_bone), stored); // The resource of the node that is posed.
 	} else {
 		pose[p_skeleton->get_bone_name(p_bone)] = stored;
@@ -413,7 +443,7 @@ void AnchoredPoseModifier3D::clear_pose() {
 void AnchoredPoseModifier3D::engage(Node3D *p_anchor, const Ref<AnchoredPose> &p_pose, float p_fade_in, float p_fade_out) {
 	ERR_FAIL_NULL(p_anchor);
 	ERR_FAIL_COND(p_pose.is_null());
-	if (engaged && engaged_pose == p_pose && engaged_anchor == p_anchor->get_instance_id()) {
+	if (engaged && engaged_pose == p_pose && !engaged_proxy.is_valid() && engaged_anchor == p_anchor->get_instance_id()) {
 		// Already so (a preview asks every frame).
 		engage_fade_in = p_fade_in;
 		engage_fade_out = p_fade_out;
@@ -427,9 +457,43 @@ void AnchoredPoseModifier3D::engage(Node3D *p_anchor, const Ref<AnchoredPose> &p
 	lingering = false;
 	engaged_anchor = p_anchor->get_instance_id();
 	engaged_pose = p_pose;
+	engaged_proxy = ObjectID();
 	engage_fade_in = p_fade_in;
 	engage_fade_out = p_fade_out;
 	entries_dirty = true;
+}
+
+void AnchoredPoseModifier3D::engage_pose_skeleton(Node3D *p_anchor, Skeleton3D *p_proxy, const PackedStringArray &p_body_bones, float p_fade_in, float p_fade_out) {
+	ERR_FAIL_NULL(p_anchor);
+	ERR_FAIL_NULL(p_proxy);
+	if (engaged && engaged_proxy == p_proxy->get_instance_id() && engaged_anchor == p_anchor->get_instance_id()) {
+		// Already so (a preview asks every frame).
+		engaged_body_bones = p_body_bones;
+		engage_fade_in = p_fade_in;
+		engage_fade_out = p_fade_out;
+		return;
+	}
+	if (edit_active) {
+		WARN_PRINT("AnchoredPoseModifier3D: can not take another pose while editing.");
+		return;
+	}
+	engaged = true;
+	lingering = false;
+	engaged_anchor = p_anchor->get_instance_id();
+	engaged_proxy = p_proxy->get_instance_id();
+	engaged_pose.unref();
+	engaged_body_bones = p_body_bones;
+	engage_fade_in = p_fade_in;
+	engage_fade_out = p_fade_out;
+	entries_dirty = true;
+}
+
+void AnchoredPoseModifier3D::set_pose_roots(const PackedStringArray &p_roots) {
+	pose_roots = p_roots;
+}
+
+PackedStringArray AnchoredPoseModifier3D::get_pose_roots() const {
+	return pose_roots;
 }
 
 void AnchoredPoseModifier3D::release() {
@@ -916,6 +980,9 @@ void AnchoredPoseModifier3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_editor_preview", "preview"), &AnchoredPoseModifier3D::set_editor_preview);
 	ClassDB::bind_method(D_METHOD("is_editor_preview"), &AnchoredPoseModifier3D::is_editor_preview);
 	ClassDB::bind_method(D_METHOD("engage", "anchor", "pose", "fade_in", "fade_out"), &AnchoredPoseModifier3D::engage, DEFVAL(-1.0), DEFVAL(-1.0));
+	ClassDB::bind_method(D_METHOD("engage_pose_skeleton", "anchor", "pose_skeleton", "body_bones", "fade_in", "fade_out"), &AnchoredPoseModifier3D::engage_pose_skeleton, DEFVAL(-1.0), DEFVAL(-1.0));
+	ClassDB::bind_method(D_METHOD("set_pose_roots", "roots"), &AnchoredPoseModifier3D::set_pose_roots);
+	ClassDB::bind_method(D_METHOD("get_pose_roots"), &AnchoredPoseModifier3D::get_pose_roots);
 	ClassDB::bind_method(D_METHOD("release"), &AnchoredPoseModifier3D::release);
 	ClassDB::bind_method(D_METHOD("is_engaged"), &AnchoredPoseModifier3D::is_engaged);
 	ClassDB::bind_method(D_METHOD("write_pose_resource"), &AnchoredPoseModifier3D::write_pose_resource);
@@ -929,6 +996,7 @@ void AnchoredPoseModifier3D::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "pose", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_STORAGE), "set_pose", "get_pose");
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_STRING_ARRAY, "body_bones"), "set_body_bones", "get_body_bones");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "slot"), "set_slot", "get_slot");
+	ADD_PROPERTY(PropertyInfo(Variant::PACKED_STRING_ARRAY, "pose_roots"), "set_pose_roots", "get_pose_roots");
 
 	ADD_GROUP("Reach Assist", "reach_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "reach_assist"), "set_reach_assist", "is_reach_assist");

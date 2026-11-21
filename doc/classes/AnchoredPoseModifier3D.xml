@@ -35,6 +35,17 @@
 				Uses [param pose] relative to [param anchor] instead of this node's own pose, fading in over [param fade_in] seconds (negative: [member fade_time]). It lasts until [method release]. A [PoseTarget3D] does this for you.
 			</description>
 		</method>
+		<method name="engage_pose_skeleton">
+			<return type="void" />
+			<param index="0" name="anchor" type="Node3D" />
+			<param index="1" name="pose_skeleton" type="Skeleton3D" />
+			<param index="2" name="body_bones" type="PackedStringArray" />
+			<param index="3" name="fade_in" type="float" default="-1.0" />
+			<param index="4" name="fade_out" type="float" default="-1.0" />
+			<description>
+				Like [method engage], but the pose is what the bones of [param pose_skeleton] are at every moment, so animating them animates the pose. Bones without a parent follow [param anchor] (they are in the skeleton's space relative to it), unless they are in [param body_bones]. A [PoseTarget3D] does this with its pose skeleton.
+			</description>
+		</method>
 		<method name="erase_pose_bone">
 			<return type="void" />
 			<param index="0" name="bone" type="StringName" />
@@ -133,6 +144,9 @@
 		</member>
 		<member name="pose_resource" type="AnchoredPose" setter="set_pose_resource" getter="get_pose_resource">
 			Where the pose is moved to and from with the "Write the pose into the resource" and "Read the pose from the resource" buttons.
+		</member>
+		<member name="pose_roots" type="PackedStringArray" setter="set_pose_roots" getter="get_pose_roots" default="PackedStringArray()">
+			The bones this modifier poses, as the roots of their subtrees: for example the arm's IK target bone and the elbow's, which take the whole hand with them. A [PoseTarget3D] makes its pose skeleton from these bones.
 		</member>
 		<member name="preview_anchor" type="bool" setter="set_preview_anchor" getter="is_preview_anchor" default="true">
 			Editor only. Shows [member anchor_node] while editing even if the scene hides it. It is hidden again before the scene is saved.

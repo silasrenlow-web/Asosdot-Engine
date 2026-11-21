@@ -39,6 +39,7 @@
 #include "scene/3d/anchored_pose_modifier_3d.h"
 #include "scene/3d/camera_3d.h"
 #include "scene/3d/mesh_instance_3d.h"
+#include "scene/3d/skeleton_3d.h"
 #include "scene/3d/physics/collision_object_3d.h"
 #include "scene/3d/audio_stream_player_3d.h"
 #include "scene/3d/light_3d.h"
@@ -66,17 +67,127 @@ AnchoredPoseModifier3D *PoseTarget3D::_find_modifier(Node *p_node, const StringN
 	return nullptr;
 }
 
+Skeleton3D *PoseTarget3D::_get_pose_skeleton() const {
+	if (pose_skeleton.is_empty() || !is_inside_tree()) {
+		return nullptr;
+	}
+	return Object::cast_to<Skeleton3D>(get_node_or_null(pose_skeleton));
+}
+
 bool PoseTarget3D::engage(Node *p_rig) {
 	ERR_FAIL_NULL_V(p_rig, false);
-	if (pose.is_null() || slot == StringName()) {
+	Skeleton3D *proxy = _get_pose_skeleton();
+	if ((pose.is_null() && !proxy) || slot == StringName()) {
 		return false;
 	}
 	AnchoredPoseModifier3D *modifier = _find_modifier(p_rig, slot, 0);
 	if (!modifier) {
 		return false;
 	}
-	modifier->engage(this, pose, fade_in, fade_out);
+	if (proxy) {
+		modifier->engage_pose_skeleton(this, proxy, body_bones, fade_in, fade_out);
+	} else {
+		modifier->engage(this, pose, fade_in, fade_out);
+	}
 	return true;
+}
+
+// The pose skeleton: the bones of the rig's slot (the subtrees of its pose_roots), as a Skeleton3D child.
+// The roots (the hand's IK target bone) start at the target, the rest at rest. Poses live in the bone poses
+// of that skeleton, so they can be made with the Skeleton3D tools and animated with any AnimationPlayer.
+bool PoseTarget3D::create_pose_skeleton_from(Node *p_rig) {
+	ERR_FAIL_NULL_V(p_rig, false);
+	ERR_FAIL_COND_V_MSG(!is_inside_tree(), false, "PoseTarget3D must be in the scene tree.");
+	if (_get_pose_skeleton()) {
+		WARN_PRINT("PoseTarget3D: already has a pose skeleton.");
+		return false;
+	}
+	AnchoredPoseModifier3D *modifier = _find_modifier(p_rig, slot, 0);
+	ERR_FAIL_NULL_V_MSG(modifier, false, vformat("No AnchoredPoseModifier3D with the slot '%s' in the rig.", slot));
+	Skeleton3D *source = modifier->get_skeleton();
+	ERR_FAIL_NULL_V(source, false);
+	const PackedStringArray roots = modifier->get_pose_roots();
+	ERR_FAIL_COND_V_MSG(roots.is_empty(), false, "The modifier has no pose_roots: set the bones it poses (for example the hand's IK target bone).");
+
+	// The bones: every root and everything below it.
+	LocalVector<int> chosen;
+	LocalVector<int> index_in_proxy;
+	index_in_proxy.resize(source->get_bone_count());
+	for (int i = 0; i < source->get_bone_count(); i++) {
+		index_in_proxy[i] = -1;
+		int walk = i;
+		bool inside = false;
+		while (walk >= 0) {
+			if (roots.has(source->get_bone_name(walk))) {
+				inside = true;
+				break;
+			}
+			walk = source->get_bone_parent(walk);
+		}
+		if (inside) {
+			chosen.push_back(i);
+		}
+	}
+	ERR_FAIL_COND_V_MSG(chosen.is_empty(), false, "None of the pose_roots bones exist in the skeleton.");
+
+	Skeleton3D *proxy = memnew(Skeleton3D);
+	proxy->set_name("PoseSkeleton");
+	add_child(proxy);
+	if (get_owner()) {
+		proxy->set_owner(get_owner());
+	}
+	for (uint32_t k = 0; k < chosen.size(); k++) {
+		index_in_proxy[chosen[k]] = proxy->add_bone(source->get_bone_name(chosen[k]));
+	}
+	PackedStringArray others;
+	for (uint32_t k = 0; k < chosen.size(); k++) {
+		const int from = chosen[k];
+		const int to = index_in_proxy[from];
+		const int parent = source->get_bone_parent(from);
+		proxy->set_bone_parent(to, parent >= 0 ? index_in_proxy[parent] : -1);
+		proxy->set_bone_rest(to, source->get_bone_rest(from));
+	}
+	proxy->reset_bone_poses();
+	for (uint32_t k = 0; k < chosen.size(); k++) {
+		const int from = chosen[k];
+		if (source->get_bone_parent(from) >= 0 && index_in_proxy[source->get_bone_parent(from)] >= 0) {
+			continue;
+		}
+		// A root: the one the slot reaches with (the hand) starts on the target, the others (an elbow) stay at rest
+		// in the body's space.
+		if (source->get_bone_name(from) == modifier->get_reach_target_bone() || roots.size() == 1) {
+			proxy->set_bone_pose(index_in_proxy[from], Transform3D());
+		} else {
+			others.push_back(source->get_bone_name(from));
+		}
+	}
+	// Same size as the character's skeleton, so the bones are seen where they will be.
+	proxy->set_scale(source->get_global_transform().basis.get_scale());
+	body_bones = others;
+	pose_skeleton = get_path_to(proxy);
+	update_configuration_warnings();
+	return true;
+}
+
+Callable PoseTarget3D::get_create_pose_skeleton_button() const {
+	return callable_mp(const_cast<PoseTarget3D *>(this), &PoseTarget3D::create_pose_skeleton);
+}
+
+void PoseTarget3D::set_pose_skeleton(const NodePath &p_path) {
+	pose_skeleton = p_path;
+	update_configuration_warnings();
+}
+
+NodePath PoseTarget3D::get_pose_skeleton() const {
+	return pose_skeleton;
+}
+
+void PoseTarget3D::set_body_bones(const PackedStringArray &p_bones) {
+	body_bones = p_bones;
+}
+
+PackedStringArray PoseTarget3D::get_body_bones() const {
+	return body_bones;
 }
 
 void PoseTarget3D::disengage(Node *p_rig) {
@@ -90,6 +201,24 @@ void PoseTarget3D::disengage(Node *p_rig) {
 // ---------------------------------------------------------------- the preview (editor only)
 
 #ifdef TOOLS_ENABLED
+// Editor button: makes the pose skeleton from the preview character, and selects it to be posed.
+void PoseTarget3D::create_pose_skeleton() {
+	_update_preview();
+	Node *ghost = ObjectDB::get_instance<Node>(ghost_id);
+	if (!ghost) {
+		WARN_PRINT("PoseTarget3D: there is no preview character to take the bones from (see animation/pose_target/preview_rig).");
+		return;
+	}
+	if (create_pose_skeleton_from(ghost)) {
+		Object *editor = Engine::get_singleton()->get_singleton_object("EditorInterface");
+		if (editor) {
+			editor->call("mark_scene_as_unsaved");
+		}
+		notify_property_list_changed();
+		_select_in_editor(_get_pose_skeleton());
+	}
+}
+
 AnchoredPoseModifier3D *PoseTarget3D::_get_ghost_modifier() const {
 	Node *ghost = ObjectDB::get_instance<Node>(ghost_id);
 	return ghost ? _find_modifier(ghost, slot, 0) : nullptr;
@@ -159,6 +288,13 @@ void PoseTarget3D::set_posing(bool p_posing) {
 		return;
 	}
 	if (p_posing) {
+		if (Skeleton3D *proxy = _get_pose_skeleton()) {
+			// The pose skeleton is a real node of the scene: the normal pose tools and keys work on it.
+			posing = true;
+			_select_in_editor(proxy);
+			notify_property_list_changed();
+			return;
+		}
 		if (pose.is_null()) {
 			Ref<AnchoredPose> fresh;
 			fresh.instantiate();
@@ -181,7 +317,7 @@ void PoseTarget3D::set_posing(bool p_posing) {
 		}
 	} else if (posing) {
 		AnchoredPoseModifier3D *modifier = _get_ghost_modifier();
-		if (modifier) {
+		if (modifier && modifier->is_editing()) {
 			modifier->set_editing(false);
 		}
 		posing = false;
@@ -306,7 +442,9 @@ void PoseTarget3D::_update_preview() {
 		if (!modifier) {
 			continue;
 		}
-		if (pose.is_valid() && modifier->get_slot() == slot) {
+		if (modifier->get_slot() == slot && _get_pose_skeleton()) {
+			modifier->engage_pose_skeleton(this, _get_pose_skeleton(), body_bones, fade_in, fade_out);
+		} else if (pose.is_valid() && modifier->get_slot() == slot) {
 			modifier->engage(this, pose, fade_in, fade_out);
 		} else {
 			if (modifier->is_engaged()) {
@@ -335,6 +473,10 @@ Color PoseTarget3D::get_preview_color() const {
 #ifndef TOOLS_ENABLED
 void PoseTarget3D::set_posing(bool p_posing) {
 	posing = false; // Posing the ghost is an editor tool.
+}
+
+void PoseTarget3D::create_pose_skeleton() {
+	// Making the pose skeleton from the preview character is an editor tool (see create_pose_skeleton_from).
 }
 #endif // TOOLS_ENABLED
 
@@ -371,8 +513,8 @@ PackedStringArray PoseTarget3D::get_configuration_warnings() const {
 	if (slot == StringName()) {
 		warnings.push_back(RTR("Set slot to the name of the AnchoredPoseModifier3D this target poses (for example the right hand's)."));
 	}
-	if (pose.is_null()) {
-		warnings.push_back(RTR("Assign a pose (an AnchoredPose resource) to show and use."));
+	if (pose.is_null() && pose_skeleton.is_empty()) {
+		warnings.push_back(RTR("Press \"Create the pose skeleton\" (a Skeleton3D to pose and animate), or assign a pose (an AnchoredPose resource)."));
 	}
 	return warnings;
 }
@@ -485,10 +627,20 @@ void PoseTarget3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_preview_color"), &PoseTarget3D::get_preview_color);
 	ClassDB::bind_method(D_METHOD("set_posing", "posing"), &PoseTarget3D::set_posing);
 	ClassDB::bind_method(D_METHOD("is_posing"), &PoseTarget3D::is_posing);
+	ClassDB::bind_method(D_METHOD("set_pose_skeleton", "path"), &PoseTarget3D::set_pose_skeleton);
+	ClassDB::bind_method(D_METHOD("get_pose_skeleton"), &PoseTarget3D::get_pose_skeleton);
+	ClassDB::bind_method(D_METHOD("set_body_bones", "bones"), &PoseTarget3D::set_body_bones);
+	ClassDB::bind_method(D_METHOD("get_body_bones"), &PoseTarget3D::get_body_bones);
+	ClassDB::bind_method(D_METHOD("create_pose_skeleton_from", "rig"), &PoseTarget3D::create_pose_skeleton_from);
+	ClassDB::bind_method(D_METHOD("create_pose_skeleton"), &PoseTarget3D::create_pose_skeleton);
+	ClassDB::bind_method(D_METHOD("get_create_pose_skeleton_button"), &PoseTarget3D::get_create_pose_skeleton_button);
 	ClassDB::bind_method(D_METHOD("engage", "rig"), &PoseTarget3D::engage);
 	ClassDB::bind_method(D_METHOD("disengage", "rig"), &PoseTarget3D::disengage);
 
 	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "slot"), "set_slot", "get_slot");
+	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "pose_skeleton", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Skeleton3D"), "set_pose_skeleton", "get_pose_skeleton");
+	ADD_PROPERTY(PropertyInfo(Variant::CALLABLE, "create_pose_skeleton_button", PROPERTY_HINT_TOOL_BUTTON, "Create the pose skeleton,Skeleton3D", PROPERTY_USAGE_EDITOR), "", "get_create_pose_skeleton_button");
+	ADD_PROPERTY(PropertyInfo(Variant::PACKED_STRING_ARRAY, "body_bones"), "set_body_bones", "get_body_bones");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "pose", PROPERTY_HINT_RESOURCE_TYPE, "AnchoredPose"), "set_pose", "get_pose");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "fade_in", PROPERTY_HINT_RANGE, "0,3,0.01,or_greater,suffix:s"), "set_fade_in", "get_fade_in");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "fade_out", PROPERTY_HINT_RANGE, "0,3,0.01,or_greater,suffix:s"), "set_fade_out", "get_fade_out");
