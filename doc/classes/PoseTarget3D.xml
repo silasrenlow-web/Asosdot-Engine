@@ -68,6 +68,9 @@
 		<member name="preview_enabled" type="bool" setter="set_preview" getter="is_preview" default="true">
 			Editor only. Shows the preview character while you edit the scene this node is in.
 		</member>
+		<member name="preview_game_scale" type="float" setter="set_game_scale" getter="get_game_scale" default="1.0">
+			Editor only. The scale this object has where it is used in the game, when the level scales it (a switch made big and shrunk to [code]0.2[/code] in the level). The preview character is shown [code]1 / preview_game_scale[/code] times the size, so it is the same size next to the object as it will be in the game; [member preview_distance] and [member preview_height] go with it. The pose itself never depends on the object's scale: only this node's position follows it.
+		</member>
 		<member name="preview_height" type="float" setter="set_preview_height" getter="get_preview_height" default="0.35">
 			Editor only. How far above the target the preview character's eyes are.
 		</member>

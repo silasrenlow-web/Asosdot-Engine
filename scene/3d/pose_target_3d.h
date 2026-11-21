@@ -56,6 +56,7 @@ class PoseTarget3D : public Node3D {
 	float preview_distance = 0.6;
 	float preview_height = 0.35;
 	float preview_yaw = 0.0;
+	float game_scale = 1.0;
 	Color preview_color = Color(0.45, 0.8, 1.0, 0.4);
 	bool posing = false;
 	bool pose_dirty = false; // Changed while posing: saved to its file with the scene.
@@ -110,6 +111,8 @@ public:
 	float get_preview_height() const;
 	void set_preview_yaw(float p_degrees);
 	float get_preview_yaw() const;
+	void set_game_scale(float p_scale);
+	float get_game_scale() const;
 	void set_preview_color(const Color &p_color);
 	Color get_preview_color() const;
 	void set_posing(bool p_posing);

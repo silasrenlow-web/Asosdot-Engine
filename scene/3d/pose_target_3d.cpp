@@ -162,7 +162,11 @@ bool PoseTarget3D::create_pose_skeleton_from(Node *p_rig) {
 		}
 	}
 	// Same size as the character's skeleton, so the bones are seen where they will be.
-	proxy->set_scale(source->get_global_transform().basis.get_scale());
+	{
+		const Vector3 wanted = source->get_global_transform().basis.get_scale();
+		const Vector3 here = get_global_transform().basis.get_scale();
+		proxy->set_scale(Vector3(wanted.x / MAX(here.x, 0.00001f), wanted.y / MAX(here.y, 0.00001f), wanted.z / MAX(here.z, 0.00001f)));
+	}
 	body_bones = others;
 	pose_skeleton = get_path_to(proxy);
 	update_configuration_warnings();
@@ -427,13 +431,34 @@ void PoseTarget3D::_update_preview() {
 	forward.y = 0;
 	forward = forward.is_zero_approx() ? Vector3(0, 0, 1) : forward.normalized();
 	forward = Basis(Vector3(0, 1, 0), Math::deg_to_rad(preview_yaw)).xform(forward);
-	const Vector3 eye = target + forward * preview_distance + Vector3(0, preview_height, 0);
+	// If the object is scaled in the game (the scene is bigger than it is used), the character is shown that much
+	// bigger here, so it is the same size next to the object as it will be there. The stand-back distance and
+	// the eye height go with it.
+	const float k = game_scale > 0.0001f ? 1.0f / game_scale : 1.0f;
+	const Vector3 eye = target + forward * preview_distance * k + Vector3(0, preview_height * k, 0);
 	const Vector3 look = target - eye;
 	if (look.is_zero_approx()) {
 		return;
 	}
-	const Transform3D eye_transform(Basis::looking_at(look, Vector3(0, 1, 0)), eye);
-	ghost->set_global_transform(eye_transform * ghost_camera_in_root.affine_inverse());
+	const Basis look_basis = Basis::looking_at(look, Vector3(0, 1, 0));
+	const Basis root_turn = look_basis * ghost_camera_in_root.basis.orthonormalized().inverse();
+	ghost->set_global_transform(Transform3D(root_turn.scaled(Vector3(k, k, k)), eye - root_turn.xform(ghost_camera_in_root.origin * k)));
+
+	// The pose skeleton is drawn the size of the character (it may sit under a scaled node).
+	if (Skeleton3D *proxy = _get_pose_skeleton()) {
+		AnchoredPoseModifier3D *ghost_modifier = _get_ghost_modifier();
+		Skeleton3D *rig_skeleton = ghost_modifier ? ghost_modifier->get_skeleton() : nullptr;
+		if (rig_skeleton) {
+			const Vector3 wanted = rig_skeleton->get_global_transform().basis.get_scale();
+			const Vector3 here = get_global_transform().basis.get_scale();
+			if (here.x > 0.00001f && here.y > 0.00001f && here.z > 0.00001f) {
+				const Vector3 local = Vector3(wanted.x / here.x, wanted.y / here.y, wanted.z / here.z);
+				if (!proxy->get_scale().is_equal_approx(local)) {
+					proxy->set_scale(local);
+				}
+			}
+		}
+	}
 
 	// Pose the slot of this target; the rig's other slots stay at rest.
 	TypedArray<Node> modifiers = ghost->find_children("*", "AnchoredPoseModifier3D", true, false);
@@ -460,6 +485,14 @@ void PoseTarget3D::_update_preview() {
 
 bool PoseTarget3D::is_posing() const {
 	return posing;
+}
+
+void PoseTarget3D::set_game_scale(float p_scale) {
+	game_scale = p_scale;
+}
+
+float PoseTarget3D::get_game_scale() const {
+	return game_scale;
 }
 
 void PoseTarget3D::set_preview_color(const Color &p_color) {
@@ -623,6 +656,8 @@ void PoseTarget3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_preview_height"), &PoseTarget3D::get_preview_height);
 	ClassDB::bind_method(D_METHOD("set_preview_yaw", "degrees"), &PoseTarget3D::set_preview_yaw);
 	ClassDB::bind_method(D_METHOD("get_preview_yaw"), &PoseTarget3D::get_preview_yaw);
+	ClassDB::bind_method(D_METHOD("set_game_scale", "scale"), &PoseTarget3D::set_game_scale);
+	ClassDB::bind_method(D_METHOD("get_game_scale"), &PoseTarget3D::get_game_scale);
 	ClassDB::bind_method(D_METHOD("set_preview_color", "color"), &PoseTarget3D::set_preview_color);
 	ClassDB::bind_method(D_METHOD("get_preview_color"), &PoseTarget3D::get_preview_color);
 	ClassDB::bind_method(D_METHOD("set_posing", "posing"), &PoseTarget3D::set_posing);
@@ -652,6 +687,7 @@ void PoseTarget3D::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "preview_rig", PROPERTY_HINT_RESOURCE_TYPE, "PackedScene"), "set_preview_rig", "get_preview_rig");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "preview_distance", PROPERTY_HINT_RANGE, "0,5,0.01,or_greater,suffix:m"), "set_preview_distance", "get_preview_distance");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "preview_height", PROPERTY_HINT_RANGE, "-2,3,0.01,or_greater,or_less,suffix:m"), "set_preview_height", "get_preview_height");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "preview_game_scale", PROPERTY_HINT_RANGE, "0.001,10,0.001,or_greater,exp"), "set_game_scale", "get_game_scale");
 	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "preview_color"), "set_preview_color", "get_preview_color");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "preview_yaw", PROPERTY_HINT_RANGE, "-180,180,0.1,degrees"), "set_preview_yaw", "get_preview_yaw");
 }
