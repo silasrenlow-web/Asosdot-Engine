@@ -157,6 +157,7 @@
 #include "main/main.h"
 #include "scene/2d/node_2d.h"
 #include "scene/3d/bone_attachment_3d.h"
+#include "scene/3d/procedural_root_3d.h"
 #include "scene/animation/animation_tree.h"
 #include "scene/gui/color_picker.h"
 #include "scene/gui/dialogs.h"
@@ -2526,6 +2527,8 @@ void EditorNode::_save_scene(String p_file, int idx) {
 	// This needs to be emitted before saving external resources.
 	emit_signal(SNAME("scene_saved"), p_file);
 	editor_data.notify_scene_saved(p_file);
+	// Generated parts of this scene (ProceduralRoot3D) are updated wherever they stand.
+	ProceduralRoot3D::notify_scene_saved(p_file);
 
 	_save_external_resources();
 	saving_scene = p_file; // Some editors may save scenes of built-in resources as external data, so avoid saving this scene again.

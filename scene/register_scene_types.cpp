@@ -264,6 +264,7 @@
 #include "scene/3d/limit_angular_velocity_modifier_3d.h"
 #include "scene/3d/anchored_pose_modifier_3d.h"
 #include "scene/3d/pose_target_3d.h"
+#include "scene/3d/procedural_root_3d.h"
 #include "scene/3d/look_at_modifier_3d.h"
 #include "scene/3d/marker_3d.h"
 #include "scene/3d/mesh_instance_3d.h"
@@ -760,6 +761,7 @@ void register_scene_types() {
 	GDREGISTER_CLASS(LookAtModifier3D);
 	GDREGISTER_CLASS(AnchoredPoseModifier3D);
 	GDREGISTER_CLASS(PoseTarget3D);
+	GDREGISTER_CLASS(ProceduralRoot3D);
 	GLOBAL_DEF(PropertyInfo(Variant::STRING, "animation/pose_target/preview_rig", PROPERTY_HINT_FILE, "*.tscn,*.scn"), "");
 #ifndef DISABLE_DEPRECATED
 	GDREGISTER_CLASS(SkeletonIK3D);

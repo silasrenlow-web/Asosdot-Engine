@@ -14,6 +14,7 @@
 #include "core/templates/local_vector.h"
 #include "core/templates/safe_refcount.h"
 #include "editor/plugins/editor_plugin.h"
+#include "scene/debugger/view_3d_controller.h"
 #include "scene/gui/box_container.h"
 #include "servers/audio/audio_stream.h"
 
@@ -258,6 +259,14 @@ private:
 	float orbit_pitch = -0.2;
 	float orbit_distance = 4.0;
 	bool framed = false;
+	// Navigates the studio camera exactly like a 3D view does: the same buttons, modifiers,
+	// sensitivities and freelook as the editor settings say. It only moves; the orbit values
+	// above stay what is remembered per shot and rendered, and are copied in and out around
+	// every use.
+	Ref<View3DController> navigator;
+	void _sync_navigator_from_orbit();
+	bool _sync_orbit_from_navigator();
+	void _set_freelook(bool p_enabled);
 	// What the studio lights and frames, found from the scene's geometry.
 	AABB subject_bounds;
 

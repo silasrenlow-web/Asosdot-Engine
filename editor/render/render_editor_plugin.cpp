@@ -31,6 +31,7 @@
 #include "render_editor_plugin.h"
 
 #include "core/config/project_settings.h"
+#include "core/input/input.h"
 #include "core/io/dir_access.h"
 #include "core/math/triangle_mesh.h"
 #include "core/object/callable_mp.h"
@@ -45,6 +46,7 @@
 #include "editor/gui/editor_toaster.h"
 #include "editor/inspector/editor_inspector.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
+#include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/3d/camera_3d.h"
 #include "scene/3d/light_3d.h"
@@ -615,6 +617,15 @@ void AsosdotRenderEditor::_update_studio() {
 
 	// The scene's own environment when it lights itself, cleared behind the
 	// subject when the background is to be transparent.
+	// Scene Lighting looks at the scene exactly as the 3D view does: its View Environment choice
+	// decides between the scene's own environment, with the preview sun and sky when it has none,
+	// and the plain editor environment. The 3D view is the reference, nothing is added to it.
+	Ref<Environment> view_environment;
+	if (Node3DEditor *editor_3d = Node3DEditor::get_singleton()) {
+		if (Node3DEditorViewport *view = editor_3d->get_last_used_viewport()) {
+			view_environment = view->get_view_environment();
+		}
+	}
 	Ref<Environment> camera_environment;
 	if (lit) {
 		camera_environment = environment;
@@ -626,11 +637,15 @@ void AsosdotRenderEditor::_update_studio() {
 		Ref<Environment> scene_environment = get_viewport() && get_viewport()->find_world_3d().is_valid() ? get_viewport()->find_world_3d()->get_environment() : Ref<Environment>();
 		if (Camera3D *scene_camera = _get_scene_camera(); scene_camera && scene_camera->get_environment().is_valid()) {
 			scene_environment = scene_camera->get_environment();
+		} else if (!scene_camera && view_environment.is_valid()) {
+			scene_environment = view_environment;
 		}
 		camera_environment = scene_environment.is_valid() ? Ref<Environment>(scene_environment->duplicate()) : Ref<Environment>(memnew(Environment));
 		camera_environment->set_background(Environment::BG_CLEAR_COLOR);
 	} else if (Camera3D *scene_camera = _get_scene_camera()) {
 		camera_environment = scene_camera->get_environment();
+	} else {
+		camera_environment = view_environment;
 	}
 	preview_camera->set_environment(camera_environment);
 	render_camera->set_environment(camera_environment);
@@ -1000,13 +1015,93 @@ void AsosdotRenderEditor::_update_output_label() {
 /*                                   Input                                    */
 /* -------------------------------------------------------------------------- */
 
+// The navigator speaks the 3D view's language: the camera sits `distance` behind a focus point,
+// turned by y_rot and x_rot, which are the negatives of yaw and pitch.
+void AsosdotRenderEditor::_sync_navigator_from_orbit() {
+	View3DController::Cursor &cursor = navigator->cursor;
+	cursor.pos = orbit_target;
+	cursor.y_rot = -orbit_yaw;
+	cursor.x_rot = -orbit_pitch;
+	cursor.unsnapped_y_rot = cursor.y_rot;
+	cursor.unsnapped_x_rot = cursor.x_rot;
+	cursor.distance = orbit_distance;
+	cursor.fov_scale = 1.0;
+	const Vector3 forward = navigator->to_camera_transform().basis.xform(Vector3(0, 0, -1));
+	cursor.eye_pos = cursor.pos - cursor.distance * forward;
+	// Without a delta the smoothed cursor is the cursor itself, which is what freelook starts from.
+	navigator->update_camera();
+}
+
+bool AsosdotRenderEditor::_sync_orbit_from_navigator() {
+	const View3DController::Cursor &cursor = navigator->cursor;
+	const Vector3 target = cursor.pos;
+	const float yaw = -cursor.y_rot;
+	const float pitch = -cursor.x_rot;
+	const float distance = cursor.distance;
+	if (target == orbit_target && yaw == orbit_yaw && pitch == orbit_pitch && distance == orbit_distance) {
+		return false;
+	}
+	orbit_target = target;
+	orbit_yaw = yaw;
+	orbit_pitch = pitch;
+	orbit_distance = distance;
+	return true;
+}
+
+void AsosdotRenderEditor::_set_freelook(bool p_enabled) {
+	if (navigator->is_freelook_enabled() == p_enabled) {
+		return;
+	}
+	if (p_enabled) {
+		_sync_navigator_from_orbit();
+	}
+	// Hides and captures the mouse while on, and puts it back where it was when off.
+	navigator->set_freelook_enabled(p_enabled);
+	if (p_enabled && !preview_surface->has_focus()) {
+		preview_surface->grab_focus();
+	}
+	if (!p_enabled && _sync_orbit_from_navigator()) {
+		_update_cameras();
+	}
+}
+
 void AsosdotRenderEditor::_preview_input(const Ref<InputEvent> &p_event) {
 	if (job.active) {
 		return;
 	}
 	const bool studio_camera = _get_scene_camera() == nullptr;
+	if (!studio_camera) {
+		_set_freelook(false);
+	}
+	const Ref<InputEventMouseButton> mb = p_event;
+	bool navigated = false;
+	if (studio_camera && pose_drag.kind == DRAG_NONE) {
+		// Holding the right mouse button flies the camera like in the 3D view, with the same keys.
+		if (mb.is_valid() && mb->get_button_index() == MouseButton::RIGHT) {
+			if (!mb->is_pressed()) {
+				_set_freelook(false);
+			} else if (Node3DEditorViewport::starts_freelook(mb)) {
+				_set_freelook(true);
+			}
+		}
+		// Everything else the 3D view does with the mouse: orbit, pan, zoom, the modifiers
+		// and buttons the editor settings choose.
+		_sync_navigator_from_orbit();
+		navigated = navigator->gui_input(p_event, preview_surface->get_global_rect());
+		if (_sync_orbit_from_navigator()) {
+			_update_cameras();
+		}
+	}
 	const Ref<InputEventKey> k = p_event;
 	if (k.is_valid() && k->is_pressed() && !k->is_echo()) {
+		if (navigator->is_freelook_enabled()) {
+			// The keys move the camera now, they are not the pose tools.
+			if (k->get_keycode() == Key::ESCAPE) {
+				_set_freelook(false);
+				preview_surface->accept_event();
+			}
+			return;
+		}
 		if (pose_drag.kind != DRAG_NONE && k->get_keycode() == Key::ESCAPE) {
 			_cancel_pose_drag();
 			preview_surface->accept_event();
@@ -1048,7 +1143,6 @@ void AsosdotRenderEditor::_preview_input(const Ref<InputEvent> &p_event) {
 		}
 		return;
 	}
-	const Ref<InputEventMouseButton> mb = p_event;
 	if (mb.is_valid() && pose_drag.kind != DRAG_NONE) {
 		// Another button while posing puts the pose back as it was.
 		if (mb->is_pressed() && mb->get_button_index() == MouseButton::RIGHT) {
@@ -1068,12 +1162,8 @@ void AsosdotRenderEditor::_preview_input(const Ref<InputEvent> &p_event) {
 		}
 	}
 	if (mb.is_valid()) {
-		if (mb->is_pressed() && (mb->get_button_index() == MouseButton::WHEEL_UP || mb->get_button_index() == MouseButton::WHEEL_DOWN)) {
-			if (studio_camera) {
-				orbit_distance *= mb->get_button_index() == MouseButton::WHEEL_UP ? 0.9f : 1.0f / 0.9f;
-				orbit_distance = CLAMP(orbit_distance, 0.01f, 100000.0f);
-				_update_cameras();
-			}
+		if (mb->get_button_index() == MouseButton::WHEEL_UP || mb->get_button_index() == MouseButton::WHEEL_DOWN) {
+			// Zoomed by the navigator above, with the studio camera; a scene camera stays where it is.
 			preview_surface->accept_event();
 			return;
 		}
@@ -1112,19 +1202,9 @@ void AsosdotRenderEditor::_preview_input(const Ref<InputEvent> &p_event) {
 		if (mm->get_relative().length() > 1.0f) {
 			drag_moved = true;
 		}
-		if (!studio_camera) {
-			return;
+		if (navigated) {
+			preview_surface->accept_event();
 		}
-		if (mm->is_shift_pressed()) {
-			const Basis basis = preview_camera->get_global_transform().basis;
-			const float scale = orbit_distance * 0.0015f / EDSCALE;
-			orbit_target += (-basis.get_column(0) * mm->get_relative().x + basis.get_column(1) * mm->get_relative().y) * scale;
-		} else {
-			orbit_yaw -= mm->get_relative().x * 0.008f;
-			orbit_pitch = CLAMP(orbit_pitch - mm->get_relative().y * 0.008f, -1.55f, 1.55f);
-		}
-		_update_cameras();
-		preview_surface->accept_event();
 	}
 }
 
@@ -1621,6 +1701,7 @@ void AsosdotRenderEditor::set_active(bool p_active) {
 		_update_studio();
 		_apply_sequence_time(sequence_time);
 	} else {
+		_set_freelook(false);
 		if (owns_editor_focus) {
 			EditorInterface::get_singleton()->set_distraction_free_mode(editor_focus_before);
 			owns_editor_focus = false;
@@ -1642,6 +1723,7 @@ void AsosdotRenderEditor::scene_changed() {
 		_finish_job(TTR("Rendering stopped because the edited scene changed."));
 	}
 	_stop_audio();
+	_set_freelook(false);
 	_cancel_pose_drag();
 	_restore_pose();
 	playing = false;
@@ -1693,6 +1775,7 @@ void AsosdotRenderEditor::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_EXIT_TREE: {
+			_set_freelook(false);
 			// The scene goes too when the editor closes; stop looking into it.
 			inspector->edit(nullptr);
 			_stop_audio();
@@ -1705,10 +1788,28 @@ void AsosdotRenderEditor::_notification(int p_what) {
 			_settings_selected(settings_selector->get_current_tab());
 		} break;
 
+		case EditorSettings::NOTIFICATION_EDITOR_SETTINGS_CHANGED: {
+			Node3DEditorViewport::configure_view_3d_controller(navigator.ptr(), false);
+		} break;
+
 		case NOTIFICATION_PROCESS: {
 			if (job.active) {
+				_set_freelook(false);
 				_step_job();
 				break;
+			}
+			if (navigator->is_freelook_enabled()) {
+				if (!active || _get_scene_camera() || !Input::get_singleton()->is_mouse_button_pressed(MouseButton::RIGHT)) {
+					// The button was let go somewhere we did not see it.
+					_set_freelook(false);
+				} else {
+					// W, A, S, D, Q and E fly the camera, as they do in the 3D view.
+					_sync_navigator_from_orbit();
+					navigator->update_freelook(get_process_delta_time());
+					if (_sync_orbit_from_navigator()) {
+						_update_cameras();
+					}
+				}
 			}
 			if (repose_pending && active) {
 				repose_pending = false;
@@ -1761,6 +1862,13 @@ AsosdotRenderEditor::AsosdotRenderEditor() {
 	set_v_size_flags(SIZE_EXPAND_FILL);
 
 	_build_workspace();
+
+	navigator.instantiate();
+	Node3DEditorViewport::configure_view_3d_controller(navigator.ptr());
+	// The same limits as the old wheel zoom: from a centimetre to 10 km away (a quarter of the
+	// far plane, a quarter of the near one).
+	navigator->set_z_near(0.0025);
+	navigator->set_z_far(40000);
 
 	// The studio, in the scene's world but not in the scene.
 	studio = memnew(Node3D);

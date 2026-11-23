@@ -522,6 +522,12 @@ protected:
 	static void _bind_methods();
 
 public:
+	// Asosdot: the navigation of a 3D view (shortcuts, sensitivities, freelook), so another view,
+	// such as the Render workspace, navigates exactly like this one.
+	static void configure_view_3d_controller(View3DController *p_controller, bool p_update_all = true);
+	// Whether this right mouse press starts freelook, as the editor settings say.
+	static bool starts_freelook(const Ref<InputEventWithModifiers> &p_event);
+
 	void update_surface() { surface->queue_redraw(); }
 	void update_transform_gizmo_view();
 	void update_transform_gizmo_highlight();
@@ -548,6 +554,9 @@ public:
 
 	SubViewport *get_viewport_node() { return viewport; }
 	Camera3D *get_camera_3d() { return camera; } // return the default camera object.
+	// Asosdot: the environment this view's camera shows the scene with, empty while View Environment is on
+	// (the scene's own, or the preview sun and sky), so another view can light the scene exactly as this one does.
+	Ref<Environment> get_view_environment() const { return camera ? camera->get_environment() : Ref<Environment>(); }
 	Control *get_surface() { return surface; }
 
 	Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p_index);

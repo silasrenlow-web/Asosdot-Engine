@@ -64,6 +64,7 @@
 #include "editor/shader/shader_create_dialog.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/2d/node_2d.h"
+#include "scene/3d/procedural_root_3d.h"
 #include "scene/animation/animation_tree.h"
 #include "scene/audio/audio_stream_player.h"
 #include "scene/gui/box_container.h"
@@ -1472,6 +1473,24 @@ void SceneTreeDock::_tool_selected(int p_tool, bool p_confirm_override) {
 				if (node && node->is_instance()) {
 					scene_tree->emit_signal(SNAME("open"), node->get_scene_file_path());
 				}
+			}
+		} break;
+		case TOOL_GENERATED_SELECT_GENERATOR:
+		case TOOL_GENERATED_REGENERATE: {
+			const List<Node *> selection = editor_selection->get_top_selected_node_list();
+			if (selection.is_empty()) {
+				break;
+			}
+			ProceduralRoot3D *generator = ProceduralRoot3D::get_generator_of(selection.front()->get());
+			if (!generator) {
+				break;
+			}
+			if (p_tool == TOOL_GENERATED_REGENERATE) {
+				generator->generate();
+			} else {
+				editor_selection->clear();
+				editor_selection->add_node(generator);
+				scene_tree->set_selected(generator);
 			}
 		} break;
 		case TOOL_SCENE_CLEAR_INHERITANCE: {
@@ -3948,6 +3967,21 @@ void SceneTreeDock::_tree_rmb(const Vector2 &p_menu_pos) {
 		menu->add_icon_shortcut(get_editor_theme_icon(SNAME("Instance")), ED_GET_SHORTCUT("scene_tree/instantiate_scene"), TOOL_INSTANTIATE);
 		EditorContextMenuPluginManager::get_singleton()->add_options_from_plugins(menu, EditorContextMenuPlugin::CONTEXT_SLOT_SCENE_TREE, PackedStringArray());
 
+		menu->reset_size();
+		menu->set_position(p_menu_pos);
+		menu->popup();
+		return;
+	}
+
+	// A part a ProceduralRoot3D generated is not part of the scene: all that makes sense is opening its scene
+	// (changes made there show here when saved) and regenerating.
+	if (selection.size() == 1 && ProceduralRoot3D::is_generated_node(selection.front()->get())) {
+		if (selection.front()->get()->is_instance()) {
+			menu->add_icon_item(get_editor_theme_icon(SNAME("Load")), TTR("Open in Editor"), TOOL_SCENE_OPEN);
+			menu->set_item_shortcut(-1, ED_GET_SHORTCUT("scene_tree/open_scene_in_editor"));
+		}
+		menu->add_icon_item(get_editor_theme_icon(SNAME("ProceduralRoot3D")), TTR("Select Generator"), TOOL_GENERATED_SELECT_GENERATOR);
+		menu->add_icon_item(get_editor_theme_icon(SNAME("Reload")), TTR("Regenerate"), TOOL_GENERATED_REGENERATE);
 		menu->reset_size();
 		menu->set_position(p_menu_pos);
 		menu->popup();

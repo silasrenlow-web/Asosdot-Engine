@@ -104,6 +104,7 @@
 #include "scene/3d/mesh_instance_3d.h"
 #include "scene/3d/physics/collision_shape_3d.h"
 #include "scene/3d/physics/physics_body_3d.h"
+#include "scene/3d/procedural_root_3d.h"
 #include "scene/3d/rope_3d.h"
 #include "scene/3d/sprite_3d.h"
 #include "scene/3d/visual_instance_3d.h"
@@ -729,22 +730,30 @@ void Node3DEditorViewport::_select_clicked(bool p_allow_locked) {
 
 	Node *edited_scene = EditorNode::get_singleton()->get_edited_scene();
 
-	// Clicking the selected instance again, without dragging, picks the node its scene exposes
-	// there, then the next one down, then the instance again.
-	clicked_hit = hit ? hit->get_instance_id() : ObjectID();
-	if (Node3D *next = _get_exposed_click_target(node)) {
-		node = next;
-		selected = next;
-	}
-	clicked_hit = ObjectID();
-
-	// Prevent selection of nodes not owned by the edited scene.
-	while (node && node != edited_scene->get_parent()) {
-		if (node == edited_scene || edited_scene->is_node_editable(node)) {
-			break;
+	// Something a ProceduralRoot3D generated is not owned by the scene, but a click selects the part
+	// it hit (the room, the prop): its scene opens from the Scene dock.
+	Node3D *generated_part = Object::cast_to<Node3D>(ProceduralRoot3D::get_generated_part(node));
+	if (generated_part) {
+		node = generated_part;
+		selected = generated_part;
+	} else {
+		// Clicking the selected instance again, without dragging, picks the node its scene exposes
+		// there, then the next one down, then the instance again.
+		clicked_hit = hit ? hit->get_instance_id() : ObjectID();
+		if (Node3D *next = _get_exposed_click_target(node)) {
+			node = next;
+			selected = next;
 		}
-		node = node->get_parent();
-		selected = Object::cast_to<Node3D>(node);
+		clicked_hit = ObjectID();
+
+		// Prevent selection of nodes not owned by the edited scene.
+		while (node && node != edited_scene->get_parent()) {
+			if (node == edited_scene || edited_scene->is_node_editable(node)) {
+				break;
+			}
+			node = node->get_parent();
+			selected = Object::cast_to<Node3D>(node);
+		}
 	}
 
 	if (!p_allow_locked) {
@@ -1437,7 +1446,11 @@ void Node3DEditorViewport::_select_region() {
 		Node *node = Object::cast_to<Node>(sp);
 
 		// Selection requires that the node is the edited scene or its descendant, and has an owner.
-		if (node != edited_scene) {
+		// Generated nodes (ProceduralRoot3D) have none: the part they belong to is selected.
+		Node *generated_part = node != edited_scene && edited_scene->is_ancestor_of(node) ? ProceduralRoot3D::get_generated_part(node) : nullptr;
+		if (generated_part && Object::cast_to<Node3D>(generated_part)) {
+			node = generated_part;
+		} else if (node != edited_scene) {
 			if (!node->get_owner() || !edited_scene->is_ancestor_of(node)) {
 				continue;
 			}
@@ -4098,6 +4111,15 @@ void Node3DEditorViewport::_notification(int p_what) {
 }
 
 void Node3DEditorViewport::_update_view_3d_controller(bool p_update_all) {
+	configure_view_3d_controller(view_3d_controller.ptr(), p_update_all);
+}
+
+bool Node3DEditorViewport::starts_freelook(const Ref<InputEventWithModifiers> &p_event) {
+	return p_event.is_valid() && _get_key_modifier(p_event) == _get_key_modifier_setting("editors/3d/freelook/freelook_activation_modifier");
+}
+
+void Node3DEditorViewport::configure_view_3d_controller(View3DController *p_controller, bool p_update_all) {
+	View3DController *view_3d_controller = p_controller;
 	view_3d_controller->set_shortcut(View3DController::SHORTCUT_FOV_DECREASE, ED_GET_SHORTCUT("spatial_editor/decrease_fov"));
 	view_3d_controller->set_shortcut(View3DController::SHORTCUT_FOV_INCREASE, ED_GET_SHORTCUT("spatial_editor/increase_fov"));
 	view_3d_controller->set_shortcut(View3DController::SHORTCUT_FOV_RESET, ED_GET_SHORTCUT("spatial_editor/reset_fov"));
