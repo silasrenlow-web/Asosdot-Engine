@@ -39,6 +39,8 @@
 
 #include <manifold/manifold.h>
 
+#include <cfloat>
+
 namespace {
 
 // What travels through the boolean with every vertex. Manifold interpolates all of it
