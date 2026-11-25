@@ -140,6 +140,14 @@ classes is new, so nothing a Godot 4.7 project or GDExtension uses has changed.
 Run the check with `python misc/scripts/test_godot_compat.py --engine
 bin/asosdot.windows.editor.x86_64.exe --godot <Godot 4.7 editor>`.
 
+## Contributing
+
+Asosdot is not accepting external contributions right now. Please do
+not open pull requests; they will be closed without review. You are
+still free to fork and modify the engine under the MUIG Usage License
+(see below) - this only means changes are not being taken back into
+this repository at the moment.
+
 ## License
 
 Asosdot's own original contributions are released under the
