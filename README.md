@@ -142,8 +142,14 @@ bin/asosdot.windows.editor.x86_64.exe --godot <Godot 4.7 editor>`.
 
 ## License
 
-Asosdot Engine is released under the [MIT license](LICENSE.txt), the same terms
-as the Godot Engine it is built on. Godot's copyright notices are retained in
+Asosdot's own original contributions are released under the
+[MUIG Usage License](MUIG-LICENSE.txt): free for any use, including
+commercial use, provided that modified versions of the engine are shared
+back publicly in source form under the same license. Games and other
+works made with Asosdot are unrestricted.
+
+The Godot Engine code Asosdot is built on remains under the
+[MIT license](LICENSE.txt). Godot's copyright notices are retained in
 `LICENSE.txt` and `COPYRIGHT.txt`, as that license requires, and the About
 dialog lists every third-party component the engine ships.
 
