@@ -1,0 +1,114 @@
+MUIG Usage License
+
+Version 1.0 - 2026-11-25
+
+This license governs the Asosdot engine's original code. Its terms, in one
+breath: anyone may use the engine, including commercially - but the engine
+itself stays open forever. Every improvement shipped to anyone must be
+shared back, in public, under this same license. What it never touches is
+the games people make with it.
+
+----------------------------------------------------------------------
+
+1. What this license covers
+
+This license covers the original contributions made to Asosdot on top of
+the Godot engine - new systems, new files, and Asosdot-specific code
+("the Covered Code").
+
+Asosdot is built on the Godot engine, which is licensed under the MIT
+License. Godot's code is not relicensed by this document: it remains
+under the MIT License, and Godot's copyright and license notices must be
+kept wherever the MIT License requires them. Where a file mixes Godot
+code and Asosdot contributions, this license applies to the Asosdot
+contributions in that file.
+
+2. What you may do
+
+You may, free of charge:
+
+- Use the Covered Code for any purpose, including commercial purposes
+- Copy and distribute it
+- Modify it, and distribute your modified versions
+- Sell products and services built on it, subject to Section 3
+
+3. Share alike - the duties
+
+The Covered Code is shared on a condition: the engine stays open. If you
+pass the engine on, in any form covered below, its code comes with it.
+
+3.1 Distribution. If you distribute a modified version of the Covered
+Code (give or sell a changed version of the engine to anyone else), then:
+
+- The modified Covered Code must be made available in source form
+- It must be licensed under this same license (MUIG Usage License), in
+  full - you may not relicense it, sublicense it, or wrap it in
+  additional restrictions
+- The source must be posted publicly (for example, in a public
+  repository), not merely handed privately to your recipients
+
+3.2 The whole engine, not just the edited files. The duty in 3.1 covers
+the modified engine as a whole: every part of the Covered Code in your
+version, changed or unchanged, ships under this license. You may not
+combine the Covered Code with closed code in a way that makes the
+resulting engine closed.
+
+3.3 Network use counts as distribution. Offering a modified version of
+the engine for others to use over a network - as a hosted service, a
+cloud build service, or any remote access - counts as distribution under
+3.1, even if no copy changes hands.
+
+3.4 No locking it down. You may not distribute the Covered Code in a form
+protected by technical measures (DRM, locked binaries with withheld build
+information, or similar) that prevent recipients from modifying and
+rebuilding the code they received. Recipients must receive the engine in
+a form they can actually change.
+
+3.5 Private work stays private. Modifications you never distribute and
+never offer over a network carry no duty. You only share what you ship.
+
+4. Your games are yours
+
+Games, applications, and other works you create with Asosdot - including
+exported binaries that contain the engine's runtime or export templates -
+are entirely your property. This license claims no rights over them,
+places no license duties on them, and does not require them to be open
+source, whether you give them away or sell them.
+
+The share-alike duties in Section 3 are about improving the engine, never
+about the works made with it.
+
+5. Notices and name
+
+Keep all copyright notices and a copy of this license with distributions
+of the Covered Code. Keep Godot's MIT license notices as required by the
+MIT License.
+
+This license grants no rights to the Asosdot name or logo. You may state
+truthfully that your work is based on Asosdot; you may not claim it is
+endorsed by the Asosdot project.
+
+6. Patent peace
+
+If you bring a claim alleging that the Covered Code infringes a patent
+you hold, your rights under this license terminate immediately and
+permanently, as in Section 7.
+
+7. Termination - all of it
+
+If you breach this license, all of your rights under it terminate
+automatically and permanently - for this work and for every work licensed
+under the MUIG Usage License. Terminated rights are not restored by later
+compliance; reinstatement is at the sole discretion of the licensor.
+
+People who received the Covered Code, or games made with it, from you
+while you were in breach are not affected, provided they comply with this
+license themselves.
+
+8. No warranty
+
+THE COVERED CODE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY ARISING FROM THE USE OF THE COVERED CODE.
