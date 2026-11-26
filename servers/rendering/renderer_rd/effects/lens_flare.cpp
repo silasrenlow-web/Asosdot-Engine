@@ -30,9 +30,8 @@
 
 #include "lens_flare.h"
 
-#include "lens_flare_textures.gen.h"
-
 #include "core/io/image.h"
+#include "servers/rendering/renderer_rd/effects/lens_flare_textures.gen.h"
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
 #include "servers/rendering/renderer_rd/storage_rd/texture_storage.h"
 #include "servers/rendering/renderer_rd/uniform_set_cache_rd.h"
@@ -216,7 +215,7 @@ bool LensFlare::_build_draw_data(const LocalVector<RendererSceneRender::LensFlar
 			const AABB padded = bounds.grow(0.03f + 0.02f * bounds.size[bounds.get_longest_axis_index()]);
 			const Vector3 min = padded.position;
 			const Vector3 max = padded.position + padded.size;
-			const float box[8] = { min.x, min.y, min.z, 0.0f, max.x, max.y, max.z, 0.0f };
+			const float box[8] = { float(min.x), float(min.y), float(min.z), 0.0f, float(max.x), float(max.y), float(max.z), 0.0f };
 			for (int k = 0; k < 8; k++) {
 				exception_data.push_back(box[k]);
 			}

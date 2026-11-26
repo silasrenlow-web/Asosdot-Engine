@@ -208,7 +208,9 @@ TEST_CASE("[TCPServer] When stopped shouldn't accept new connections") {
 
 	CHECK_FALSE(server->is_connection_available());
 
-	CHECK_EQ(new_client->get_status(), StreamPeerTCP::STATUS_ERROR);
+	// The refused client usually ends in STATUS_ERROR. On current macOS it ends closed (STATUS_NONE) instead.
+	// Either way it is not connected, and the stopped server took nothing.
+	CHECK((new_client->get_status() == StreamPeerTCP::STATUS_ERROR || new_client->get_status() == StreamPeerTCP::STATUS_NONE));
 	new_client->disconnect_from_host();
 	CHECK_EQ(new_client->get_status(), StreamPeerTCP::STATUS_NONE);
 }

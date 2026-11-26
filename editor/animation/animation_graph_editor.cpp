@@ -11,8 +11,8 @@
 
 #include "core/input/input.h"
 #include "core/object/callable_mp.h"
-#include "core/os/os.h"
 #include "core/object/class_db.h"
+#include "core/os/os.h"
 #include "editor/animation/animation_track_editor.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
@@ -1930,13 +1930,13 @@ int AsosdotGraphEditor::_curve_at(const Vector2 &p_pos) const {
 		}
 		if (channels[i].rotation && !curve_keys[i].is_empty()) {
 			// As drawn: near the shown value of the key before.
-			double near = curve_keys[i][0].value;
+			double reference = curve_keys[i][0].value;
 			for (const CurveKey &key : curve_keys[i]) {
 				if (key.time <= time) {
-					near = key.value;
+					reference = key.value;
 				}
 			}
-			value -= Math::round((value - near) / 360.0) * 360.0;
+			value -= Math::round((value - reference) / 360.0) * 360.0;
 		}
 		const float distance = Math::abs(_value_to_y(i, value) - p_pos.y);
 		if (distance < best_distance) {

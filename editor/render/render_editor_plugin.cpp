@@ -485,7 +485,7 @@ void AsosdotRenderEditor::_update_cameras() {
 		const bool blend = camera_blend_active && int(camera->get_projection()) == camera_blend_projection && int(camera->get_keep_aspect_mode()) == camera_blend_aspect;
 		camera->set_fov(blend ? Math::lerp(camera_blend_fov, fov, camera_blend_weight) : fov);
 		if (blend) {
-			camera->set_size(Math::lerp(camera_blend_size, camera->get_size(), camera_blend_weight));
+			camera->set_size(Math::lerp(camera_blend_size, float(camera->get_size()), camera_blend_weight));
 		}
 		if (camera->is_inside_tree()) {
 			camera->set_global_transform(xform);

@@ -128,6 +128,15 @@ private:
 		LocalVector<double> times;
 		LocalVector<double> values[4];
 		bool valid = false;
+
+		TrackSamples() {}
+		// Written out: LocalVector's copy constructor is explicit, which stops GCC copying the array.
+		TrackSamples(const TrackSamples &p_from) :
+				times(p_from.times), valid(p_from.valid) {
+			for (int i = 0; i < 4; i++) {
+				values[i] = p_from.values[i];
+			}
+		}
 	};
 
 	// What a track's curves share: how many numbers it has, and for rotations their Euler order.

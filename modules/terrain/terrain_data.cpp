@@ -432,7 +432,9 @@ void TerrainData::get_layer_weights_interpolated(const Vector2 &p_vertex_pos, fl
 	const Vector2 f = p_vertex_pos - base;
 	uint8_t w[4 * MAX_LAYERS];
 	read_splat(Rect2i(Vector2i((int)base.x, (int)base.y), Size2i(2, 2)), w);
-	const float k[4] = { (1 - f.x) * (1 - f.y), f.x * (1 - f.y), (1 - f.x) * f.y, f.x * f.y };
+	const float fx = f.x;
+	const float fy = f.y;
+	const float k[4] = { (1 - fx) * (1 - fy), fx * (1 - fy), (1 - fx) * fy, fx * fy };
 	for (int i = 0; i < MAX_LAYERS; i++) {
 		r_weights[i] = (w[i] * k[0] + w[MAX_LAYERS + i] * k[1] + w[2 * MAX_LAYERS + i] * k[2] + w[3 * MAX_LAYERS + i] * k[3]) / 255.0f;
 	}

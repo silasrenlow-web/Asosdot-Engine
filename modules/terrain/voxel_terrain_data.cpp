@@ -572,11 +572,13 @@ float VoxelTerrainData::sample_sdf(const Vector3 &p_voxel_position) const {
 	float s[8];
 	uint8_t m[8];
 	read(Vector3i(base), 1, Vector3i(2, 2, 2), s, m);
-	const float x00 = Math::lerp(s[0], s[1], f.x);
-	const float x10 = Math::lerp(s[2], s[3], f.x);
-	const float x01 = Math::lerp(s[4], s[5], f.x);
-	const float x11 = Math::lerp(s[6], s[7], f.x);
-	return Math::lerp(Math::lerp(x00, x10, f.y), Math::lerp(x01, x11, f.y), f.z);
+	const float fx = f.x;
+	const float fy = f.y;
+	const float x00 = Math::lerp(s[0], s[1], fx);
+	const float x10 = Math::lerp(s[2], s[3], fx);
+	const float x01 = Math::lerp(s[4], s[5], fx);
+	const float x11 = Math::lerp(s[6], s[7], fx);
+	return Math::lerp(Math::lerp(x00, x10, fy), Math::lerp(x01, x11, fy), float(f.z));
 }
 
 Vector3 VoxelTerrainData::sample_normal(const Vector3 &p_voxel_position) const {
@@ -594,7 +596,7 @@ void VoxelTerrainData::find_top_surface(const Vector2i &p_origin, const Vector2i
 		r_heights[i] = Math::NaN;
 		r_layers[i] = 0;
 	}
-	if (columns == 0 || p_top <= p_bottom) {
+	if (columns <= 0 || p_top <= p_bottom) {
 		return;
 	}
 	// Down in slabs, most columns finding their ground in the first. Slabs

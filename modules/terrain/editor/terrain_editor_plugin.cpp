@@ -2050,9 +2050,9 @@ AsosdotTerrainEditor::AsosdotTerrainEditor() {
 	VBoxContainer *tools = memnew(VBoxContainer);
 	main->add_child(tools);
 	const auto add_tools = [&](const String &p_title, const ToolInfo *p_infos, int p_count) {
-		Label *title = memnew(Label(p_title));
-		title->set_theme_type_variation("HeaderSmall");
-		tools->add_child(title);
+		Label *heading = memnew(Label(p_title));
+		heading->set_theme_type_variation("HeaderSmall");
+		tools->add_child(heading);
 		GridContainer *grid = memnew(GridContainer);
 		grid->set_columns(4);
 		tools->add_child(grid);

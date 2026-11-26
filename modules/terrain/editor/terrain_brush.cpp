@@ -634,7 +634,8 @@ void TerrainBrush::apply_ramp(Terrain3D *p_terrain, const Vector3 &p_from, const
 			const float t = CLAMP((p - a).dot(ab) / len2, 0.0f, 1.0f);
 			const float f = falloff(p.distance_to(a + ab * t), p_settings.radius, p_settings.hardness);
 			if (f > 0.0f) {
-				h[i] = Math::lerp(h[i], Math::lerp(p_from.y, p_to.y, t), f * amount);
+				const float target = float(Math::lerp(p_from.y, p_to.y, real_t(t)));
+				h[i] = Math::lerp(h[i], target, f * amount);
 			}
 		}
 	}

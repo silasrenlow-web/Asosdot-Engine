@@ -1247,7 +1247,7 @@ RealtimeGI::BakeError RealtimeGI::bake(Node *p_from_node, const String &p_save_p
 			const Vector3 &n = texel_normal[texel];
 			const Color &a = texel_albedo[texel];
 			const Color &e = texel_emission[texel];
-			float values[16] = { p.x, p.y, p.z, texel_radius[texel], n.x, n.y, n.z, 0.0, a.r, a.g, a.b, 1.0, e.r, e.g, e.b, 0.0 };
+			float values[16] = { float(p.x), float(p.y), float(p.z), texel_radius[texel], float(n.x), float(n.y), float(n.z), 0.0, a.r, a.g, a.b, 1.0, e.r, e.g, e.b, 0.0 };
 			memcpy(w + i * 16, values, sizeof(values));
 			baker.patch_position[i] = p;
 			baker.patch_normal[i] = n;

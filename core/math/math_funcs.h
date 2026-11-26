@@ -384,6 +384,8 @@ _ALWAYS_INLINE_ float cubic_interpolate_angle(float p_from, float p_to, float p_
 	return cubic_interpolate(from_rot, to_rot, pre_rot, post_rot, p_weight);
 }
 
+// MSVC: the divisions below are all guarded, but it still reports a potential divide by 0.
+GODOT_MSVC_WARNING_PUSH_AND_IGNORE(4723)
 _ALWAYS_INLINE_ double cubic_interpolate_in_time(double p_from, double p_to, double p_pre, double p_post, double p_weight,
 		double p_to_t, double p_pre_t, double p_post_t) {
 	/* Barry-Goldman method */
@@ -406,6 +408,7 @@ _ALWAYS_INLINE_ float cubic_interpolate_in_time(float p_from, float p_to, float 
 	float b2 = lerp(a2, a3, p_post_t == 0 ? 1.0f : t / p_post_t);
 	return lerp(b1, b2, p_to_t == 0 ? 0.5f : t / p_to_t);
 }
+GODOT_MSVC_WARNING_POP
 
 _ALWAYS_INLINE_ double cubic_interpolate_angle_in_time(double p_from, double p_to, double p_pre, double p_post, double p_weight,
 		double p_to_t, double p_pre_t, double p_post_t) {

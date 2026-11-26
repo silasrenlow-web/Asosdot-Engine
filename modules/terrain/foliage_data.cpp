@@ -161,7 +161,10 @@ float FoliageData::sample_density(int p_type, const Vector2 &p_local) const {
 	const float d10 = get_density(p_type, c + Vector2(density_texel_size, 0));
 	const float d01 = get_density(p_type, c + Vector2(0, density_texel_size));
 	const float d11 = get_density(p_type, c + Vector2(density_texel_size, density_texel_size));
-	return Math::lerp(Math::lerp(d00, d10, f.x), Math::lerp(d01, d11, f.x), f.y);
+	// real_t is double in double-precision builds: say which lerp is meant.
+	const float fx = f.x;
+	const float fy = f.y;
+	return Math::lerp(Math::lerp(d00, d10, fx), Math::lerp(d01, d11, fx), fy);
 }
 
 void FoliageData::clear_density(int p_type) {

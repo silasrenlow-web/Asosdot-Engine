@@ -37,12 +37,12 @@
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
 #include "scene/3d/anchored_pose_modifier_3d.h"
-#include "scene/3d/camera_3d.h"
-#include "scene/3d/mesh_instance_3d.h"
-#include "scene/3d/skeleton_3d.h"
-#include "scene/3d/physics/collision_object_3d.h"
 #include "scene/3d/audio_stream_player_3d.h"
+#include "scene/3d/camera_3d.h"
 #include "scene/3d/light_3d.h"
+#include "scene/3d/mesh_instance_3d.h"
+#include "scene/3d/physics/collision_object_3d.h"
+#include "scene/3d/skeleton_3d.h"
 #include "scene/3d/visual_instance_3d.h"
 #include "scene/main/canvas_item.h"
 #include "scene/main/canvas_layer.h"
@@ -449,10 +449,10 @@ void PoseTarget3D::_update_preview() {
 		AnchoredPoseModifier3D *ghost_modifier = _get_ghost_modifier();
 		Skeleton3D *rig_skeleton = ghost_modifier ? ghost_modifier->get_skeleton() : nullptr;
 		if (rig_skeleton) {
-			const Vector3 wanted = rig_skeleton->get_global_transform().basis.get_scale();
+			const Vector3 rig_scale = rig_skeleton->get_global_transform().basis.get_scale();
 			const Vector3 here = get_global_transform().basis.get_scale();
 			if (here.x > 0.00001f && here.y > 0.00001f && here.z > 0.00001f) {
-				const Vector3 local = Vector3(wanted.x / here.x, wanted.y / here.y, wanted.z / here.z);
+				const Vector3 local = Vector3(rig_scale.x / here.x, rig_scale.y / here.y, rig_scale.z / here.z);
 				if (!proxy->get_scale().is_equal_approx(local)) {
 					proxy->set_scale(local);
 				}
