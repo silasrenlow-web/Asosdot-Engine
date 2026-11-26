@@ -4,14 +4,13 @@
 /*  Asosdot: shots and sound in the Render workspace.                      */
 /**************************************************************************/
 
-#include "editor/render/render_editor_plugin.h"
-
 #include "core/io/resource_loader.h"
 #include "core/object/callable_mp.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/gui/editor_toaster.h"
 #include "editor/inspector/editor_inspector.h"
+#include "editor/render/render_editor_plugin.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/3d/camera_3d.h"
 #include "scene/audio/audio_stream_player.h"
