@@ -440,7 +440,7 @@ Vector<int32_t> AsosdotRenderEditor::_mix_render_audio() {
 	rendered_audio_samples = next_sample;
 	Vector<AudioFrame> mixed;
 	mixed.resize(sample_count);
-	memset(mixed.ptrw(), 0, sample_count * sizeof(AudioFrame));
+	mixed.fill(AudioFrame());
 	for (int i = 0; i < render_audio.size(); i++) {
 		AudioCue &cue = render_audio.write[i];
 		const int64_t first = MAX(first_sample, int64_t(Math::ceil(cue.start * rate)));
@@ -454,7 +454,7 @@ Vector<int32_t> AsosdotRenderEditor::_mix_render_audio() {
 		}
 		Vector<AudioFrame> buffer;
 		buffer.resize(last - first);
-		memset(buffer.ptrw(), 0, buffer.size() * sizeof(AudioFrame));
+		buffer.fill(AudioFrame());
 		// Playback resamplers target the live audio device. Compensate so
 		// slow offline rendering still encodes at the movie's sample rate.
 		const float scale = AudioServer::get_singleton()->get_mix_rate() / rate / MAX(AudioServer::get_singleton()->get_playback_speed_scale(), 0.0001f);
