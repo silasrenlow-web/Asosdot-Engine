@@ -81,6 +81,7 @@ ignore-words-list = [
 	"checkin",
 	"colour",
 	"curvelinear",
+	"dialogue",
 	"doubleclick",
 	"expct",
 	"findn",

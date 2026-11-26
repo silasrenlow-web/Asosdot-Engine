@@ -4,7 +4,7 @@
 /*  Asosdot: shots and sound in the Render workspace.                      */
 /**************************************************************************/
 
-#include "render_editor_plugin.h"
+#include "editor/render/render_editor_plugin.h"
 
 #include "core/io/resource_loader.h"
 #include "core/object/callable_mp.h"

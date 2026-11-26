@@ -42,6 +42,12 @@ if len(sys.argv) < 2:
 for f in sys.argv[1:]:
     fname = f
 
+    # Asosdot's own files carry their own header (see LICENSE and MUIG-LICENSE.txt),
+    # which must never be replaced with Godot's.
+    with open(fname.strip(), "r", encoding="utf-8") as own:
+        if "/*  Asosdot:" in own.read(600):
+            continue
+
     # Handle replacing $filename with actual filename and keep alignment
     fsingle = os.path.basename(fname.strip())
     rep_fl = "$filename"
