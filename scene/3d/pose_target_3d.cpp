@@ -37,11 +37,9 @@
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
 #include "scene/3d/anchored_pose_modifier_3d.h"
-#include "scene/3d/audio_stream_player_3d.h"
 #include "scene/3d/camera_3d.h"
 #include "scene/3d/light_3d.h"
 #include "scene/3d/mesh_instance_3d.h"
-#include "scene/3d/physics/collision_object_3d.h"
 #include "scene/3d/skeleton_3d.h"
 #include "scene/3d/visual_instance_3d.h"
 #include "scene/main/canvas_item.h"
@@ -514,8 +512,8 @@ void PoseTarget3D::create_pose_skeleton() {
 #endif // TOOLS_ENABLED
 
 void PoseTarget3D::_notification(int p_what) {
-	switch (p_what) {
 #ifdef TOOLS_ENABLED
+	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
 			set_process_internal(Engine::get_singleton()->is_editor_hint());
 		} break;
@@ -533,10 +531,10 @@ void PoseTarget3D::_notification(int p_what) {
 			}
 			pose_dirty = false;
 		} break;
-#endif // TOOLS_ENABLED
 		default:
 			break;
 	}
+#endif // TOOLS_ENABLED
 }
 
 // ---------------------------------------------------------------- properties

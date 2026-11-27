@@ -33,10 +33,10 @@
 #include "../foliage_3d.h"
 #include "../terrain_3d.h"
 #include "../voxel_terrain_3d.h"
-#include "terrain_3d_gizmo_plugin.h"
+#include "terrain_3d_gizmo_plugin.h" // IWYU pragma: keep. Created with memnew.
 #include "terrain_create_dialog.h"
 #include "terrain_heightmap_io.h"
-#include "voxel_terrain_3d_gizmo_plugin.h"
+#include "voxel_terrain_3d_gizmo_plugin.h" // IWYU pragma: keep. Created with memnew.
 
 #include "core/input/input.h"
 #include "core/io/file_access.h"
@@ -46,11 +46,9 @@
 #include "core/math/random_pcg.h"
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
-#include "core/os/os.h"
 #include "editor/docks/editor_dock_manager.h"
 #include "editor/editor_interface.h"
 #include "editor/editor_node.h"
-#include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/file_system/editor_file_system.h"
 #include "editor/gui/editor_file_dialog.h"
