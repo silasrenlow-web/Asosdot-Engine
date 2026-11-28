@@ -43,6 +43,18 @@
 				Returns feed image data type.
 			</description>
 		</method>
+		<method name="get_frame_image" qualifiers="const">
+			<return type="Image" />
+			<description>
+				Returns the newest frame as an [Image] on the CPU: RGB for RGB feeds, the brightness plane alone for feeds that give brightness and colour apart. [code]null[/code] before the first frame. Copies the frame each call.
+			</description>
+		</method>
+		<method name="get_frame_serial" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns a number that goes up with every new frame, to tell whether [method get_frame_image] would give a new one.
+			</description>
+		</method>
 		<method name="get_id" qualifiers="const">
 			<return type="int" />
 			<description>

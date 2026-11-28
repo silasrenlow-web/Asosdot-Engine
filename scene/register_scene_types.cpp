@@ -268,6 +268,7 @@
 #include "scene/3d/look_at_modifier_3d.h"
 #include "scene/3d/marker_3d.h"
 #include "scene/3d/mesh_instance_3d.h"
+#include "scene/3d/quick_mesh_brush_3d.h"
 #include "scene/3d/modifier_bone_target_3d.h"
 #include "scene/3d/multimesh_instance_3d.h"
 #include "scene/3d/node_3d.h"
@@ -297,6 +298,7 @@
 #include "scene/resources/3d/joint_limitation_3d.h"
 #include "scene/resources/3d/joint_limitation_cone_3d.h"
 #include "scene/resources/3d/mesh_library.h"
+#include "scene/resources/3d/mesh_painter.h"
 #include "scene/resources/3d/navigation_mesh_source_geometry_data_3d.h"
 #include "scene/resources/3d/primitive_meshes.h"
 #include "scene/resources/3d/sky_material.h"
@@ -658,6 +660,9 @@ void register_scene_types() {
 	GDREGISTER_CLASS(Camera3D);
 	GDREGISTER_CLASS(AudioListener3D);
 	GDREGISTER_CLASS(MeshInstance3D);
+	GDREGISTER_CLASS(QuickMeshBrush3D);
+	GDREGISTER_CLASS(MeshPaintBrush);
+	GDREGISTER_CLASS(MeshPainter);
 #ifndef DISABLE_DEPRECATED
 	MeshInstance3D::use_parent_skeleton_compat = GLOBAL_GET("animation/compatibility/default_parent_skeleton_in_mesh_instance_3d");
 #endif

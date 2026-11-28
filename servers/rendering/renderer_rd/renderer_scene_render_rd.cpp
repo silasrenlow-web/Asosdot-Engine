@@ -771,6 +771,33 @@ void RendererSceneRenderRD::_render_buffers_post_process_and_tonemap(const Rende
 		RD::get_singleton()->draw_command_end_label();
 	}
 
+	// Gaze focus is depth of field that follows the eye, so it goes where depth of
+	// field does: on the HDR frame, before motion blur smears it and glow blooms it.
+	if (can_use_effects && can_use_storage && gaze_focus && gaze_focus->is_supported() && RSG::camera_attributes->camera_attributes_uses_gaze_focus(p_render_data->camera_attributes) && !p_render_data->transparent_bg) {
+		RENDER_TIMESTAMP("Gaze Focus");
+		RD::get_singleton()->draw_command_begin_label("Gaze Focus");
+
+		const RendererCameraAttributes::GazeFocusSettings settings = RSG::camera_attributes->camera_attributes_get_gaze_focus(p_render_data->camera_attributes);
+		const RenderSceneDataRD *scene_data = p_render_data->scene_data;
+		for (uint32_t v = 0; v < rb->get_view_count(); v++) {
+			RendererRD::GazeFocus::Parameters parameters;
+			parameters.render_buffers = rb;
+			parameters.view = v;
+			parameters.color = use_upscaled_texture ? rb->get_upscaled_texture(v) : rb->get_internal_texture(v);
+			parameters.depth = p_use_msaa && rb->has_texture(RB_SCOPE_BUFFERS, RB_TEX_BACK_DEPTH) ? rb->get_texture_slice(RB_SCOPE_BUFFERS, RB_TEX_BACK_DEPTH, v, 0) : rb->get_depth_texture(v);
+			parameters.size = color_size;
+			parameters.gaze_uv = rb->get_gaze_point();
+			parameters.z_near = scene_data->view_projection[v].get_z_near();
+			parameters.z_far = scene_data->view_projection[v].get_z_far();
+			parameters.orthogonal = scene_data->cam_orthogonal;
+			parameters.time_step = float(time_step);
+			parameters.settings = settings;
+			gaze_focus->process(parameters);
+		}
+
+		RD::get_singleton()->draw_command_end_label();
+	}
+
 	// Motion blur goes after depth of field and before everything that works on how
 	// bright the frame is, as in a camera: the shutter blurs the light before it is
 	// measured, bloomed and tonemapped, so a bright thing leaves a bright streak.
@@ -2180,6 +2207,7 @@ void RendererSceneRenderRD::init() {
 	if (can_use_storage) {
 		// Compute only.
 		motion_blur = memnew(RendererRD::MotionBlur);
+		gaze_focus = memnew(RendererRD::GazeFocus);
 	}
 	luminance = memnew(RendererRD::Luminance(!can_use_storage));
 	smaa = memnew(RendererRD::SMAA);
@@ -2235,6 +2263,9 @@ RendererSceneRenderRD::~RendererSceneRenderRD() {
 	}
 	if (motion_blur) {
 		memdelete(motion_blur);
+	}
+	if (gaze_focus) {
+		memdelete(gaze_focus);
 	}
 	if (luminance) {
 		memdelete(luminance);

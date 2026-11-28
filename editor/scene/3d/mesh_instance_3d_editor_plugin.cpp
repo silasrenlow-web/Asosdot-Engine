@@ -39,6 +39,8 @@
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/inspector/multi_node_edit.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
+#include "editor/scene/3d/mesh_paint_editor_plugin.h"
+#include "editor/scene/3d/quick_mesh_brush_3d_editor_plugin.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/3d/navigation/navigation_region_3d.h"
 #include "scene/3d/physics/collision_shape_3d.h"
@@ -76,7 +78,7 @@ static const char *EDITABLE_MESH_CLASS = "EditableMeshInstance3D";
 
 void MeshInstance3DEditor::_update_editable_items() {
 	PopupMenu *popup = options->get_popup();
-	for (int id : { MENU_OPTION_MAKE_EDITABLE, MENU_OPTION_APPLY_EDITS, MENU_OPTION_CONVERT_TO_MESH_INSTANCE }) {
+	for (int id : { MENU_OPTION_MAKE_EDITABLE, MENU_OPTION_APPLY_EDITS, MENU_OPTION_CONVERT_TO_MESH_INSTANCE, MENU_OPTION_MAKE_QUICK_MESH_BRUSH, MENU_OPTION_CONVERT_BRUSH_TO_MESH_INSTANCE, MENU_OPTION_MESH_PAINT }) {
 		const int index = popup->get_item_index(id);
 		if (index >= 0) {
 			popup->remove_item(index);
@@ -86,19 +88,56 @@ void MeshInstance3DEditor::_update_editable_items() {
 	if (separator >= 0 && popup->is_item_separator(separator)) {
 		popup->remove_item(separator);
 	}
-	if (!node || !ClassDB::class_exists(EDITABLE_MESH_CLASS)) {
+	if (!node) {
 		return;
 	}
 	popup->add_separator();
-	if (node->is_class(EDITABLE_MESH_CLASS)) {
+	if (Object::cast_to<QuickMeshBrush3D>(node)) {
+		popup->add_item(TTR("Convert to MeshInstance3D"), MENU_OPTION_CONVERT_BRUSH_TO_MESH_INSTANCE);
+		popup->set_item_tooltip(popup->get_item_count() - 1, TTR("Turns this Quick Mesh Brush back into a plain MeshInstance3D that keeps the bent mesh."));
+		return;
+	}
+	if (ClassDB::class_exists(EDITABLE_MESH_CLASS) && node->is_class(EDITABLE_MESH_CLASS)) {
 		popup->add_item(TTR("Apply Edits"), MENU_OPTION_APPLY_EDITS);
 		popup->set_item_tooltip(popup->get_item_count() - 1, TTR("Bakes what the CSG shapes did into the source mesh and removes the shapes."));
 		popup->add_item(TTR("Convert to MeshInstance3D"), MENU_OPTION_CONVERT_TO_MESH_INSTANCE);
 		popup->set_item_tooltip(popup->get_item_count() - 1, TTR("Applies the edits, then turns this node back into a plain MeshInstance3D with the edited mesh."));
-	} else {
+		return;
+	}
+	popup->add_item(TTR("Mesh Paint"), MENU_OPTION_MESH_PAINT);
+	popup->set_item_tooltip(popup->get_item_count() - 1, TTR("Paint textures on this mesh in the 3D view or a UV view, smart unwrap and pack its UVs, select UV islands and move them, and give parts of the mesh their own materials. Same as the Paint button in the toolbar."));
+	popup->add_item(TTR("Quick Mesh Brush"), MENU_OPTION_MAKE_QUICK_MESH_BRUSH);
+	popup->set_item_tooltip(popup->get_item_count() - 1, TTR("Turns this node into a QuickMeshBrush3D: place points on the mesh and move or rotate them with the gizmo to bend the surface smoothly around them (a dip for a puddle, a bump, a ramp). Extra triangles are only added around the points, and the result is baked, so it costs nothing at runtime."));
+	if (ClassDB::class_exists(EDITABLE_MESH_CLASS)) {
 		popup->add_item(TTR("Make Editable (CSG Shapes)"), MENU_OPTION_MAKE_EDITABLE);
 		popup->set_item_tooltip(popup->get_item_count() - 1, TTR("Turns this node into an EditableMeshInstance3D: CSG shapes added as children then cut into the mesh, add to it or intersect it, while it stays a MeshInstance3D with its materials and settings."));
 	}
+}
+
+// Asosdot: Quick Mesh Brush. The node keeps its name, mesh, materials and children.
+void MeshInstance3DEditor::_make_quick_mesh_brush() {
+	QuickMeshBrush3D *brush = memnew(QuickMeshBrush3D);
+	brush->set_name(node->get_name());
+	brush->set_source_mesh(node->get_mesh());
+	SceneTreeDock::get_singleton()->replace_node(node, brush);
+	EditorNode::get_singleton()->get_editor_selection()->clear();
+	EditorNode::get_singleton()->get_editor_selection()->add_node(brush);
+	if (QuickMeshBrush3DEditorPlugin::singleton) {
+		QuickMeshBrush3DEditorPlugin::singleton->set_editing(true);
+	}
+}
+
+void MeshInstance3DEditor::_convert_brush_to_mesh_instance() {
+	QuickMeshBrush3D *brush = Object::cast_to<QuickMeshBrush3D>(node);
+	ERR_FAIL_NULL(brush);
+	brush->rebuild();
+	const Ref<Mesh> bent = brush->get_mesh();
+	MeshInstance3D *plain = memnew(MeshInstance3D);
+	plain->set_name(node->get_name());
+	SceneTreeDock::get_singleton()->replace_node(node, plain);
+	plain->set_mesh(bent);
+	EditorNode::get_singleton()->get_editor_selection()->clear();
+	EditorNode::get_singleton()->get_editor_selection()->add_node(plain);
 }
 
 void MeshInstance3DEditor::_make_editable() {
@@ -529,6 +568,20 @@ void MeshInstance3DEditor::_menu_option(int p_option) {
 		}
 		case MENU_OPTION_CONVERT_TO_MESH_INSTANCE: {
 			_convert_to_mesh_instance();
+			return;
+		}
+		case MENU_OPTION_MESH_PAINT: {
+			if (MeshPaintEditorPlugin::singleton) {
+				MeshPaintEditorPlugin::singleton->set_painting(true);
+			}
+			return;
+		}
+		case MENU_OPTION_MAKE_QUICK_MESH_BRUSH: {
+			_make_quick_mesh_brush();
+			return;
+		}
+		case MENU_OPTION_CONVERT_BRUSH_TO_MESH_INSTANCE: {
+			_convert_brush_to_mesh_instance();
 			return;
 		}
 	}

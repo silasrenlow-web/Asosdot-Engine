@@ -32,11 +32,19 @@
 
 #include "servers/camera/camera_server.h"
 
+// Webcams through Media Foundation's source reader. Frames come in on a thread
+// of their own, converted to RGB by Media Foundation, and go to the feed's
+// texture and its CPU copy (CameraFeed::get_frame_data).
 class CameraWindows : public CameraServer {
-private:
-	void add_active_cameras();
+	GDSOFTCLASS(CameraWindows, CameraServer);
+
+	bool mf_started = false;
+
+	void update_feeds();
 
 public:
+	virtual void set_monitoring_feeds(bool p_monitoring_feeds) override;
+
 	CameraWindows();
-	~CameraWindows() {}
+	~CameraWindows();
 };

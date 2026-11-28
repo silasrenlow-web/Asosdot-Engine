@@ -120,6 +120,19 @@
 				[/codeblock]
 			</description>
 		</method>
+		<method name="camera_attributes_set_gaze_focus">
+			<return type="void" />
+			<param index="0" name="camera_attributes" type="RID" />
+			<param index="1" name="enable" type="bool" />
+			<param index="2" name="radius" type="float" />
+			<param index="3" name="softness" type="float" />
+			<param index="4" name="amount" type="float" />
+			<param index="5" name="depth_range" type="float" />
+			<param index="6" name="adapt_speed" type="float" />
+			<description>
+				Sets gaze focus on [param camera_attributes]: what is looked at stays sharp within [param radius] (a part of the screen's height), the blur fades in over [param softness], at most [param amount]. With [param depth_range] above [code]0.0[/code], what is that many metres nearer or further than the looked-at thing is blurred too, refocusing at [param adapt_speed]. See [member CameraAttributes.gaze_focus_enabled].
+			</description>
+		</method>
 		<method name="camera_attributes_set_motion_blur">
 			<return type="void" />
 			<param index="0" name="camera_attributes" type="RID" />
@@ -4528,6 +4541,14 @@
 			<param index="1" name="sharpness" type="float" />
 			<description>
 				Determines how sharp the upscaled image will be when using the FSR upscaling mode. Sharpness halves with every whole number. Values go from 0.0 (sharpest) to 2.0. Values above 2.0 won't make a visible difference.
+			</description>
+		</method>
+		<method name="viewport_set_gaze_point">
+			<return type="void" />
+			<param index="0" name="viewport" type="RID" />
+			<param index="1" name="uv" type="Vector2" />
+			<description>
+				Sets where on [param viewport] the player looks, from [code](0, 0)[/code] (top left) to [code](1, 1)[/code], for gaze focus ([member CameraAttributes.gaze_focus_enabled]). [EyeTracker] sets it for the main window's viewport every frame while it runs.
 			</description>
 		</method>
 		<method name="viewport_set_global_canvas_transform">

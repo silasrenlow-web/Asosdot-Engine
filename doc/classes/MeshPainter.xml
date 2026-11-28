@@ -1,0 +1,494 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MeshPainter" inherits="RefCounted" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		Paints textures on a mesh, unwraps and edits its UVs, and gives its faces materials.
+	</brief_description>
+	<description>
+		The engine side of the Mesh Paint tool (the [b]Paint[/b] button in the 3D editor's toolbar when a [MeshInstance3D] is selected).
+		[method load_mesh] reads any [Mesh] into a list of triangles. Every face belongs to a material slot (one per surface to begin with), and faces joined by shared UV edges form UV islands. You can unwrap new UVs with [method smart_unwrap], place islands again with [method pack_islands], move islands with [method transform_faces_uv], select faces, and move faces to other slots. [method commit_mesh] gives back a plain [ArrayMesh] with one surface per slot, so a painted mesh costs nothing extra at runtime.
+		Painting writes into RGBA8 [Image]s through the mesh's UVs: [method paint_dab] uses a 3D brush (a sphere around a point on the surface, so strokes continue across UV seams), [method paint_dab_uv] paints straight in UV space, and [method fill_faces] fills faces. Group dabs between [method begin_stroke] and [method end_stroke]; the stroke keeps the untouched image for undo.
+		[codeblock]
+		var painter = MeshPainter.new()
+		painter.load_mesh($Body.mesh)
+		if not painter.has_uvs():
+			painter.smart_unwrap()
+		var material = StandardMaterial3D.new()
+		var image = MeshPainter.make_channel_image(material, MeshPainter.CHANNEL_ALBEDO, Vector2i(1024, 1024))
+		var brush = MeshPaintBrush.new()
+		brush.color = Color.RED
+		var hit = painter.intersect_ray(Vector3(0, 1, 3), Vector3(0, 0, -1))
+		painter.begin_stroke()
+		painter.paint_dab(image, brush, hit.position, 0.1, Vector3(0, 1, 3), Vector3.UP)
+		painter.end_stroke()
+		MeshPainter.set_channel_texture(material, MeshPainter.CHANNEL_ALBEDO, ImageTexture.create_from_image(image))
+		painter.set_slot_material(0, material)
+		$Body.mesh = painter.commit_mesh()
+		[/codeblock]
+		All positions are in the mesh's local space. Unwrapping and packing need the [code]xatlas_unwrap[/code] module.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="add_slot">
+			<return type="int" />
+			<param index="0" name="material" type="Material" />
+			<param index="1" name="name" type="String" default="&quot;&quot;" />
+			<description>
+				Adds a material slot and returns its index. No faces use it until [method set_faces_slot].
+			</description>
+		</method>
+		<method name="begin_stroke">
+			<return type="void" />
+			<description>
+				Starts a stroke. Dabs until [method end_stroke] never paint a texel stronger than the strongest dab that touched it.
+			</description>
+		</method>
+		<method name="commit_mesh">
+			<return type="ArrayMesh" />
+			<param index="0" name="generate_lods" type="bool" default="true" />
+			<description>
+				Builds an [ArrayMesh] with one surface per slot that has faces, keeping normals, colours, UV2, custom channels, skin weights and blend shapes. Tangents are made again when the UVs changed. If [param generate_lods] is [code]true[/code] and the loaded mesh had LODs, LODs are generated again. Faces are put in slot order, so loading the result back keeps face indices.
+			</description>
+		</method>
+		<method name="end_stroke">
+			<return type="void" />
+			<description>
+				Ends the stroke started by [method begin_stroke]. Call [method get_stroke_images], [method get_stroke_rect] and [method get_stroke_original] before it to record undo.
+			</description>
+		</method>
+		<method name="fill_faces">
+			<return type="Rect2i" />
+			<param index="0" name="image" type="Image" />
+			<param index="1" name="faces" type="PackedInt32Array" />
+			<param index="2" name="brush" type="MeshPaintBrush" />
+			<description>
+				Fills [param faces] in [param image] with the brush colour, at the brush strength and blend mode.
+			</description>
+		</method>
+		<method name="get_aabb" qualifiers="const">
+			<return type="AABB" />
+			<description>
+				Returns the bounds of the faces.
+			</description>
+		</method>
+		<method name="get_barycentric" qualifiers="const">
+			<return type="Vector3" />
+			<param index="0" name="face" type="int" />
+			<param index="1" name="point" type="Vector3" />
+			<description>
+				Returns the barycentric coordinates of [param point] in [param face].
+			</description>
+		</method>
+		<method name="get_channel_texture" qualifiers="static">
+			<return type="Texture2D" />
+			<param index="0" name="material" type="BaseMaterial3D" />
+			<param index="1" name="channel" type="int" enum="MeshPainter.Channel" />
+			<description>
+				Returns the texture a material uses for [param channel].
+			</description>
+		</method>
+		<method name="get_face_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the number of triangles.
+			</description>
+		</method>
+		<method name="get_face_island">
+			<return type="int" />
+			<param index="0" name="face" type="int" />
+			<description>
+				Returns the UV island of [param face].
+			</description>
+		</method>
+		<method name="get_face_normal" qualifiers="const">
+			<return type="Vector3" />
+			<param index="0" name="face" type="int" />
+			<description>
+				Returns the face's normal (out of its front side).
+			</description>
+		</method>
+		<method name="get_face_piece">
+			<return type="int" />
+			<param index="0" name="face" type="int" />
+			<description>
+				Returns the piece of [param face]: faces joined by edges in 3D, whatever their UVs.
+			</description>
+		</method>
+		<method name="get_face_position" qualifiers="const">
+			<return type="Vector3" />
+			<param index="0" name="face" type="int" />
+			<param index="1" name="corner" type="int" />
+			<description>
+				Returns the position of one of the face's corners ([param corner] is 0, 1 or 2). With a pose mesh, this is the posed position.
+			</description>
+		</method>
+		<method name="get_face_slot" qualifiers="const">
+			<return type="int" />
+			<param index="0" name="face" type="int" />
+			<description>
+				Returns the material slot of [param face].
+			</description>
+		</method>
+		<method name="get_face_uv" qualifiers="const">
+			<return type="Vector2" />
+			<param index="0" name="face" type="int" />
+			<param index="1" name="corner" type="int" />
+			<description>
+				Returns the UV of one of the face's corners.
+			</description>
+		</method>
+		<method name="get_face_uvs" qualifiers="const">
+			<return type="PackedVector2Array" />
+			<description>
+				Returns the UVs of all faces, three per face.
+			</description>
+		</method>
+		<method name="get_faces_in_sphere">
+			<return type="PackedInt32Array" />
+			<param index="0" name="center" type="Vector3" />
+			<param index="1" name="radius" type="float" />
+			<param index="2" name="eye" type="Vector3" default="Vector3(0, 0, 0)" />
+			<param index="3" name="front_only" type="bool" default="false" />
+			<description>
+				Returns the faces that touch the sphere. With [param front_only], only faces turned toward [param eye] and not hidden behind other faces are returned.
+			</description>
+		</method>
+		<method name="get_faces_triangles" qualifiers="const">
+			<return type="PackedVector3Array" />
+			<param index="0" name="faces" type="PackedInt32Array" />
+			<param index="1" name="offset" type="float" default="0.0" />
+			<description>
+				Returns the corners of [param faces], three per face, moved [param offset] along their normals. Useful for drawing a selection.
+			</description>
+		</method>
+		<method name="get_island_count">
+			<return type="int" />
+			<description>
+				Returns the number of UV islands.
+			</description>
+		</method>
+		<method name="get_island_faces">
+			<return type="PackedInt32Array" />
+			<param index="0" name="island" type="int" />
+			<description>
+				Returns the faces of [param island].
+			</description>
+		</method>
+		<method name="get_island_uv_rect">
+			<return type="Rect2" />
+			<param index="0" name="island" type="int" />
+			<description>
+				Returns the UV bounds of [param island].
+			</description>
+		</method>
+		<method name="get_islands_of_faces">
+			<return type="PackedInt32Array" />
+			<param index="0" name="faces" type="PackedInt32Array" />
+			<description>
+				Returns the islands [param faces] belong to, each once.
+			</description>
+		</method>
+		<method name="get_loaded_mesh" qualifiers="const">
+			<return type="Mesh" />
+			<description>
+				Returns the mesh given to [method load_mesh].
+			</description>
+		</method>
+		<method name="get_piece_faces">
+			<return type="PackedInt32Array" />
+			<param index="0" name="piece" type="int" />
+			<description>
+				Returns the faces of [param piece].
+			</description>
+		</method>
+		<method name="get_selected_face_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns how many faces are selected.
+			</description>
+		</method>
+		<method name="get_selected_faces" qualifiers="const">
+			<return type="PackedInt32Array" />
+			<description>
+				Returns the selected faces.
+			</description>
+		</method>
+		<method name="get_slot_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the number of material slots.
+			</description>
+		</method>
+		<method name="get_slot_face_count" qualifiers="const">
+			<return type="int" />
+			<param index="0" name="slot" type="int" />
+			<description>
+				Returns how many faces use [param slot].
+			</description>
+		</method>
+		<method name="get_slot_faces" qualifiers="const">
+			<return type="PackedInt32Array" />
+			<param index="0" name="slot" type="int" />
+			<description>
+				Returns the faces that use [param slot].
+			</description>
+		</method>
+		<method name="get_slot_material" qualifiers="const">
+			<return type="Material" />
+			<param index="0" name="slot" type="int" />
+			<description>
+				Returns the material of [param slot].
+			</description>
+		</method>
+		<method name="get_slot_name" qualifiers="const">
+			<return type="String" />
+			<param index="0" name="slot" type="int" />
+			<description>
+				Returns the name of [param slot]; it becomes the surface name.
+			</description>
+		</method>
+		<method name="get_stroke_images" qualifiers="const">
+			<return type="Image[]" />
+			<description>
+				Returns the images painted during the current stroke.
+			</description>
+		</method>
+		<method name="get_stroke_original" qualifiers="const">
+			<return type="Image" />
+			<param index="0" name="image" type="Image" />
+			<description>
+				Returns [param image] as it was when the stroke started painting it.
+			</description>
+		</method>
+		<method name="get_stroke_rect" qualifiers="const">
+			<return type="Rect2i" />
+			<param index="0" name="image" type="Image" />
+			<description>
+				Returns the area of [param image] painted during the current stroke.
+			</description>
+		</method>
+		<method name="get_uv_at" qualifiers="const">
+			<return type="Vector2" />
+			<param index="0" name="face" type="int" />
+			<param index="1" name="barycentric" type="Vector3" />
+			<description>
+				Returns the UV at a point of [param face] given by [param barycentric].
+			</description>
+		</method>
+		<method name="grow_selection">
+			<return type="void" />
+			<description>
+				Adds the faces that share a corner with the selection.
+			</description>
+		</method>
+		<method name="has_uvs" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] if every surface had UVs, or UVs were made since.
+			</description>
+		</method>
+		<method name="intersect_ray" qualifiers="const">
+			<return type="Dictionary" />
+			<param index="0" name="from" type="Vector3" />
+			<param index="1" name="direction" type="Vector3" />
+			<description>
+				Casts a ray at the faces. Returns an empty [Dictionary] on a miss, else [code]face[/code], [code]position[/code], [code]normal[/code] and [code]barycentric[/code].
+			</description>
+		</method>
+		<method name="invert_selection">
+			<return type="void" />
+			<description>
+				Selects the faces that were not selected, and the other way round.
+			</description>
+		</method>
+		<method name="is_face_selected" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="face" type="int" />
+			<description>
+				Returns [code]true[/code] if [param face] is selected.
+			</description>
+		</method>
+		<method name="load_mesh">
+			<return type="int" enum="Error" />
+			<param index="0" name="mesh" type="Mesh" />
+			<param index="1" name="pose_mesh" type="Mesh" default="null" />
+			<param index="2" name="surface_overrides" type="Material[]" default="[]" />
+			<description>
+				Loads [param mesh]. Line and point surfaces are kept as they are. [param pose_mesh] (for example from [method MeshInstance3D.bake_mesh_from_current_skeleton_pose]) gives the positions the brush and picking use, so a posed character is painted where it shows. [param surface_overrides] are used as the slot materials where set.
+			</description>
+		</method>
+		<method name="make_channel_image" qualifiers="static">
+			<return type="Image" />
+			<param index="0" name="material" type="BaseMaterial3D" />
+			<param index="1" name="channel" type="int" enum="MeshPainter.Channel" />
+			<param index="2" name="size" type="Vector2i" />
+			<description>
+				Returns an RGBA8 image holding what [param material] shows today for [param channel]: its texture times its value, or just the value. An untiled texture keeps its own size; otherwise the image is [param size], with the material's UV1 tiling baked in.
+			</description>
+		</method>
+		<method name="pack_islands">
+			<return type="int" enum="Error" />
+			<param index="0" name="padding" type="int" default="4" />
+			<param index="1" name="resolution" type="int" default="1024" />
+			<param index="2" name="rotate" type="bool" default="true" />
+			<param index="3" name="average_scale" type="bool" default="true" />
+			<description>
+				Places the islands again inside the square, [param padding] texels apart at [param resolution]. With [param average_scale], every island first gets the same texel density.
+			</description>
+		</method>
+		<method name="paint_dab">
+			<return type="Rect2i" />
+			<param index="0" name="image" type="Image" />
+			<param index="1" name="brush" type="MeshPaintBrush" />
+			<param index="2" name="center" type="Vector3" />
+			<param index="3" name="radius" type="float" />
+			<param index="4" name="eye" type="Vector3" />
+			<param index="5" name="up" type="Vector3" />
+			<param index="6" name="slot" type="int" default="-1" />
+			<description>
+				Paints one dab of [param brush] into [param image] around [param center], [param radius] wide, on faces of [param slot] ([code]-1[/code] for all). [param eye] is where the view comes from (for back faces, occlusion and the stamp's facing) and [param up] the view's up direction. Returns the area painted.
+			</description>
+		</method>
+		<method name="paint_dab_uv">
+			<return type="Rect2i" />
+			<param index="0" name="image" type="Image" />
+			<param index="1" name="brush" type="MeshPaintBrush" />
+			<param index="2" name="uv" type="Vector2" />
+			<param index="3" name="radius" type="float" />
+			<description>
+				Paints one dab into [param image] at [param uv], with [param radius] in UV units. Returns the area painted.
+			</description>
+		</method>
+		<method name="remove_slot">
+			<return type="void" />
+			<param index="0" name="slot" type="int" />
+			<description>
+				Removes [param slot]; its faces go to the first other slot.
+			</description>
+		</method>
+		<method name="sample_image" qualifiers="const">
+			<return type="Color" />
+			<param index="0" name="image" type="Image" />
+			<param index="1" name="face" type="int" />
+			<param index="2" name="barycentric" type="Vector3" />
+			<description>
+				Returns the colour of [param image] at a point of [param face].
+			</description>
+		</method>
+		<method name="select_all">
+			<return type="void" />
+			<param index="0" name="select" type="bool" default="true" />
+			<description>
+				Selects all faces, or none if [param select] is [code]false[/code].
+			</description>
+		</method>
+		<method name="select_islands_of_selection">
+			<return type="void" />
+			<description>
+				Grows the selection to whole UV islands.
+			</description>
+		</method>
+		<method name="select_pieces_of_selection">
+			<return type="void" />
+			<description>
+				Grows the selection to whole pieces (faces joined in 3D).
+			</description>
+		</method>
+		<method name="set_channel_texture" qualifiers="static">
+			<return type="void" />
+			<param index="0" name="material" type="BaseMaterial3D" />
+			<param index="1" name="channel" type="int" enum="MeshPainter.Channel" />
+			<param index="2" name="texture" type="Texture2D" />
+			<description>
+				Gives [param material] [param texture] for [param channel] and makes the material's own value neutral (white albedo, roughness and metallic of 1, white multiplied emission), since the painted texture holds the final value. UV1 tiling is turned off.
+			</description>
+		</method>
+		<method name="set_face_selected">
+			<return type="void" />
+			<param index="0" name="face" type="int" />
+			<param index="1" name="selected" type="bool" />
+			<description>
+				Selects or deselects [param face].
+			</description>
+		</method>
+		<method name="set_faces_slot">
+			<return type="void" />
+			<param index="0" name="faces" type="PackedInt32Array" />
+			<param index="1" name="slot" type="int" />
+			<description>
+				Moves [param faces] to [param slot].
+			</description>
+		</method>
+		<method name="set_pose_mesh">
+			<return type="void" />
+			<param index="0" name="pose_mesh" type="Mesh" />
+			<description>
+				Changes the positions the brush and picking use, from a mesh with the same layout as the loaded one.
+			</description>
+		</method>
+		<method name="set_selected_faces">
+			<return type="void" />
+			<param index="0" name="faces" type="PackedInt32Array" />
+			<description>
+				Selects exactly [param faces].
+			</description>
+		</method>
+		<method name="set_slot_material">
+			<return type="void" />
+			<param index="0" name="slot" type="int" />
+			<param index="1" name="material" type="Material" />
+			<description>
+				Sets the material of [param slot].
+			</description>
+		</method>
+		<method name="set_slot_name">
+			<return type="void" />
+			<param index="0" name="slot" type="int" />
+			<param index="1" name="name" type="String" />
+			<description>
+				Sets the name of [param slot].
+			</description>
+		</method>
+		<method name="shrink_selection">
+			<return type="void" />
+			<description>
+				Removes selected faces that share a corner with unselected ones.
+			</description>
+		</method>
+		<method name="smart_unwrap">
+			<return type="int" enum="Error" />
+			<param index="0" name="faces" type="PackedInt32Array" default="PackedInt32Array()" />
+			<param index="1" name="angle_limit" type="float" default="66.0" />
+			<param index="2" name="padding" type="int" default="4" />
+			<param index="3" name="resolution" type="int" default="1024" />
+			<description>
+				Makes new UVs. Faces split into islands at angles over [param angle_limit] degrees, and an island never spans two slots. With [param faces], only those faces are unwrapped: they get the texel density of the rest and everything is packed again.
+			</description>
+		</method>
+		<method name="transform_faces_uv">
+			<return type="void" />
+			<param index="0" name="faces" type="PackedInt32Array" />
+			<param index="1" name="transform" type="Transform2D" />
+			<description>
+				Transforms the UVs of [param faces] (move, rotate or scale islands).
+			</description>
+		</method>
+	</methods>
+	<constants>
+		<constant name="CHANNEL_ALBEDO" value="0" enum="Channel">
+			The albedo (colour) texture.
+		</constant>
+		<constant name="CHANNEL_ROUGHNESS" value="1" enum="Channel">
+			The roughness texture (red channel).
+		</constant>
+		<constant name="CHANNEL_METALLIC" value="2" enum="Channel">
+			The metallic texture (red channel).
+		</constant>
+		<constant name="CHANNEL_EMISSION" value="3" enum="Channel">
+			The emission texture.
+		</constant>
+		<constant name="CHANNEL_MAX" value="4" enum="Channel">
+			Represents the size of the [enum Channel] enum.
+		</constant>
+	</constants>
+</class>

@@ -66,6 +66,13 @@ private:
 		float motion_blur_max_length = 5.0;
 		int motion_blur_quality = 1;
 		float motion_blur_target_fps = 60.0;
+
+		bool gaze_focus_enabled = false;
+		float gaze_focus_radius = 0.15;
+		float gaze_focus_softness = 0.3;
+		float gaze_focus_amount = 0.8;
+		float gaze_focus_depth_range = 0.0;
+		float gaze_focus_adapt_speed = 6.0;
 	};
 
 	RSE::DOFBlurQuality dof_blur_quality = RSE::DOF_BLUR_QUALITY_MEDIUM;
@@ -127,6 +134,30 @@ public:
 	}
 
 	MotionBlurSettings camera_attributes_get_motion_blur(RID p_camera_attributes);
+
+	void camera_attributes_set_gaze_focus(RID p_camera_attributes, bool p_enable, float p_radius, float p_softness, float p_amount, float p_depth_range, float p_adapt_speed);
+
+	struct GazeFocusSettings {
+		// How far from the gaze point stays sharp, and over how much more the blur
+		// fades in, as parts of the screen's height.
+		float radius = 0.15;
+		float softness = 0.3;
+		// How blurred the rest gets, 0 to 1.
+		float amount = 0.8;
+		// Metres in front of or behind the looked-at thing before something is fully
+		// out of focus even next to the gaze. Zero leaves depth out.
+		float depth_range = 0.0;
+		// How fast the eye refocuses on a new distance, per second.
+		float adapt_speed = 6.0;
+	};
+
+	_FORCE_INLINE_ bool camera_attributes_uses_gaze_focus(RID p_camera_attributes) {
+		CameraAttributes *cam_attributes = camera_attributes_owner.get_or_null(p_camera_attributes);
+
+		return cam_attributes && cam_attributes->gaze_focus_enabled && cam_attributes->gaze_focus_amount > 0.0;
+	}
+
+	GazeFocusSettings camera_attributes_get_gaze_focus(RID p_camera_attributes);
 
 	void camera_attributes_set_exposure(RID p_camera_attributes, float p_multiplier, float p_exposure_normalization);
 	float camera_attributes_get_exposure_normalization_factor(RID p_camera_attributes);

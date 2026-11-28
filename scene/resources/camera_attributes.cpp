@@ -191,6 +191,70 @@ float CameraAttributes::get_motion_blur_target_fps() const {
 	return motion_blur_target_fps;
 }
 
+void CameraAttributes::_update_gaze_focus() {
+	RS::get_singleton()->camera_attributes_set_gaze_focus(camera_attributes, gaze_focus_enabled, gaze_focus_radius, gaze_focus_softness, gaze_focus_amount, gaze_focus_depth_range, gaze_focus_adapt_speed);
+}
+
+void CameraAttributes::set_gaze_focus_enabled(bool p_enabled) {
+	gaze_focus_enabled = p_enabled;
+	_update_gaze_focus();
+	emit_changed();
+}
+
+bool CameraAttributes::is_gaze_focus_enabled() const {
+	return gaze_focus_enabled;
+}
+
+void CameraAttributes::set_gaze_focus_radius(float p_radius) {
+	gaze_focus_radius = p_radius;
+	_update_gaze_focus();
+	emit_changed();
+}
+
+float CameraAttributes::get_gaze_focus_radius() const {
+	return gaze_focus_radius;
+}
+
+void CameraAttributes::set_gaze_focus_softness(float p_softness) {
+	gaze_focus_softness = p_softness;
+	_update_gaze_focus();
+	emit_changed();
+}
+
+float CameraAttributes::get_gaze_focus_softness() const {
+	return gaze_focus_softness;
+}
+
+void CameraAttributes::set_gaze_focus_amount(float p_amount) {
+	gaze_focus_amount = p_amount;
+	_update_gaze_focus();
+	emit_changed();
+}
+
+float CameraAttributes::get_gaze_focus_amount() const {
+	return gaze_focus_amount;
+}
+
+void CameraAttributes::set_gaze_focus_depth_range(float p_meters) {
+	gaze_focus_depth_range = p_meters;
+	_update_gaze_focus();
+	emit_changed();
+}
+
+float CameraAttributes::get_gaze_focus_depth_range() const {
+	return gaze_focus_depth_range;
+}
+
+void CameraAttributes::set_gaze_focus_adapt_speed(float p_speed) {
+	gaze_focus_adapt_speed = p_speed;
+	_update_gaze_focus();
+	emit_changed();
+}
+
+float CameraAttributes::get_gaze_focus_adapt_speed() const {
+	return gaze_focus_adapt_speed;
+}
+
 void CameraAttributes::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_exposure_multiplier", "multiplier"), &CameraAttributes::set_exposure_multiplier);
 	ClassDB::bind_method(D_METHOD("get_exposure_multiplier"), &CameraAttributes::get_exposure_multiplier);
@@ -219,6 +283,19 @@ void CameraAttributes::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_motion_blur_target_fps", "fps"), &CameraAttributes::set_motion_blur_target_fps);
 	ClassDB::bind_method(D_METHOD("get_motion_blur_target_fps"), &CameraAttributes::get_motion_blur_target_fps);
 
+	ClassDB::bind_method(D_METHOD("set_gaze_focus_enabled", "enabled"), &CameraAttributes::set_gaze_focus_enabled);
+	ClassDB::bind_method(D_METHOD("is_gaze_focus_enabled"), &CameraAttributes::is_gaze_focus_enabled);
+	ClassDB::bind_method(D_METHOD("set_gaze_focus_radius", "radius"), &CameraAttributes::set_gaze_focus_radius);
+	ClassDB::bind_method(D_METHOD("get_gaze_focus_radius"), &CameraAttributes::get_gaze_focus_radius);
+	ClassDB::bind_method(D_METHOD("set_gaze_focus_softness", "softness"), &CameraAttributes::set_gaze_focus_softness);
+	ClassDB::bind_method(D_METHOD("get_gaze_focus_softness"), &CameraAttributes::get_gaze_focus_softness);
+	ClassDB::bind_method(D_METHOD("set_gaze_focus_amount", "amount"), &CameraAttributes::set_gaze_focus_amount);
+	ClassDB::bind_method(D_METHOD("get_gaze_focus_amount"), &CameraAttributes::get_gaze_focus_amount);
+	ClassDB::bind_method(D_METHOD("set_gaze_focus_depth_range", "meters"), &CameraAttributes::set_gaze_focus_depth_range);
+	ClassDB::bind_method(D_METHOD("get_gaze_focus_depth_range"), &CameraAttributes::get_gaze_focus_depth_range);
+	ClassDB::bind_method(D_METHOD("set_gaze_focus_adapt_speed", "speed"), &CameraAttributes::set_gaze_focus_adapt_speed);
+	ClassDB::bind_method(D_METHOD("get_gaze_focus_adapt_speed"), &CameraAttributes::get_gaze_focus_adapt_speed);
+
 	ADD_GROUP("Exposure", "exposure_");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "exposure_sensitivity", PROPERTY_HINT_RANGE, "0.1,32000.0,0.1,suffix:ISO"), "set_exposure_sensitivity", "get_exposure_sensitivity");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "exposure_multiplier", PROPERTY_HINT_RANGE, "0.0,8.0,0.001,or_greater"), "set_exposure_multiplier", "get_exposure_multiplier");
@@ -237,6 +314,14 @@ void CameraAttributes::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "motion_blur_quality", PROPERTY_HINT_ENUM, "Low,Medium,High"), "set_motion_blur_quality", "get_motion_blur_quality");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "motion_blur_target_fps", PROPERTY_HINT_RANGE, "0,240,1,suffix:fps"), "set_motion_blur_target_fps", "get_motion_blur_target_fps");
 
+	ADD_GROUP("Gaze Focus", "gaze_focus_");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "gaze_focus_enabled", PROPERTY_HINT_GROUP_ENABLE), "set_gaze_focus_enabled", "is_gaze_focus_enabled");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "gaze_focus_radius", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_gaze_focus_radius", "get_gaze_focus_radius");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "gaze_focus_softness", PROPERTY_HINT_RANGE, "0.01,1,0.01"), "set_gaze_focus_softness", "get_gaze_focus_softness");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "gaze_focus_amount", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_gaze_focus_amount", "get_gaze_focus_amount");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "gaze_focus_depth_range", PROPERTY_HINT_RANGE, "0,100,0.1,or_greater,suffix:m"), "set_gaze_focus_depth_range", "get_gaze_focus_depth_range");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "gaze_focus_adapt_speed", PROPERTY_HINT_RANGE, "0,30,0.1,or_greater"), "set_gaze_focus_adapt_speed", "get_gaze_focus_adapt_speed");
+
 	BIND_ENUM_CONSTANT(MOTION_BLUR_QUALITY_LOW);
 	BIND_ENUM_CONSTANT(MOTION_BLUR_QUALITY_MEDIUM);
 	BIND_ENUM_CONSTANT(MOTION_BLUR_QUALITY_HIGH);
@@ -244,6 +329,7 @@ void CameraAttributes::_bind_methods() {
 
 CameraAttributes::CameraAttributes() {
 	camera_attributes = RS::get_singleton()->camera_attributes_create();
+	_update_gaze_focus();
 }
 
 CameraAttributes::~CameraAttributes() {

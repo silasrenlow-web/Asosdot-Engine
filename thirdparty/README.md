@@ -680,6 +680,22 @@ File extracted from upstream source:
 - `AUTHORS`, `LICENSE`
 
 
+## mediapipe
+
+- Upstream: https://github.com/google-ai-edge/mediapipe
+- Version: models from https://storage.googleapis.com/mediapipe-assets (downloaded 2026-11-27)
+- License: Apache 2.0
+
+Files extracted from upstream:
+
+- `face_detection_short_range.tflite` (BlazeFace, short range)
+- `face_landmark.tflite` (Face Mesh, 468 points)
+- `iris_landmark.tflite` (MediaPipe Iris)
+- `LICENSE` (Apache 2.0 text)
+
+Used by `modules/eye_tracking`, which embeds both models in the engine.
+
+
 ## mbedtls
 
 - Upstream: https://github.com/Mbed-TLS/mbedtls

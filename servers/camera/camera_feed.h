@@ -32,6 +32,7 @@
 
 #include "core/io/image.h"
 #include "core/math/transform_2d.h"
+#include "core/os/mutex.h"
 #include "servers/camera/camera_server.h"
 
 /**
@@ -85,6 +86,17 @@ protected:
 	bool active; // only when active do we actually update the camera texture each frame
 	RID texture[CameraServer::FEED_IMAGES]; // texture images needed for this
 
+	// The newest frame as pixels, for code that looks at what the camera sees
+	// (EyeTracker) rather than drawing it. The data is shared, not copied: the
+	// feed hands over a new image or writes into its own, which copies first.
+	mutable Mutex frame_mutex;
+	Vector<uint8_t> frame_data;
+	int frame_width = 0;
+	int frame_height = 0;
+	Image::Format frame_format = Image::FORMAT_RGB8;
+	uint64_t frame_serial = 0;
+	void _keep_frame(const Ref<Image> &p_image);
+
 	static void _bind_methods();
 
 public:
@@ -116,6 +128,14 @@ public:
 	void set_ycbcr_image(const Ref<Image> &p_ycbcr_img);
 	void set_ycbcr_images(const Ref<Image> &p_y_img, const Ref<Image> &p_cbcr_img);
 	void set_external(int p_width, int p_height);
+
+	// The newest frame on the CPU: RGB for RGB feeds, the brightness plane (L8)
+	// for feeds that give Y and CbCr apart. Null before the first frame.
+	Ref<Image> get_frame_image() const;
+	// Counts up with every new frame, so a reader knows whether it saw this one.
+	uint64_t get_frame_serial() const;
+	// Thread-safe, and no image made: the raw data of the newest frame.
+	bool get_frame_data(Vector<uint8_t> &r_data, int &r_width, int &r_height, Image::Format &r_format, uint64_t &r_serial) const;
 
 	virtual bool set_format(int p_index, const Dictionary &p_parameters);
 	virtual Array get_formats() const;

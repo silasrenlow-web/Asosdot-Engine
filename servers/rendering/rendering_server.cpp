@@ -2878,6 +2878,7 @@ void RenderingServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("viewport_set_scaling_3d_mode", "viewport", "scaling_3d_mode"), &RenderingServer::viewport_set_scaling_3d_mode);
 	ClassDB::bind_method(D_METHOD("viewport_set_scaling_3d_scale", "viewport", "scale"), &RenderingServer::viewport_set_scaling_3d_scale);
 	ClassDB::bind_method(D_METHOD("viewport_set_fsr_sharpness", "viewport", "sharpness"), &RenderingServer::viewport_set_fsr_sharpness);
+	ClassDB::bind_method(D_METHOD("viewport_set_gaze_point", "viewport", "uv"), &RenderingServer::viewport_set_gaze_point);
 	ClassDB::bind_method(D_METHOD("viewport_set_texture_mipmap_bias", "viewport", "mipmap_bias"), &RenderingServer::viewport_set_texture_mipmap_bias);
 	ClassDB::bind_method(D_METHOD("viewport_set_anisotropic_filtering_level", "viewport", "anisotropic_filtering_level"), &RenderingServer::viewport_set_anisotropic_filtering_level);
 	ClassDB::bind_method(D_METHOD("viewport_set_update_mode", "viewport", "update_mode"), &RenderingServer::viewport_set_update_mode);
@@ -3208,6 +3209,7 @@ void RenderingServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("camera_attributes_set_auto_exposure", "camera_attributes", "enable", "min_sensitivity", "max_sensitivity", "speed", "scale"), &RenderingServer::camera_attributes_set_auto_exposure);
 	ClassDB::bind_method(D_METHOD("camera_attributes_set_auto_exposure_eye", "camera_attributes", "dark_speed", "center_weight"), &RenderingServer::camera_attributes_set_auto_exposure_eye);
 	ClassDB::bind_method(D_METHOD("camera_attributes_set_motion_blur", "camera_attributes", "enable", "intensity", "max_length", "quality", "target_fps"), &RenderingServer::camera_attributes_set_motion_blur);
+	ClassDB::bind_method(D_METHOD("camera_attributes_set_gaze_focus", "camera_attributes", "enable", "radius", "softness", "amount", "depth_range", "adapt_speed"), &RenderingServer::camera_attributes_set_gaze_focus);
 
 	BIND_ENUM_CONSTANT(RSE::DOF_BOKEH_BOX);
 	BIND_ENUM_CONSTANT(RSE::DOF_BOKEH_HEXAGON);

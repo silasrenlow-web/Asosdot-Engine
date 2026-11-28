@@ -1,0 +1,302 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="EyeTracker" inherits="Object" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Tracks where the player looks, whether their eyes are open, and whether they look at the screen, from a webcam.
+	</brief_description>
+	<description>
+		Eye tracking from an ordinary webcam. A face model finds the face and an iris model measures each eye: where the iris sits, how open the eyelids are, and how the head is turned. From that [EyeTracker] works out a gaze point on the screen, eyes open or closed, blinks, and whether the player is looking at the screen at all. Made for horror games (a monster that only moves while it is not looked at, or while the player blinks) and for [member CameraAttributes.gaze_focus_enabled], which keeps what the player looks at sharp and softens the rest.
+		[b]Privacy:[/b] camera frames are measured in memory and dropped; nothing is written to disk or sent anywhere. The webcam is only opened when the project allows it with [member ProjectSettings.eye_tracking/webcam/enabled] and the game calls [method start] with [constant SOURCE_WEBCAM]. Ask the player first. Calibration keeps a few numbers and never a picture; [method get_calibration_data] hands them to the game to keep if it wants to.
+		[b]Without a webcam:[/b] when the tracker is not running, or runs from [constant SOURCE_MOUSE] or [constant SOURCE_SCREEN_CENTER], the player counts as looking at the mouse or at the middle of the screen with open eyes, so a game behaves sensibly on any machine. [member simulated_blink_action] lets an input action stand in for closed eyes while testing.
+		[b]How it works:[/b] a face detector finds the face, MediaPipe's face mesh follows it from picture to picture (468 points: the head's turn and place, the eyes' corners), and an iris model measures each eye in a tight square around it; both eyes are measured at once, on two threads. A calibration ([method start_calibration]) then learns how those measurements map to the screen for this player, camera and seat.
+[b]Accuracy:[/b] uncalibrated, the gaze is rough. Calibrated with a good webcam in front light it is typically within 1 to 3 cm on the screen (1 to 3 degrees); [method get_accuracy] says how well a calibration worked. Blinks, closed eyes and looking away are reliable either way.
+[b]Performance:[/b] it is heavy. Three neural networks run on the CPU for every camera picture, about 30 ms of work each on a fast laptop CPU, on threads of their own (the game's frame rate is not held up, but the CPU is busy). Recommend a fast, modern PC to players, and check [method get_tracking_rate].
+		[codeblock]
+		func _ready():
+			EyeTracker.looked_away.connect(_on_looked_away)
+			EyeTracker.blinked.connect(_on_blinked)
+			if EyeTracker.start(EyeTracker.SOURCE_WEBCAM) != OK:
+				EyeTracker.start(EyeTracker.SOURCE_MOUSE)
+
+		func _on_blinked():
+			monster.step_closer()
+		[/codeblock]
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="analyze_image">
+			<return type="Dictionary" />
+			<param index="0" name="image" type="Image" />
+			<description>
+				Measures one still picture with the same models the webcam uses, without a webcam: returns a [Dictionary] with [code]found[/code], [code]score[/code], [code]box[/code] (the face, a [Rect2] in pixels), [code]keypoints[/code] (eyes, nose, mouth, ears), [code]yaw[/code], [code]pitch[/code], [code]roll[/code], [code]time_ms[/code], [code]meshed[/code] and [code]mesh[/code] (the 468 face mesh points, x and y in pixels, z depth), and [code]eyes[/code], an [Array] of two dictionaries (the eye on the picture's left first) with [code]iris[/code], [code]iris_radius[/code], [code]iris_offset[/code], [code]openness[/code], [code]upper_lid[/code], [code]corners[/code] and [code]contour[/code]. Meant for tests and tools.
+			</description>
+		</method>
+		<method name="are_eyes_closed" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] while the player's eyes are closed, a blink included. Always [code]false[/code] when the tracker is not running.
+			</description>
+		</method>
+		<method name="cancel_calibration">
+			<return type="void" />
+			<description>
+				Stops a calibration started with [method start_calibration], keeping the previous one. Emits [signal calibration_finished] with [code]false[/code].
+			</description>
+		</method>
+		<method name="clear_calibration">
+			<return type="void" />
+			<description>
+				Forgets the calibration; the gaze is then worked out from typical numbers until the next calibration.
+			</description>
+		</method>
+		<method name="get_accuracy" qualifiers="const">
+			<return type="Dictionary" />
+			<description>
+				How well the last calibration worked, measured on its check dots (see [method start_calibration]): a [Dictionary] with [code]measured[/code] ([code]false[/code] when there was no check), [code]error_cm[/code] (how far the gaze landed from the dots on average, in centimetres on the screen), [code]error_degrees[/code] (the same as an angle of the eye), [code]jitter_cm[/code] (how much the gaze wandered while the eyes rested), [code]distance_cm[/code] (how far from the camera the player sat, estimated), [code]screen_cm[/code] and [code]fit_error[/code] (how well the calibration dots predicted each other, in parts of the screen). Empty before a calibration.
+			</description>
+		</method>
+		<method name="get_calibration_data" qualifiers="const">
+			<return type="PackedFloat32Array" />
+			<description>
+				Returns the calibration as a few numbers (no pictures), to keep in a save file and give back with [method set_calibration_data] next time. Empty when not calibrated.
+			</description>
+		</method>
+		<method name="get_camera_feed_id" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the [CameraFeed] id of the webcam in use, or [code]-1[/code]. Use it with a [CameraTexture] to show the player what the camera sees.
+			</description>
+		</method>
+		<method name="get_confidence" qualifiers="const">
+			<return type="float" />
+			<description>
+				Returns how sure the face model is that it sees a face, from [code]0.0[/code] to [code]1.0[/code]. [code]1.0[/code] for the mouse and screen-centre sources.
+			</description>
+		</method>
+		<method name="get_eye_openness" qualifiers="const">
+			<return type="float" />
+			<param index="0" name="eye" type="int" enum="EyeTracker.Eye" default="2" />
+			<description>
+				Returns how open the eye is, from [code]0.0[/code] (closed) to [code]1.0[/code] (as open as it usually is). [code]1.0[/code] when the tracker is not running.
+			</description>
+		</method>
+		<method name="get_face_rect" qualifiers="const">
+			<return type="Rect2" />
+			<description>
+				Where the face is in the camera picture, from [code](0, 0)[/code] to [code](1, 1)[/code], as a mirror shows it (see [member mirror_camera]). Empty when no face is seen. Useful for leaning and peeking: the face moving left or right in the picture is the player moving their head.
+			</description>
+		</method>
+		<method name="get_gaze_position" qualifiers="const">
+			<return type="Vector2" />
+			<description>
+				Returns the gaze point in pixels of the main window's viewport.
+			</description>
+		</method>
+		<method name="get_gaze_uv" qualifiers="const">
+			<return type="Vector2" />
+			<description>
+				Returns the gaze point from [code](0, 0)[/code] (top left of the window) to [code](1, 1)[/code] (bottom right). It can go a little outside that range when the player looks past the edge of the screen. The middle of the screen when the tracker is not running.
+			</description>
+		</method>
+		<method name="get_head_rotation" qualifiers="const">
+			<return type="Vector3" />
+			<description>
+				Returns roughly how the player's head is turned, in degrees, as a [Node3D]'s rotation would be: [code]x[/code] looking up, [code]y[/code] turned to the player's left, [code]z[/code] tilted left. Close to degrees for turns up to about 30. Zero for the mouse and screen-centre sources.
+			</description>
+		</method>
+		<method name="get_processing_time" qualifiers="const">
+			<return type="float" />
+			<description>
+				Returns how many milliseconds the last camera frame took to measure (on the tracker's own thread).
+			</description>
+		</method>
+		<method name="get_source" qualifiers="const">
+			<return type="int" enum="EyeTracker.Source" />
+			<description>
+				Returns where the gaze comes from.
+			</description>
+		</method>
+		<method name="get_status" qualifiers="const">
+			<return type="int" enum="EyeTracker.Status" />
+			<description>
+				Returns what the tracker is doing.
+			</description>
+		</method>
+		<method name="get_tracking_rate" qualifiers="const">
+			<return type="float" />
+			<description>
+				How many camera pictures a second the tracker measures. Below about 15 the gaze lags behind the eyes: the computer is too slow for it, or the camera is sending few pictures (often in dim light).
+			</description>
+		</method>
+		<method name="is_calibrated" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] when a calibration is in use.
+			</description>
+		</method>
+		<method name="is_calibrating" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] while the calibration dots are on the screen.
+			</description>
+		</method>
+		<method name="is_face_detected" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] when the running tracker sees a face (always for the mouse and screen-centre sources).
+			</description>
+		</method>
+		<method name="is_looking_at_screen" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] when the player's eyes are open and their gaze is on the screen, within [member screen_margin] of its edges. Also [code]true[/code] when the tracker is not running.
+			</description>
+		</method>
+		<method name="is_running" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] after [method start] and until [method stop].
+			</description>
+		</method>
+		<method name="set_calibration_data">
+			<return type="bool" />
+			<param index="0" name="data" type="PackedFloat32Array" />
+			<description>
+				Uses a calibration from [method get_calibration_data]. Returns [code]false[/code] and changes nothing if [param data] is not one.
+			</description>
+		</method>
+		<method name="start">
+			<return type="int" enum="Error" />
+			<param index="0" name="source" type="int" enum="EyeTracker.Source" default="0" />
+			<param index="1" name="camera_feed_id" type="int" default="-1" />
+			<description>
+				Starts tracking from [param source]. For [constant SOURCE_WEBCAM], [param camera_feed_id] picks the camera ([code]-1[/code] takes the first front-facing one). Returns [constant OK], or an error when the webcam cannot be used ([constant ERR_UNAUTHORIZED] when the project setting [member ProjectSettings.eye_tracking/webcam/enabled] is off, [constant ERR_UNAVAILABLE] without a camera); the tracker then runs from the mouse or the screen's centre (see [member mouse_fallback]) and keeps looking for a camera.
+			</description>
+		</method>
+		<method name="start_calibration">
+			<return type="void" />
+			<param index="0" name="points" type="int" default="16" />
+			<param index="1" name="check_accuracy" type="bool" default="true" />
+			<description>
+				Shows dots one at a time over the whole window for the player to look at, and fits the gaze to the eyes and head measured at each: [param points] is 5, 9 or 16 (more dots, better accuracy). Only samples where the eyes rested on a dot are used, without blinks and glances away. With [param check_accuracy], five more dots in other places follow, and [method get_accuracy] tells how far the gaze landed from them. Takes about 1.75 seconds a dot (16 dots and the check: about 37 seconds). Esc ([code]ui_cancel[/code]) cancels. Emits [signal calibration_finished]. Needs the webcam running.
+			</description>
+		</method>
+		<method name="stop">
+			<return type="void" />
+			<description>
+				Stops tracking and closes the webcam if the tracker opened it.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="blink_threshold" type="float" setter="set_blink_threshold" getter="get_blink_threshold" default="0.5">
+			How closed, against how open the eyes usually are, counts as closed. Lower needs the eyes more tightly shut.
+		</member>
+		<member name="debug_overlay" type="bool" setter="set_debug_overlay" getter="is_debug_overlay" default="false">
+			If [code]true[/code], draws the gaze point, the camera picture with the face and eyes found on it, and the tracker's state over the game.
+		</member>
+		<member name="mirror_camera" type="bool" setter="set_mirror_camera" getter="is_mirror_camera" default="true">
+			If [code]true[/code], the camera picture is read the way a mirror shows it, which is right for a webcam facing the player. Turn off for a camera that already mirrors.
+		</member>
+		<member name="mouse_fallback" type="bool" setter="set_mouse_fallback" getter="is_mouse_fallback" default="true">
+			If [code]true[/code], the gaze follows the mouse while no webcam is available; otherwise it stays in the middle of the screen.
+		</member>
+		<member name="screen_margin" type="float" setter="set_screen_margin" getter="get_screen_margin" default="0.15">
+			How far past the edges of the screen, as a part of its size, the gaze can be and still count as looking at the screen. Webcam gaze is rough, so some margin keeps the edges of the screen from reading as looking away.
+		</member>
+		<member name="simulated_blink_action" type="StringName" setter="set_simulated_blink_action" getter="get_simulated_blink_action" default="&amp;&quot;&quot;">
+			An input action that closes the eyes while held, for the mouse and screen-centre sources. Handy for testing blink mechanics without a webcam.
+		</member>
+		<member name="smoothing" type="float" setter="set_smoothing" getter="get_smoothing" default="0.5">
+			How much the gaze is smoothed, from [code]0.0[/code] (jumpy but immediate) to [code]1.0[/code] (steady but slower). Quick eye movements still get through quickly.
+		</member>
+	</members>
+	<signals>
+		<signal name="blinked">
+			<description>
+				Emitted when the eyes open again after being closed for less than about 0.6 seconds.
+			</description>
+		</signal>
+		<signal name="calibration_finished">
+			<param index="0" name="success" type="bool" />
+			<description>
+				Emitted when a calibration ends; [param success] is [code]false[/code] when it was cancelled or the eyes were not seen at enough of the dots.
+			</description>
+		</signal>
+		<signal name="eyes_closed">
+			<description>
+				Emitted when the eyes close, a blink included.
+			</description>
+		</signal>
+		<signal name="eyes_opened">
+			<param index="0" name="closed_time" type="float" />
+			<description>
+				Emitted when the eyes open; [param closed_time] is how long they were closed, in seconds.
+			</description>
+		</signal>
+		<signal name="face_found">
+			<description>
+				Emitted when a face is seen after none was.
+			</description>
+		</signal>
+		<signal name="face_lost">
+			<description>
+				Emitted when the face has not been seen for a moment (the player left, or turned away).
+			</description>
+		</signal>
+		<signal name="looked_away">
+			<description>
+				Emitted when [method is_looking_at_screen] becomes [code]false[/code]: the eyes closed, the gaze left the screen, or the face was lost.
+			</description>
+		</signal>
+		<signal name="looked_back">
+			<description>
+				Emitted when [method is_looking_at_screen] becomes [code]true[/code] again.
+			</description>
+		</signal>
+		<signal name="status_changed">
+			<param index="0" name="status" type="int" />
+			<description>
+				Emitted when [method get_status] changes.
+			</description>
+		</signal>
+	</signals>
+	<constants>
+		<constant name="SOURCE_WEBCAM" value="0" enum="Source">
+			The gaze comes from a webcam.
+		</constant>
+		<constant name="SOURCE_MOUSE" value="1" enum="Source">
+			The gaze follows the mouse. For testing, and for players without a webcam.
+		</constant>
+		<constant name="SOURCE_SCREEN_CENTER" value="2" enum="Source">
+			The gaze is the middle of the screen, as for a game without eye tracking.
+		</constant>
+		<constant name="STATUS_STOPPED" value="0" enum="Status">
+			Not running.
+		</constant>
+		<constant name="STATUS_NO_CAMERA" value="1" enum="Status">
+			Asked for the webcam but none is available (or the project does not allow it); running from the fallback.
+		</constant>
+		<constant name="STATUS_STARTING" value="2" enum="Status">
+			The webcam is starting.
+		</constant>
+		<constant name="STATUS_SEARCHING" value="3" enum="Status">
+			The webcam is running but no face is in view.
+		</constant>
+		<constant name="STATUS_TRACKING" value="4" enum="Status">
+			Tracking a face.
+		</constant>
+		<constant name="STATUS_SIMULATED" value="5" enum="Status">
+			Running from the mouse or the screen's centre.
+		</constant>
+		<constant name="EYE_LEFT" value="0" enum="Eye">
+			The player's left eye.
+		</constant>
+		<constant name="EYE_RIGHT" value="1" enum="Eye">
+			The player's right eye.
+		</constant>
+		<constant name="EYE_BOTH" value="2" enum="Eye">
+			Both eyes, averaged.
+		</constant>
+	</constants>
+</class>

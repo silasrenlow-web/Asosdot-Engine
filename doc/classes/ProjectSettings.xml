@@ -1225,6 +1225,9 @@
 		</member>
 		<member name="editor/version_control/plugin_name" type="String" setter="" getter="" default="&quot;&quot;">
 		</member>
+		<member name="eye_tracking/webcam/enabled" type="bool" setter="" getter="" default="false">
+			If [code]true[/code], [method EyeTracker.start] may open the webcam. Off by default: a project has to choose to use the webcam, and the game still has to start the tracker (ask the player first). Frames are only measured in memory and never stored or sent.
+		</member>
 		<member name="filesystem/import/blender/enabled" type="bool" setter="" getter="" default="true">
 			If [code]true[/code], Blender 3D scene files with the [code].blend[/code] extension will be imported by converting them to glTF 2.0.
 			This requires configuring a path to a Blender executable in the [member EditorSettings.filesystem/import/blender/blender_path] setting. Blender 3.0 or later is required.

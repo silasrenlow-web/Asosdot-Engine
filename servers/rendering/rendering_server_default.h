@@ -764,6 +764,7 @@ public:
 	FUNC2(viewport_set_scaling_3d_mode, RID, RSE::ViewportScaling3DMode)
 	FUNC2(viewport_set_scaling_3d_scale, RID, float)
 	FUNC2(viewport_set_fsr_sharpness, RID, float)
+	FUNC2(viewport_set_gaze_point, RID, const Vector2 &)
 	FUNC2(viewport_set_texture_mipmap_bias, RID, float)
 	FUNC2(viewport_set_anisotropic_filtering_level, RID, RSE::ViewportAnisotropicFiltering)
 
@@ -935,6 +936,7 @@ public:
 	FUNC6(camera_attributes_set_auto_exposure, RID, bool, float, float, float, float)
 	FUNC3(camera_attributes_set_auto_exposure_eye, RID, float, float)
 	FUNC6(camera_attributes_set_motion_blur, RID, bool, float, float, int, float)
+	FUNC7(camera_attributes_set_gaze_focus, RID, bool, float, float, float, float, float)
 
 	/* LENS FLARE API */
 

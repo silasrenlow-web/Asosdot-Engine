@@ -108,6 +108,8 @@
 #include "editor/scene/3d/occluder_instance_3d_editor_plugin.h"
 #include "editor/scene/3d/particles_3d_editor_plugin.h"
 #include "editor/scene/3d/path_3d_editor_plugin.h"
+#include "editor/scene/3d/mesh_paint_editor_plugin.h"
+#include "editor/scene/3d/quick_mesh_brush_3d_editor_plugin.h"
 #include "editor/scene/3d/physics/physical_bone_3d_editor_plugin.h"
 #include "editor/scene/3d/polygon_3d_editor_plugin.h"
 #include "editor/scene/3d/realtime_gi_editor_plugin.h"
@@ -265,6 +267,8 @@ void register_editor_types() {
 	EditorPlugins::add_by_type<OccluderInstance3DEditorPlugin>();
 	EditorPlugins::add_by_type<PackedSceneEditorPlugin>();
 	EditorPlugins::add_by_type<Path3DEditorPlugin>();
+	EditorPlugins::add_by_type<QuickMeshBrush3DEditorPlugin>();
+	EditorPlugins::add_by_type<MeshPaintEditorPlugin>();
 	EditorPlugins::add_by_type<PhysicalBone3DEditorPlugin>();
 	EditorPlugins::add_by_type<Polygon3DEditorPlugin>();
 	EditorPlugins::add_by_type<ResourcePreloaderEditorPlugin>();

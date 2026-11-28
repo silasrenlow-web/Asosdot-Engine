@@ -36,6 +36,25 @@
 			If [member auto_exposure_enabled] is [code]true[/code], this can be used as a method of exposure compensation, doubling the value will increase the exposure value (measured in EV100) by 1 stop.
 			[b]Note:[/b] Only available when [member ProjectSettings.rendering/lights_and_shadows/use_physical_light_units] is enabled.
 		</member>
+		<member name="gaze_focus_adapt_speed" type="float" setter="set_gaze_focus_adapt_speed" getter="get_gaze_focus_adapt_speed" default="6.0">
+			How quickly the focus moves to the distance of what is looked at, with [member gaze_focus_depth_range]. Higher refocuses faster; [code]0.0[/code] refocuses at once.
+		</member>
+		<member name="gaze_focus_amount" type="float" setter="set_gaze_focus_amount" getter="get_gaze_focus_amount" default="0.8">
+			How blurred what is out of focus gets, from [code]0.0[/code] to [code]1.0[/code].
+		</member>
+		<member name="gaze_focus_depth_range" type="float" setter="set_gaze_focus_depth_range" getter="get_gaze_focus_depth_range" default="0.0">
+			If above [code]0.0[/code], what is nearer or further than the looked-at thing by this many metres is blurred too, even right next to the gaze, the way eyes focus on one distance. [code]0.0[/code] blurs only by distance from the gaze on the screen.
+		</member>
+		<member name="gaze_focus_enabled" type="bool" setter="set_gaze_focus_enabled" getter="is_gaze_focus_enabled" default="false">
+			If [code]true[/code], keeps what the player looks at sharp and blurs the rest of the view, following [EyeTracker] (or the middle of the screen without it). The gaze point of a viewport can also be set with [method RenderingServer.viewport_set_gaze_point].
+			[b]Note:[/b] Only supported in the Forward+ renderer.
+		</member>
+		<member name="gaze_focus_radius" type="float" setter="set_gaze_focus_radius" getter="get_gaze_focus_radius" default="0.15">
+			How far from the gaze stays fully sharp, as a part of the screen's height.
+		</member>
+		<member name="gaze_focus_softness" type="float" setter="set_gaze_focus_softness" getter="get_gaze_focus_softness" default="0.3">
+			Over how much more, as a part of the screen's height, the blur fades in past [member gaze_focus_radius].
+		</member>
 		<member name="motion_blur_enabled" type="bool" setter="set_motion_blur_enabled" getter="is_motion_blur_enabled" default="false">
 			If [code]true[/code], things that move across the screen are smeared along the way they move, as they are by a camera's shutter. The camera's own motion counts, a turn or a run blurs the whole view including the sky, and so does the motion of every object, so a car blurs against a still background and a still car blurs against a moving camera.
 			It is made from the velocity buffer, the one temporal anti-aliasing uses, so it follows whatever the renderer drew: skeletons, instanced meshes and moving lights included. It works on the HDR image before glow and tonemapping, so a bright thing leaves a bright streak, and what is in front smears over what is behind it, not the other way about.

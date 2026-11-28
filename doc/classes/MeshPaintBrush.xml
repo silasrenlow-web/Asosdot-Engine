@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MeshPaintBrush" inherits="Resource" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		The brush a [MeshPainter] paints with.
+	</brief_description>
+	<description>
+		A brush for [MeshPainter]: colour, strength, hardness, blend mode and an optional texture to stamp. The Mesh Paint tool in the 3D editor keeps one of these; scripts can make their own and save it as a resource.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="blend_mode" type="int" setter="set_blend_mode" getter="get_blend_mode" enum="MeshPaintBrush.BlendMode" default="0">
+			How the brush colour combines with the texture.
+		</member>
+		<member name="color" type="Color" setter="set_color" getter="get_color" default="Color(1, 1, 1, 1)">
+			The colour painted. Its alpha scales the brush's opacity. For roughness and metallic layers, the red channel is the value.
+		</member>
+		<member name="hardness" type="float" setter="set_hardness" getter="get_hardness" default="0.5">
+			[code]0.0[/code] fades smoothly from the centre to the edge; [code]1.0[/code] paints a crisp edge. With a [member texture], it softens the stamp's square edge.
+		</member>
+		<member name="occlusion" type="bool" setter="set_occlusion" getter="has_occlusion" default="true">
+			If [code]true[/code], faces hidden from the eye behind other parts of the mesh are not painted by [method MeshPainter.paint_dab].
+		</member>
+		<member name="paint_backfaces" type="bool" setter="set_paint_backfaces" getter="is_painting_backfaces" default="false">
+			If [code]true[/code], faces turned away from the eye are painted too.
+		</member>
+		<member name="strength" type="float" setter="set_strength" getter="get_strength" default="1.0">
+			Opacity of one stroke. Dabs of the same stroke never add up beyond it; a new stroke paints on top.
+		</member>
+		<member name="texture" type="Texture2D" setter="set_texture" getter="get_texture">
+			An optional image used as the brush: it is stamped facing the eye (in 3D) or the screen (in UV space), its alpha gives the shape and its colour is multiplied by [member color]. Use it for decals, prints and patterns.
+		</member>
+		<member name="texture_angle" type="float" setter="set_texture_angle" getter="get_texture_angle" default="0.0">
+			Rotation of the [member texture], in degrees.
+		</member>
+	</members>
+	<constants>
+		<constant name="BLEND_MIX" value="0" enum="BlendMode">
+			Paints the colour over what is there.
+		</constant>
+		<constant name="BLEND_ADD" value="1" enum="BlendMode">
+			Adds the colour.
+		</constant>
+		<constant name="BLEND_MULTIPLY" value="2" enum="BlendMode">
+			Multiplies by the colour.
+		</constant>
+		<constant name="BLEND_LIGHTEN" value="3" enum="BlendMode">
+			Keeps the lighter of the two, per channel.
+		</constant>
+		<constant name="BLEND_DARKEN" value="4" enum="BlendMode">
+			Keeps the darker of the two, per channel.
+		</constant>
+		<constant name="BLEND_ERASE" value="5" enum="BlendMode">
+			Lowers the texture's alpha.
+		</constant>
+		<constant name="BLEND_BLUR" value="6" enum="BlendMode">
+			Softens the texture under the brush.
+		</constant>
+		<constant name="BLEND_MAX" value="7" enum="BlendMode">
+			Represents the size of the [enum BlendMode] enum.
+		</constant>
+	</constants>
+</class>

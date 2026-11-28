@@ -55,6 +55,11 @@ class MeshInstance3DEditor : public Control {
 		MENU_OPTION_MAKE_EDITABLE,
 		MENU_OPTION_APPLY_EDITS,
 		MENU_OPTION_CONVERT_TO_MESH_INSTANCE,
+		// Asosdot: bend a mesh with brush points (QuickMeshBrush3D).
+		MENU_OPTION_MAKE_QUICK_MESH_BRUSH,
+		MENU_OPTION_CONVERT_BRUSH_TO_MESH_INSTANCE,
+		// Asosdot: paint textures, unwrap UVs and give parts materials (Mesh Paint).
+		MENU_OPTION_MESH_PAINT,
 	};
 
 	enum ShapePlacement {
@@ -123,6 +128,8 @@ protected:
 	void _make_editable();
 	void _apply_edits();
 	void _convert_to_mesh_instance();
+	void _make_quick_mesh_brush();
+	void _convert_brush_to_mesh_instance();
 
 	void _notification(int p_what);
 

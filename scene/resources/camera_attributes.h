@@ -64,6 +64,14 @@ protected:
 	float motion_blur_target_fps = 60.0;
 	void _update_motion_blur();
 
+	bool gaze_focus_enabled = false;
+	float gaze_focus_radius = 0.15;
+	float gaze_focus_softness = 0.3;
+	float gaze_focus_amount = 0.8;
+	float gaze_focus_depth_range = 0.0;
+	float gaze_focus_adapt_speed = 6.0;
+	void _update_gaze_focus();
+
 public:
 	enum MotionBlurQuality {
 		MOTION_BLUR_QUALITY_LOW,
@@ -100,6 +108,19 @@ public:
 	MotionBlurQuality get_motion_blur_quality() const;
 	void set_motion_blur_target_fps(float p_fps);
 	float get_motion_blur_target_fps() const;
+
+	void set_gaze_focus_enabled(bool p_enabled);
+	bool is_gaze_focus_enabled() const;
+	void set_gaze_focus_radius(float p_radius);
+	float get_gaze_focus_radius() const;
+	void set_gaze_focus_softness(float p_softness);
+	float get_gaze_focus_softness() const;
+	void set_gaze_focus_amount(float p_amount);
+	float get_gaze_focus_amount() const;
+	void set_gaze_focus_depth_range(float p_meters);
+	float get_gaze_focus_depth_range() const;
+	void set_gaze_focus_adapt_speed(float p_speed);
+	float get_gaze_focus_adapt_speed() const;
 
 	CameraAttributes();
 	~CameraAttributes();

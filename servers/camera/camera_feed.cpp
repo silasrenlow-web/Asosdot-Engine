@@ -56,6 +56,8 @@ void CameraFeed::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_texture_tex_id", "feed_image_type"), &CameraFeed::get_texture_tex_id);
 
 	ClassDB::bind_method(D_METHOD("get_datatype"), &CameraFeed::get_datatype);
+	ClassDB::bind_method(D_METHOD("get_frame_image"), &CameraFeed::get_frame_image);
+	ClassDB::bind_method(D_METHOD("get_frame_serial"), &CameraFeed::get_frame_serial);
 
 	ClassDB::bind_method(D_METHOD("get_formats"), &CameraFeed::get_formats);
 	ClassDB::bind_method(D_METHOD("set_format", "index", "parameters"), &CameraFeed::set_format);
@@ -186,9 +188,49 @@ CameraFeed::~CameraFeed() {
 	RenderingServer::get_singleton()->free_rid(texture[CameraServer::FEED_CBCR_IMAGE]);
 }
 
+void CameraFeed::_keep_frame(const Ref<Image> &p_image) {
+	MutexLock lock(frame_mutex);
+	frame_data = p_image->get_data();
+	frame_width = p_image->get_width();
+	frame_height = p_image->get_height();
+	frame_format = p_image->get_format();
+	frame_serial++;
+}
+
+Ref<Image> CameraFeed::get_frame_image() const {
+	Vector<uint8_t> data;
+	int width = 0;
+	int height = 0;
+	Image::Format format = Image::FORMAT_RGB8;
+	uint64_t serial = 0;
+	if (!get_frame_data(data, width, height, format, serial)) {
+		return Ref<Image>();
+	}
+	return Image::create_from_data(width, height, false, format, data);
+}
+
+uint64_t CameraFeed::get_frame_serial() const {
+	MutexLock lock(frame_mutex);
+	return frame_serial;
+}
+
+bool CameraFeed::get_frame_data(Vector<uint8_t> &r_data, int &r_width, int &r_height, Image::Format &r_format, uint64_t &r_serial) const {
+	MutexLock lock(frame_mutex);
+	if (frame_data.is_empty()) {
+		return false;
+	}
+	r_data = frame_data;
+	r_width = frame_width;
+	r_height = frame_height;
+	r_format = frame_format;
+	r_serial = frame_serial;
+	return true;
+}
+
 void CameraFeed::set_rgb_image(const Ref<Image> &p_rgb_img) {
 	ERR_FAIL_COND(p_rgb_img.is_null());
 	if (active) {
+		_keep_frame(p_rgb_img);
 		int new_width = p_rgb_img->get_width();
 		int new_height = p_rgb_img->get_height();
 
@@ -246,6 +288,7 @@ void CameraFeed::set_ycbcr_images(const Ref<Image> &p_y_img, const Ref<Image> &p
 	ERR_FAIL_COND(p_y_img.is_null());
 	ERR_FAIL_COND(p_cbcr_img.is_null());
 	if (active) {
+		_keep_frame(p_y_img);
 		///@TODO investigate whether we can use thirdparty/misc/yuv2rgb.h here to convert our YUV data to RGB, our shader approach is potentially faster though..
 		// Wondering about including that into multiple projects, may cause issues.
 		// That said, if we convert to RGB, we could enable using texture resources again...

@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="QuickMeshBrush3D" inherits="MeshInstance3D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		A [MeshInstance3D] whose mesh is bent smoothly around points placed on its surface.
+	</brief_description>
+	<description>
+		A [QuickMeshBrush3D] bends its [member source_mesh] around brush points. A point sits on the surface; moving, rotating or scaling it pulls the surface around it along, fully at the centre and fading out to nothing at the point's radius. Lowering a point on a floor makes a smooth dip (a puddle), raising it makes a bump or a mound, and rotating it tilts the area into a slope. [code]hardness[/code] keeps the middle of the area flat and steepens its edge, for a dip with a level floor.
+		So the bend stays smooth even on a mesh with few, large triangles (a floor made of two triangles, for example), the mesh gets more triangles around each point, and only there: edges inside a point's area are split until they are no longer than the point's radius divided by [member detail]. Splits keep the mesh watertight, also across UV seams, and the new vertices blend the UVs, UV2, colors and tangents of the old ones, so textures and baked lighting carry on across the edit. Normals turn with the surface, and away from the points the mesh keeps its own normals exactly.
+		Points apply in order: each one bends the surface as the points before it left it. A point placed on an area that is already bent therefore sits on the surface you see, and can deepen or reshape it further.
+		The bent mesh is stored in [member MeshInstance3D.mesh] and saved with the scene. A game draws it like any other mesh and computes nothing for the brush unless [member update_at_runtime] is enabled, and it only has more triangles than the source around the points ([member max_triangles] caps how many are added). The node stays a [MeshInstance3D]: materials, overrides, shadows, GI and layers all apply. Set [member collision_shape] to keep a trimesh collision shape in step with the edits.
+		In the editor, select the node and press [b]Edit Points[/b] in the 3D toolbar. Click on the mesh with [b]Add Point[/b] (or Ctrl+Click) to place a point; it is selected and the normal move, rotate and scale gizmos move it. Click a point to select it, Shift+Click to add to the selection, or drag a box to select several. The [b]Radius[/b] and [b]Hardness[/b] fields set the selected points, or the next new one, and [kbd]Delete[/kbd] removes the selected points. Every change can be undone. The [b]Mesh[/b] menu has [b]Quick Mesh Brush[/b] to turn a [MeshInstance3D] into a [QuickMeshBrush3D] (changing the node type works too: its mesh becomes the source mesh), and [b]Convert to MeshInstance3D[/b] to go back, keeping the bent mesh.
+		[b]Note:[/b] Blend shapes of the source mesh are not kept. Skinned meshes keep their bone weights, taken from a neighbouring vertex for new vertices.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="add_point">
+			<return type="int" />
+			<param index="0" name="position" type="Vector3" />
+			<param index="1" name="normal" type="Vector3" />
+			<param index="2" name="radius" type="float" default="1.0" />
+			<param index="3" name="hardness" type="float" default="0.0" />
+			<description>
+				Adds a brush point at [param position] on the surface, in the node's local space, with its Y axis along [param normal], and returns its index. The point bends nothing until it is moved with [method set_point_transform].
+				[codeblock]
+				# Dig a puddle 15 cm deep and 1.5 m wide into a floor.
+				var hit = brush.intersect_ray(Vector3(0, 10, 0), Vector3.DOWN)
+				var point = brush.add_point(hit.position, hit.normal, 0.75, 0.4)
+				brush.set_point_transform(point, brush.get_point_rest(point).translated(Vector3(0, -0.15, 0)))
+				[/codeblock]
+			</description>
+		</method>
+		<method name="apply_edits">
+			<return type="void" />
+			<description>
+				Makes the bent mesh the new [member source_mesh] and removes all points, so new points start from the bent surface. In the editor, use [b]Brush &gt; Apply Edits to Source Mesh[/b] in the 3D toolbar instead, which can be undone.
+			</description>
+		</method>
+		<method name="clear_points">
+			<return type="void" />
+			<description>
+				Removes all brush points. The mesh goes back to [member source_mesh].
+			</description>
+		</method>
+		<method name="get_point_hardness" qualifiers="const">
+			<return type="float" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Returns the hardness of the point at [param index]. See [method set_point_hardness].
+			</description>
+		</method>
+		<method name="get_point_radius" qualifiers="const">
+			<return type="float" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Returns the radius of the point at [param index], in the node's local units.
+			</description>
+		</method>
+		<method name="get_point_rest" qualifiers="const">
+			<return type="Transform3D" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Returns where the point at [param index] was placed: on the surface, with its Y axis along the surface normal. A point whose transform equals its rest bends nothing.
+			</description>
+		</method>
+		<method name="get_point_surface_position" qualifiers="const">
+			<return type="Vector3" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Returns the spot on the unbent [member source_mesh] that the point at [param index] was placed on. Extra triangles are added around this spot.
+			</description>
+		</method>
+		<method name="get_point_transform" qualifiers="const">
+			<return type="Transform3D" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Returns the transform of the point at [param index], in the node's local space.
+			</description>
+		</method>
+		<method name="get_points_data" qualifiers="const">
+			<return type="Array" />
+			<description>
+				Returns all points as an [Array] of [Dictionary] entries with the keys [code]rest[/code], [code]transform[/code], [code]surface_position[/code], [code]radius[/code] and [code]hardness[/code]. Pass it to [method set_points_data] to restore them.
+			</description>
+		</method>
+		<method name="get_triangle_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the number of triangles of the mesh shown.
+			</description>
+		</method>
+		<method name="has_edits" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] if at least one point is moved, rotated or scaled away from its rest, that is, if the mesh shown is bent.
+			</description>
+		</method>
+		<method name="intersect_ray" qualifiers="const">
+			<return type="Dictionary" />
+			<param index="0" name="from" type="Vector3" />
+			<param index="1" name="direction" type="Vector3" />
+			<description>
+				Casts a ray in the node's local space against the mesh as it is shown, bent. Returns an empty [Dictionary] if nothing is hit, otherwise a [Dictionary] with [code]position[/code] and [code]normal[/code] (facing the ray) of the hit, and [code]surface_position[/code], the same spot on the unbent source mesh.
+				[b]Note:[/b] This works in the editor, or when [member update_at_runtime] is enabled, after the mesh has been built once.
+			</description>
+		</method>
+		<method name="rebuild">
+			<return type="void" />
+			<description>
+				Rebuilds the bent mesh now, and the [member collision_shape] if there is one. Changes are otherwise rebuilt once per frame.
+			</description>
+		</method>
+		<method name="remove_point">
+			<return type="void" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Removes the point at [param index]. The points after it move down by one.
+			</description>
+		</method>
+		<method name="reset_point">
+			<return type="void" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Puts the point at [param index] back at its rest, so it no longer bends the surface.
+			</description>
+		</method>
+		<method name="set_point_hardness">
+			<return type="void" />
+			<param index="0" name="index" type="int" />
+			<param index="1" name="hardness" type="float" />
+			<description>
+				Sets how the bend fades out across the point's radius, from [code]0.0[/code] to [code]1.0[/code]. At [code]0.0[/code] the bend fades smoothly all the way from the centre to the radius; higher values keep the inner part fully bent (flat, if the point is moved straight) and fade only near the edge, which gets steeper.
+			</description>
+		</method>
+		<method name="set_point_radius">
+			<return type="void" />
+			<param index="0" name="index" type="int" />
+			<param index="1" name="radius" type="float" />
+			<description>
+				Sets how far around the point at [param index] the surface bends, in the node's local units.
+			</description>
+		</method>
+		<method name="set_point_rest">
+			<return type="void" />
+			<param index="0" name="index" type="int" />
+			<param index="1" name="rest" type="Transform3D" />
+			<description>
+				Sets where the point at [param index] was placed. See [method get_point_rest].
+			</description>
+		</method>
+		<method name="set_point_surface_position">
+			<return type="void" />
+			<param index="0" name="index" type="int" />
+			<param index="1" name="position" type="Vector3" />
+			<description>
+				Sets the spot on the unbent [member source_mesh] that extra triangles are added around for the point at [param index]. [method add_point] works it out by itself.
+			</description>
+		</method>
+		<method name="set_point_transform">
+			<return type="void" />
+			<param index="0" name="index" type="int" />
+			<param index="1" name="transform" type="Transform3D" />
+			<description>
+				Moves, rotates and scales the point at [param index], in the node's local space. The surface within the point's radius follows: the part around its rest is carried to this transform, with a smooth falloff.
+			</description>
+		</method>
+		<method name="set_points_data">
+			<return type="void" />
+			<param index="0" name="data" type="Array" />
+			<description>
+				Replaces all points with [param data], in the format [method get_points_data] returns.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="collision_shape" type="NodePath" setter="set_collision_shape" getter="get_collision_shape" default="NodePath(&quot;&quot;)">
+			A [CollisionShape3D] that is given the bent mesh as a [ConcavePolygonShape3D] every time an edit is finished (not on every frame of a gizmo drag), so the player walks on the surface as it is shown, for example down into a puddle. [b]Brush &gt; Create Collision (Kept Updated)[/b] in the 3D toolbar adds one and sets this.
+		</member>
+		<member name="detail" type="float" setter="set_detail" getter="get_detail" default="10.0">
+			How many triangles fit across a point's radius. Around each point, edges are split until they are no longer than the point's radius divided by this, so a higher value gives a smoother bend and more triangles. [code]0.0[/code] adds no triangles: only the mesh's own vertices move.
+		</member>
+		<member name="max_triangles" type="int" setter="set_max_triangles" getter="get_max_triangles" default="250000">
+			The most triangles the bent mesh may have. When adding detail would go past it, splitting stops, and a configuration warning says so.
+		</member>
+		<member name="point_count" type="int" setter="set_point_count" getter="get_point_count" default="0">
+			The number of brush points.
+		</member>
+		<member name="source_mesh" type="Mesh" setter="set_source_mesh" getter="get_source_mesh">
+			The mesh that is bent. Any mesh with triangle surfaces works: an imported model, a level mesh or a [PrimitiveMesh] such as a [PlaneMesh]. Surfaces that are not triangles are kept as they are.
+		</member>
+		<member name="update_at_runtime" type="bool" setter="set_update_at_runtime" getter="is_updating_at_runtime" default="false">
+			If [code]true[/code], the mesh is also rebuilt in a running game, for scripts that move points while it plays. If [code]false[/code], the game uses the mesh saved with the scene and the brush costs nothing.
+		</member>
+	</members>
+</class>

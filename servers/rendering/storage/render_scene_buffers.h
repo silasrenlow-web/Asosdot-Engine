@@ -114,4 +114,11 @@ public:
 	virtual void set_texture_mipmap_bias(float p_texture_mipmap_bias) = 0;
 	virtual void set_anisotropic_filtering_level(RSE::ViewportAnisotropicFiltering p_anisotropic_filtering_level) = 0;
 	virtual void set_use_debanding(bool p_use_debanding) = 0;
+
+	// Where the player looks, 0 to 1 across and down; the middle when nothing tracks it.
+	void set_gaze_point(const Vector2 &p_uv) { gaze_point = p_uv; }
+	Vector2 get_gaze_point() const { return gaze_point; }
+
+private:
+	Vector2 gaze_point = Vector2(0.5, 0.5);
 };

@@ -424,6 +424,11 @@ Comment: Manifold
 Copyright: 2020-2025, The Manifold Authors
 License: Apache-2.0
 
+Files: thirdparty/mediapipe/*
+Comment: MediaPipe face detection, face mesh and iris models
+Copyright: 2019-2023, The MediaPipe Authors
+License: Apache-2.0
+
 Files: thirdparty/mbedtls/*
 Comment: Mbed TLS
 Copyright: The Mbed TLS Contributors

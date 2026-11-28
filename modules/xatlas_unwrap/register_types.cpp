@@ -34,6 +34,10 @@
 #include "core/error/error_macros.h"
 #include "core/os/memory.h"
 
+#ifndef _3D_DISABLED
+#include "scene/resources/3d/mesh_painter.h"
+#endif // _3D_DISABLED
+
 #include <xatlas.h>
 
 #include <cstring>
@@ -228,12 +232,147 @@ bool xatlas_mesh_lightmap_unwrap_callback(float p_texel_size, const float *p_ver
 	return true;
 }
 
+#ifndef _3D_DISABLED
+// Asosdot: the Mesh Paint tool's Smart Unwrap and Pack Islands. Unlike the lightmap unwrap,
+// faces carry a group (material slot, or island when packing) and the result is scaled to
+// fill a square texture of the asked resolution.
+static bool xatlas_mesh_painter_unwrap(const MeshPainter::UnwrapOptions &p_options, const Vector<Vector3> &p_positions, const Vector<Vector3> &p_normals, const Vector<Vector2> &p_uvs, const Vector<int> &p_indices, const Vector<uint32_t> &p_face_groups, Vector<Vector2> &r_corner_uvs, Vector<int> &r_corner_xref) {
+	const int face_count = p_indices.size() / 3;
+	ERR_FAIL_COND_V(face_count == 0 || p_indices.size() % 3 != 0, false);
+	ERR_FAIL_COND_V(p_face_groups.size() != face_count, false);
+	const int resolution = MAX(p_options.resolution, 16);
+
+	xatlas::Atlas *atlas = xatlas::Create();
+	Vector<float> uv_data;
+	Vector<float> position_data;
+	Vector<float> normal_data;
+	double area = 0.0;
+
+	if (p_options.pack_only) {
+		uv_data.resize(p_uvs.size() * 2);
+		for (int i = 0; i < p_uvs.size(); i++) {
+			uv_data.write[i * 2 + 0] = p_uvs[i].x;
+			uv_data.write[i * 2 + 1] = p_uvs[i].y;
+		}
+		for (int f = 0; f < face_count; f++) {
+			const Vector2 a = p_uvs[p_indices[f * 3 + 0]];
+			const Vector2 b = p_uvs[p_indices[f * 3 + 1]];
+			const Vector2 c = p_uvs[p_indices[f * 3 + 2]];
+			area += Math::abs((b - a).cross(c - a)) * 0.5;
+		}
+		xatlas::UvMeshDecl decl;
+		decl.vertexUvData = uv_data.ptr();
+		decl.vertexStride = sizeof(float) * 2;
+		decl.vertexCount = p_uvs.size();
+		decl.indexData = p_indices.ptr();
+		decl.indexCount = p_indices.size();
+		decl.indexFormat = xatlas::IndexFormat::UInt32;
+		decl.faceMaterialData = p_face_groups.ptr();
+		const xatlas::AddMeshError err = xatlas::AddUvMesh(atlas, decl);
+		if (err != xatlas::AddMeshError::Success) {
+			xatlas::Destroy(atlas);
+			ERR_FAIL_V_MSG(false, xatlas::StringForEnum(err));
+		}
+		xatlas::ComputeCharts(atlas);
+	} else {
+		ERR_FAIL_COND_V(p_positions.size() != p_normals.size(), false);
+		position_data.resize(p_positions.size() * 3);
+		normal_data.resize(p_normals.size() * 3);
+		for (int i = 0; i < p_positions.size(); i++) {
+			for (int k = 0; k < 3; k++) {
+				position_data.write[i * 3 + k] = p_positions[i][k];
+				normal_data.write[i * 3 + k] = p_normals[i][k];
+			}
+		}
+		for (int f = 0; f < face_count; f++) {
+			area += Face3(p_positions[p_indices[f * 3]], p_positions[p_indices[f * 3 + 1]], p_positions[p_indices[f * 3 + 2]]).get_area();
+		}
+		xatlas::MeshDecl decl;
+		decl.vertexPositionData = position_data.ptr();
+		decl.vertexPositionStride = sizeof(float) * 3;
+		decl.vertexNormalData = normal_data.ptr();
+		decl.vertexNormalStride = sizeof(float) * 3;
+		decl.vertexCount = p_positions.size();
+		decl.indexData = p_indices.ptr();
+		decl.indexCount = p_indices.size();
+		decl.indexFormat = xatlas::IndexFormat::UInt32;
+		decl.faceMaterialData = p_face_groups.ptr();
+		const xatlas::AddMeshError err = xatlas::AddMesh(atlas, decl, 1);
+		if (err != xatlas::AddMeshError::Success) {
+			xatlas::Destroy(atlas);
+			ERR_FAIL_V_MSG(false, xatlas::StringForEnum(err));
+		}
+		xatlas::ChartOptions chart_options;
+		chart_options.fixWinding = true;
+		// xatlas grows islands while the face's normal deviation (1 - cos) times this weight
+		// stays under maxCost; at 66 degrees this is xatlas' own default weight of 2.
+		const float angle = Math::deg_to_rad(CLAMP(p_options.angle_limit, 1.0f, 89.0f));
+		chart_options.normalDeviationWeight = 2.0f * (1.0f - Math::cos(Math::deg_to_rad(66.0f))) / MAX(1.0f - Math::cos(angle), 0.0001f);
+		chart_options.maxIterations = 2;
+		xatlas::ComputeCharts(atlas, chart_options);
+	}
+
+	if (area <= 0.0) {
+		xatlas::Destroy(atlas);
+		ERR_FAIL_V_MSG(false, "Nothing to unwrap: the faces have no area.");
+	}
+
+	// Aim for the charts to fill most of the square, then correct the scale from what the
+	// packer actually made.
+	float texels_per_unit = resolution * Math::sqrt(0.6 / area);
+	uint32_t size = 0;
+	for (int attempt = 0; attempt < 5; attempt++) {
+		xatlas::PackOptions pack_options;
+		pack_options.padding = MAX(p_options.padding, 0);
+		pack_options.texelsPerUnit = texels_per_unit;
+		pack_options.bilinear = true;
+		pack_options.rotateCharts = p_options.rotate;
+		pack_options.rotateChartsToAxis = p_options.rotate;
+		pack_options.maxChartSize = resolution - pack_options.padding * 2;
+		xatlas::PackCharts(atlas, pack_options);
+		size = MAX(atlas->width, atlas->height);
+		if (size == 0) {
+			break;
+		}
+		const float ratio = float(resolution) / size;
+		if (ratio >= 0.97f && ratio <= 1.0f) {
+			break;
+		}
+		texels_per_unit *= ratio * (ratio > 1.0f ? 0.99f : 0.98f);
+	}
+	if (size == 0 || atlas->meshCount == 0) {
+		xatlas::Destroy(atlas);
+		ERR_FAIL_V_MSG(false, "xatlas made no charts.");
+	}
+
+	const xatlas::Mesh &output = atlas->meshes[0];
+	if ((int)output.indexCount != p_indices.size()) {
+		xatlas::Destroy(atlas);
+		ERR_FAIL_V_MSG(false, "xatlas changed the face count.");
+	}
+	// Divide by the longer side, so a non-square atlas keeps its proportions in the square.
+	const float scale = 1.0f / MAX(size, (uint32_t)resolution);
+	r_corner_uvs.resize(output.indexCount);
+	r_corner_xref.resize(output.indexCount);
+	for (uint32_t i = 0; i < output.indexCount; i++) {
+		const xatlas::Vertex &vertex = output.vertexArray[output.indexArray[i]];
+		r_corner_uvs.write[i] = Vector2(vertex.uv[0] * scale, vertex.uv[1] * scale);
+		r_corner_xref.write[i] = vertex.xref;
+	}
+	xatlas::Destroy(atlas);
+	return true;
+}
+#endif // _3D_DISABLED
+
 void initialize_xatlas_unwrap_module(ModuleInitializationLevel p_level) {
 	if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) {
 		return;
 	}
 
 	array_mesh_lightmap_unwrap_callback = xatlas_mesh_lightmap_unwrap_callback;
+#ifndef _3D_DISABLED
+	MeshPainter::unwrap_func = xatlas_mesh_painter_unwrap;
+#endif // _3D_DISABLED
 }
 
 void uninitialize_xatlas_unwrap_module(ModuleInitializationLevel p_level) {

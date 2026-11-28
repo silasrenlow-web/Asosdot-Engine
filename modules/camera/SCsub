@@ -11,6 +11,9 @@ if env["platform"] in ["windows", "macos", "linuxbsd", "android", "ios", "vision
 
 if env["platform"] == "windows":
     env_camera.add_source_files(env.modules_sources, "camera_win.cpp")
+    if not env.msvc:
+        # MSVC links these from #pragma comment in camera_win.cpp.
+        env.Append(LIBS=["mfplat", "mf", "mfreadwrite", "mfuuid"])
 
 elif env["platform"] == "macos":
     env_camera.add_source_files(env.modules_sources, "camera_apple.mm")

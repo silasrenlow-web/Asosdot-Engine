@@ -1,0 +1,25 @@
+#!/usr/bin/env python
+from misc.utility.scons_hints import *
+
+Import("env")
+Import("env_modules")
+
+import eye_tracking_builders
+
+env_eye_tracking = env_modules.Clone()
+
+# The face and iris models (MediaPipe, Apache 2.0), embedded as byte arrays.
+env_eye_tracking.CommandNoCache(
+    "eye_tracking_models.gen.h",
+    [
+        "#thirdparty/mediapipe/face_detection_short_range.tflite",
+        "#thirdparty/mediapipe/face_landmark.tflite",
+        "#thirdparty/mediapipe/iris_landmark.tflite",
+    ],
+    env.Run(eye_tracking_builders.make_models_header),
+)
+
+env_eye_tracking.add_source_files(env.modules_sources, "*.cpp")
+
+if env.editor_build:
+    env_eye_tracking.add_source_files(env.modules_sources, "editor/*.cpp")

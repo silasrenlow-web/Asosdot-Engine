@@ -1,0 +1,14 @@
+config_version=5
+
+[application]
+
+config/name="Eye Tracking Demo"
+run/main_scene="res://main.tscn"
+
+[eye_tracking]
+
+webcam/enabled=true
+
+[rendering]
+
+renderer/rendering_method="forward_plus"

@@ -329,6 +329,9 @@ void RendererViewport::_draw_3d(Viewport *p_viewport) {
 	}
 
 	float screen_mesh_lod_threshold = p_viewport->mesh_lod_threshold / float(p_viewport->size.width);
+	if (p_viewport->render_buffers.is_valid()) {
+		p_viewport->render_buffers->set_gaze_point(p_viewport->gaze_point);
+	}
 	RSG::scene->render_camera(p_viewport->render_buffers, p_viewport->camera, p_viewport->scenario, p_viewport->self, p_viewport->internal_size, p_viewport->jitter_phase_count, screen_mesh_lod_threshold, p_viewport->shadow_atlas, xr_interface, p_viewport->window_output_max_value, &p_viewport->render_info);
 
 	RENDER_TIMESTAMP("< Render 3D Scene");
@@ -1063,6 +1066,14 @@ void RendererViewport::viewport_set_fsr_sharpness(RID p_viewport, float p_sharpn
 
 	viewport->fsr_sharpness = p_sharpness;
 	_configure_3d_render_buffers(viewport);
+}
+
+void RendererViewport::viewport_set_gaze_point(RID p_viewport, const Vector2 &p_uv) {
+	Viewport *viewport = viewport_owner.get_or_null(p_viewport);
+	ERR_FAIL_NULL(viewport);
+
+	// Read each frame by the render buffers; no buffers need remaking.
+	viewport->gaze_point = p_uv;
 }
 
 void RendererViewport::viewport_set_texture_mipmap_bias(RID p_viewport, float p_mipmap_bias) {

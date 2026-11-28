@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="GazeTarget3D" inherits="Node3D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Tells whether the player is looking at it, using [EyeTracker].
+	</brief_description>
+	<description>
+		Place it on (or as a child of) something that should know when the player looks at it: a monster that only moves while it is not watched, a painting that changes when looked away from, a hint that appears when stared at. It counts as watched when it is in view of the current [Camera3D], near the player's gaze (or anywhere on the screen, see [member detection_mode]), the player's eyes are open, and, with [member require_line_of_sight], nothing is in the way.
+		Without eye tracking running, the player counts as looking at the middle of the screen with open eyes, so the same scene works on machines without a webcam.
+		[codeblock]
+		# A monster that moves only while nobody watches it.
+		@onready var eyes_on_me: GazeTarget3D = $GazeTarget3D
+
+		func _physics_process(delta):
+			if not eyes_on_me.is_watched():
+				move_towards_player(delta)
+		[/codeblock]
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_gaze_distance" qualifiers="const">
+			<return type="float" />
+			<description>
+				Returns how far the gaze is from the edge of the target's radius on the screen, as a part of the screen's height ([code]0.0[/code] when the gaze is on it). Very large when it is not on screen.
+			</description>
+		</method>
+		<method name="is_on_screen" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] when the target is in view of the camera, whether or not it is looked at.
+			</description>
+		</method>
+		<method name="is_watched" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] while the player is looking at the target (see the class description for what counts).
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="collision_mask" type="int" setter="set_collision_mask" getter="get_collision_mask" default="1">
+			The physics layers that can hide the target, with [member require_line_of_sight].
+		</member>
+		<member name="detection_mode" type="int" setter="set_detection_mode" getter="get_detection_mode" enum="GazeTarget3D.DetectionMode" default="0">
+			What counts as watching: being near the gaze, or anywhere on the screen.
+		</member>
+		<member name="enabled" type="bool" setter="set_enabled" getter="is_enabled" default="true">
+			If [code]false[/code], the target is never watched.
+		</member>
+		<member name="gaze_margin" type="float" setter="set_gaze_margin" getter="get_gaze_margin" default="0.12">
+			How far from the target, as a part of the screen's height, the gaze may be and still count, with [constant DETECTION_GAZE]. A webcam's gaze is rough, so keep some margin.
+		</member>
+		<member name="radius" type="float" setter="set_radius" getter="get_radius" default="0.5">
+			The size of the target, in metres: the sphere around it that counts as it.
+		</member>
+		<member name="require_line_of_sight" type="bool" setter="set_require_line_of_sight" getter="is_requiring_line_of_sight" default="false">
+			If [code]true[/code], the target is not watched while a physics body on [member collision_mask] is between it and the camera. Bodies inside [member radius] count as the target itself.
+		</member>
+		<member name="unwatch_delay" type="float" setter="set_unwatch_delay" getter="get_unwatch_delay" default="0.1">
+			How long, in seconds, the target stays watched after the gaze leaves it, so a jumpy gaze or a quick glance away does not flicker it.
+		</member>
+	</members>
+	<signals>
+		<signal name="unwatched">
+			<description>
+				Emitted when the player stops looking at the target (after [member unwatch_delay]).
+			</description>
+		</signal>
+		<signal name="watched">
+			<description>
+				Emitted when the player starts looking at the target.
+			</description>
+		</signal>
+	</signals>
+	<constants>
+		<constant name="DETECTION_GAZE" value="0" enum="DetectionMode">
+			Watched when near the gaze point.
+		</constant>
+		<constant name="DETECTION_ON_SCREEN" value="1" enum="DetectionMode">
+			Watched whenever it is in view and the player's eyes are open and on the screen.
+		</constant>
+	</constants>
+</class>

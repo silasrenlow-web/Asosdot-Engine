@@ -156,6 +156,35 @@ void RendererCameraAttributes::camera_attributes_set_motion_blur(RID p_camera_at
 	cam_attributes->motion_blur_target_fps = MAX(p_target_fps, 0.0f);
 }
 
+void RendererCameraAttributes::camera_attributes_set_gaze_focus(RID p_camera_attributes, bool p_enable, float p_radius, float p_softness, float p_amount, float p_depth_range, float p_adapt_speed) {
+	CameraAttributes *cam_attributes = camera_attributes_owner.get_or_null(p_camera_attributes);
+	ERR_FAIL_NULL(cam_attributes);
+#ifdef DEBUG_ENABLED
+	if ((OS::get_singleton()->get_current_rendering_method() == "gl_compatibility" || OS::get_singleton()->get_current_rendering_method() == "mobile") && p_enable) {
+		WARN_PRINT_ONCE_ED("Gaze focus is only available when using the Forward+ renderer.");
+	}
+#endif
+
+	cam_attributes->gaze_focus_enabled = p_enable;
+	cam_attributes->gaze_focus_radius = MAX(p_radius, 0.0f);
+	cam_attributes->gaze_focus_softness = MAX(p_softness, 0.001f);
+	cam_attributes->gaze_focus_amount = CLAMP(p_amount, 0.0f, 1.0f);
+	cam_attributes->gaze_focus_depth_range = MAX(p_depth_range, 0.0f);
+	cam_attributes->gaze_focus_adapt_speed = MAX(p_adapt_speed, 0.0f);
+}
+
+RendererCameraAttributes::GazeFocusSettings RendererCameraAttributes::camera_attributes_get_gaze_focus(RID p_camera_attributes) {
+	GazeFocusSettings settings;
+	CameraAttributes *cam_attributes = camera_attributes_owner.get_or_null(p_camera_attributes);
+	ERR_FAIL_NULL_V(cam_attributes, settings);
+	settings.radius = cam_attributes->gaze_focus_radius;
+	settings.softness = cam_attributes->gaze_focus_softness;
+	settings.amount = cam_attributes->gaze_focus_amount;
+	settings.depth_range = cam_attributes->gaze_focus_depth_range;
+	settings.adapt_speed = cam_attributes->gaze_focus_adapt_speed;
+	return settings;
+}
+
 RendererCameraAttributes::MotionBlurSettings RendererCameraAttributes::camera_attributes_get_motion_blur(RID p_camera_attributes) {
 	MotionBlurSettings settings;
 	CameraAttributes *cam_attributes = camera_attributes_owner.get_or_null(p_camera_attributes);

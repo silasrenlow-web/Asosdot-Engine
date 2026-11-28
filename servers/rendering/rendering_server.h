@@ -572,6 +572,8 @@ public:
 	virtual void viewport_set_scaling_3d_mode(RID p_viewport, RSE::ViewportScaling3DMode p_scaling_3d_mode) = 0;
 	virtual void viewport_set_scaling_3d_scale(RID p_viewport, float p_scaling_3d_scale) = 0;
 	virtual void viewport_set_fsr_sharpness(RID p_viewport, float p_fsr_sharpness) = 0;
+	// Where on the viewport the player looks, 0 to 1 across and down (EyeTracker sets it for the main window).
+	virtual void viewport_set_gaze_point(RID p_viewport, const Vector2 &p_uv) = 0;
 	virtual void viewport_set_texture_mipmap_bias(RID p_viewport, float p_texture_mipmap_bias) = 0;
 	virtual void viewport_set_anisotropic_filtering_level(RID p_viewport, RSE::ViewportAnisotropicFiltering p_anisotropic_filtering_level) = 0;
 
@@ -740,6 +742,7 @@ public:
 	virtual void camera_attributes_set_auto_exposure(RID p_camera_attributes, bool p_enable, float p_min_sensitivity, float p_max_sensitivity, float p_speed, float p_scale) = 0;
 	virtual void camera_attributes_set_auto_exposure_eye(RID p_camera_attributes, float p_dark_speed, float p_center_weight) = 0;
 	virtual void camera_attributes_set_motion_blur(RID p_camera_attributes, bool p_enable, float p_intensity, float p_max_length, int p_quality, float p_target_fps) = 0;
+	virtual void camera_attributes_set_gaze_focus(RID p_camera_attributes, bool p_enable, float p_radius, float p_softness, float p_amount, float p_depth_range, float p_adapt_speed) = 0;
 
 	/* LENS FLARE API */
 
